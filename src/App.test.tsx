@@ -65,6 +65,37 @@ it('默认进入创作工作总览，并提供四个工作域入口与主内容�
   expect(screen.getByRole('textbox', { name: '项目名称' })).toBeInTheDocument();
 });
 
+it('重启中断的图片任务可在队列确认重试，并在新任务关联后隐藏重复入口', async () => {
+  const interrupted = {
+    id: 'job-interrupted', projectId: 'asset-library', kind: 'image_generation', providerId: 'gemini',
+    status: 'queued', request: { prompt: '同一角色', size: '1024x1536', referenceAssetIds: ['ref-1'], qualityTier: 'premium' },
+    error: '应用关闭前任务中断，可由用户确认后重试。', retryCount: 1, createdAt: '', updatedAt: '',
+  };
+  const retried = {
+    id: 'job-retry', projectId: 'asset-library', kind: 'image_generation', providerId: 'gemini',
+    status: 'unknown', request: { ...interrupted.request, retryOfJobId: interrupted.id },
+    error: '网络暂时不可达', retryCount: 0, createdAt: '', updatedAt: '',
+  };
+  let jobs = [interrupted];
+  vi.mocked(window.studio.generation.jobs).mockImplementation(async () => jobs as never);
+  vi.mocked(window.studio.generation.image).mockImplementation(async () => {
+    jobs = [interrupted, retried];
+    return retried as never;
+  });
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '生产' }));
+  fireEvent.click(await screen.findByRole('button', { name: '生成队列' }));
+  const retry = await screen.findByRole('button', { name: '确认重试' });
+  fireEvent.click(retry);
+
+  await waitFor(() => expect(window.studio.generation.image).toHaveBeenCalledWith(expect.objectContaining({
+    retryOfJobId: interrupted.id,
+    referenceAssetIds: ['ref-1'],
+  })));
+  await waitFor(() => expect(screen.queryByRole('button', { name: '确认重试' })).not.toBeInTheDocument());
+});
+
 it('手机宽度使用独立的工作域导航', () => {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375 });
   render(<App />);
