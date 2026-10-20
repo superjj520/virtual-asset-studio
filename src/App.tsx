@@ -370,6 +370,9 @@ export default function App() {
     note: "",
   });
   const [jobs, setJobs] = useState<StudioJob[]>([]);
+  const [retryingJobIds, setRetryingJobIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [batches, setBatches] = useState<GenerationBatch[]>([]);
   const [batchName, setBatchName] = useState("角色场景候选组");
   const [batchVariables, setBatchVariables] = useState(
@@ -640,7 +643,13 @@ export default function App() {
     setJobs(updatedJobs);
   }, [creativeTasks, selectedProjectId]);
   const retryJob = useCallback(async (job: StudioJob) => {
-    if (!["failed", "unknown"].includes(job.status)) return;
+    const interruptedImage =
+      job.kind === "image_generation" &&
+      job.status === "queued" &&
+      job.error === "应用关闭前任务中断，可由用户确认后重试。";
+    if (!["failed", "unknown"].includes(job.status) && !interruptedImage) return;
+    if (retryingJobIds.has(job.id)) return;
+    setRetryingJobIds((current) => new Set(current).add(job.id));
     try {
       if (job.kind === "image_generation" && typeof job.result?.remoteTask === "object" && window.studio.generation.pollImage) {
         await window.studio.generation.pollImage(job.id);
@@ -674,12 +683,22 @@ export default function App() {
       } else {
         throw new Error("该失败任务缺少可安全重建的请求记录。");
       }
-      setNotice("已按原请求创建新的重试任务；未知状态任务不会被自动重提。");
+      setNotice(
+        interruptedImage
+          ? "已确认重试中断的图片任务；原任务保留，新的任务会记录关联关系。"
+          : "已按原请求创建新的重试任务；未知状态任务不会被自动重提。",
+      );
       await refreshJobs();
     } catch (error) {
       setNotice(error instanceof Error ? `重试未提交：${error.message}` : "重试未提交，请检查任务记录。");
+    } finally {
+      setRetryingJobIds((current) => {
+        const next = new Set(current);
+        next.delete(job.id);
+        return next;
+      });
     }
-  }, [refreshJobs]);
+  }, [refreshJobs, retryingJobIds]);
   useEffect(() => {
     if (screen !== "jobs") return;
     void refreshJobs();
@@ -3672,9 +3691,20 @@ export default function App() {
                 {job.kind === "image_to_video" && (job.status === "in_progress" || job.status === "unknown") && typeof job.result?.remoteId === "string" && (
                   <button onClick={() => void refreshJobs()}>安全查询</button>
                 )}
-                {job.status === "failed" && (
-                  <button onClick={() => void retryJob(job)}>按原请求重试</button>
-                )}
+                {(
+                  job.status === "failed" ||
+                  (job.kind === "image_generation" &&
+                    job.status === "queued" &&
+                    job.error === "应用关闭前任务中断，可由用户确认后重试。")
+                ) &&
+                  !retryingJobIds.has(job.id) &&
+                  !jobs.some(
+                    (candidate) => candidate.request.retryOfJobId === job.id,
+                  ) && (
+                    <button onClick={() => void retryJob(job)}>
+                      {job.status === "queued" ? "确认重试" : "按原请求重试"}
+                    </button>
+                  )}
               </article>
             ))}
             {!jobs.length && (
