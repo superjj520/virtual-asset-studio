@@ -208,6 +208,7 @@ export const applySchema = (database: Database.Database) => {
       name TEXT NOT NULL,
       provider_id TEXT NOT NULL,
       aspect_ratio TEXT NOT NULL,
+      reference_asset_ids_json TEXT NOT NULL DEFAULT '[]',
       estimated_cost_usd REAL,
       status TEXT NOT NULL,
       created_at TEXT NOT NULL,
@@ -327,6 +328,8 @@ export const applySchema = (database: Database.Database) => {
     database.exec(
       "ALTER TABLE generation_batches ADD COLUMN creative_task_id TEXT REFERENCES creative_tasks(id) ON DELETE SET NULL",
     );
+  if (!batchColumns.some((column) => column.name === "reference_asset_ids_json"))
+    database.exec("ALTER TABLE generation_batches ADD COLUMN reference_asset_ids_json TEXT NOT NULL DEFAULT '[]'");
   const recipeColumns = database
     .prepare("PRAGMA table_info(creative_recipes)")
     .all() as Array<{ name: string }>;

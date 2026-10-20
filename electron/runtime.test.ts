@@ -235,6 +235,7 @@ it('无参考图的文本生图仍可在素材库启动', async () => {
 
   const job = await harness.invoke('generation:image', imageInput([]));
   expect(job.status).toBe('completed');
+  expect(job.request).toMatchObject({ requestedAspectRatio: '1:1', actualAspectRatio: '1:1', size: '1024x1024' });
   expect(fetchMock).toHaveBeenCalledWith(
     'https://api.openai.com/v1/images/generations',
     expect.objectContaining({ method: 'POST' }),
@@ -243,6 +244,14 @@ it('无参考图的文本生图仍可在素材库启动', async () => {
     sourceAssetIds: [],
     rightsReview: 'pending',
   });
+});
+
+it('图片生成保留避免项和原任务关联，重试信息不会丢失', async () => {
+  harness.handlers.get('settings:save-provider-key')!({}, 'openai', 'openai-test-key-placeholder-123456');
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ data: [{ b64_json: Buffer.from('retry-image').toString('base64') }] }) })));
+  const task = await harness.invoke('tasks:create', { name: '重试关联任务', objective: '验证关联', card: { intent: '', subject: '成年女性', identityAnchor: '', bodyAndWardrobe: '', expressionAndPose: '', scene: '', lighting: '', camera: '', style: '', avoid: '文字、水印', aspectRatio: '16:9', referenceAssetIds: [] }, collectionIds: [] });
+  const job = await harness.invoke('generation:image', { ...imageInput([]), creativeTaskId: task.id, aspectRatio: '16:9', negative: '文字、水印' });
+  expect(job.request).toMatchObject({ creativeTaskId: task.id, negative: '文字、水印', requestedAspectRatio: '16:9', actualAspectRatio: '3:2', size: '1536x1024' });
 });
 
 it('生成内容撞上已有资产时不把旧资产冒充新的待复核结果', async () => {

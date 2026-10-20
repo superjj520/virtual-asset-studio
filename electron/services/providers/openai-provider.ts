@@ -13,6 +13,25 @@ type RemoteVideo = {
   error?: { message?: string };
 };
 
+type ResponsesPayload = {
+  output_text?: string;
+  output?: Array<{
+    content?: Array<{ type?: string; text?: string; value?: string }>;
+  }>;
+};
+
+/** 兼容 Responses API 原始响应与 SDK 聚合字段，避免有效结果被误判为空。 */
+const extractResponseText = (payload: ResponsesPayload): string => {
+  if (typeof payload.output_text === "string" && payload.output_text.trim())
+    return payload.output_text.trim();
+  const parts = payload.output?.flatMap((item) => item.content ?? []) ?? [];
+  return parts
+    .map((part) => (typeof part.text === "string" ? part.text : typeof part.value === "string" ? part.value : ""))
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+};
+
 const toDataUrl = (filePath: string, mediaType: string) =>
   `data:${mediaType};base64,${readFileSync(filePath).toString("base64")}`;
 
@@ -68,9 +87,9 @@ export class OpenAIProvider {
         ],
       }),
     });
-    const payload = (await response.json()) as { output_text?: string };
+    const payload = (await response.json()) as ResponsesPayload;
     return parseImageUnderstanding(
-      payload.output_text || "模型未返回可读取的视觉理解结果。",
+      extractResponseText(payload) || "模型未返回可读取的视觉理解结果。",
     );
   }
 

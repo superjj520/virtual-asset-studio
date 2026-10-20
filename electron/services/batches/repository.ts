@@ -2,17 +2,17 @@ import { randomUUID } from 'node:crypto';
 import type { CreativeCard, GenerationBatch, GenerationBatchStatus, GenerationVariant, GenerationVariantStatus, ProviderId } from '../../../src/shared/types';
 import { StudioDatabase } from '../../db/client';
 
-type BatchRow = { id: string; project_id: string | null; creative_task_id: string | null; name: string; provider_id: ProviderId; aspect_ratio: CreativeCard['aspectRatio']; estimated_cost_usd: number | null; status: GenerationBatchStatus; created_at: string; updated_at: string };
+type BatchRow = { id: string; project_id: string | null; creative_task_id: string | null; name: string; provider_id: ProviderId; aspect_ratio: CreativeCard['aspectRatio']; reference_asset_ids_json: string; estimated_cost_usd: number | null; status: GenerationBatchStatus; created_at: string; updated_at: string };
 type VariantRow = { id: string; batch_id: string; label: string; prompt: string; status: GenerationVariantStatus; job_id: string | null; asset_id: string | null; error: string | null; created_at: string; updated_at: string };
 const variant = (row: VariantRow): GenerationVariant => ({ id: row.id, batchId: row.batch_id, label: row.label, prompt: row.prompt, status: row.status, jobId: row.job_id ?? undefined, assetId: row.asset_id ?? undefined, error: row.error ?? undefined, createdAt: row.created_at, updatedAt: row.updated_at });
 
 export class GenerationBatchRepository {
   constructor(private readonly db: StudioDatabase) {}
-  create(input: { name: string; projectId?: string; creativeTaskId?: string; providerId: ProviderId; aspectRatio: CreativeCard['aspectRatio']; variants: Array<{ label: string; prompt: string }>; estimatedCostUsd?: number }): GenerationBatch {
+  create(input: { name: string; projectId?: string; creativeTaskId?: string; providerId: ProviderId; aspectRatio: CreativeCard['aspectRatio']; referenceAssetIds?: string[]; variants: Array<{ label: string; prompt: string }>; estimatedCostUsd?: number }): GenerationBatch {
     const now = new Date().toISOString(); const id = randomUUID();
     this.db.transaction(() => {
-      this.db.database.prepare('INSERT INTO generation_batches (id, project_id, creative_task_id, name, provider_id, aspect_ratio, estimated_cost_usd, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(id, input.projectId ?? null, input.creativeTaskId ?? null, input.name, input.providerId, input.aspectRatio, input.estimatedCostUsd ?? null, 'draft', now, now);
+      this.db.database.prepare('INSERT INTO generation_batches (id, project_id, creative_task_id, name, provider_id, aspect_ratio, reference_asset_ids_json, estimated_cost_usd, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, input.projectId ?? null, input.creativeTaskId ?? null, input.name, input.providerId, input.aspectRatio, JSON.stringify([...new Set(input.referenceAssetIds ?? [])]), input.estimatedCostUsd ?? null, 'draft', now, now);
       const statement = this.db.database.prepare('INSERT INTO generation_variants (id, batch_id, label, prompt, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
       input.variants.forEach((item) => statement.run(randomUUID(), id, item.label, item.prompt, 'planned', now, now));
     });
@@ -42,5 +42,5 @@ export class GenerationBatchRepository {
     return variant(this.db.database.prepare('SELECT * FROM generation_variants WHERE id = ?').get(id) as VariantRow);
   }
   updateStatus(id: string, status: GenerationBatchStatus): GenerationBatch { this.db.database.prepare('UPDATE generation_batches SET status = ?, updated_at = ? WHERE id = ?').run(status, new Date().toISOString(), id); return this.get(id)!; }
-  private map(row: BatchRow): GenerationBatch { return { id: row.id, projectId: row.project_id ?? undefined, creativeTaskId: row.creative_task_id ?? undefined, name: row.name, providerId: row.provider_id, aspectRatio: row.aspect_ratio, estimatedCostUsd: row.estimated_cost_usd ?? undefined, status: row.status, variants: (this.db.database.prepare('SELECT * FROM generation_variants WHERE batch_id = ? ORDER BY created_at').all(row.id) as VariantRow[]).map(variant), createdAt: row.created_at, updatedAt: row.updated_at }; }
+  private map(row: BatchRow): GenerationBatch { return { id: row.id, projectId: row.project_id ?? undefined, creativeTaskId: row.creative_task_id ?? undefined, name: row.name, providerId: row.provider_id, aspectRatio: row.aspect_ratio, referenceAssetIds: JSON.parse(row.reference_asset_ids_json || '[]') as string[], estimatedCostUsd: row.estimated_cost_usd ?? undefined, status: row.status, variants: (this.db.database.prepare('SELECT * FROM generation_variants WHERE batch_id = ? ORDER BY created_at').all(row.id) as VariantRow[]).map(variant), createdAt: row.created_at, updatedAt: row.updated_at }; }
 }

@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FalProvider } from "./fal-provider";
+import { FalProvider, FalRemoteTaskError } from "./fal-provider";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
@@ -40,4 +40,15 @@ it("fal 使用 Kontext dev 的 data URI 参考图修订", async () => {
     resolution_mode: "match_input",
     num_images: 1,
   });
+});
+
+it("fal 提交后立即暴露远程编号，查询失败也能保留原任务", async () => {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ request_id: "req-persist" }), { status: 200 }))
+    .mockRejectedValueOnce(new TypeError("fetch failed"));
+  globalThis.fetch = fetchMock as typeof fetch;
+  const provider = new FalProvider({ apiKey: () => "fal-test-key-with-enough-length" });
+  let remoteTask: { requestId: string } | undefined;
+  await expect(provider.generateImageWithTask({ prompt: "保存远程编号", size: "1024x1024", onRemoteTask: (task) => { remoteTask = task; } })).rejects.toBeInstanceOf(FalRemoteTaskError);
+  expect(remoteTask).toMatchObject({ requestId: "req-persist" });
 });

@@ -15,6 +15,7 @@ import {
   compilePrompt,
   compileShotContract,
 } from "./services/creation/prompt-compiler";
+import { imageSizeForAspectRatio } from "../src/shared/types";
 import type {
   Asset,
   CreativeCard,
@@ -26,7 +27,7 @@ import type {
 import { SettingsRepository } from "./services/settings/repository";
 import { OpenAIProvider } from "./services/providers/openai-provider";
 import { FluxProvider } from "./services/providers/flux-provider";
-import { FalProvider } from "./services/providers/fal-provider";
+import { FalProvider, FalRemoteTaskError, type FalRemoteTask } from "./services/providers/fal-provider";
 import { GeminiProvider } from "./services/providers/gemini-provider";
 import { DeepSeekProvider } from "./services/providers/deepseek-provider";
 import { GenerationBatchRepository } from "./services/batches/repository";
@@ -57,6 +58,14 @@ type SecretCipher = {
 const isNetworkOutcomeUnknown = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : String(error);
   return /网络请求失败|请求超时|响应内容读取超时|fetch failed|未能连接服务/i.test(message);
+};
+
+const remoteTaskFromJob = (job: import("../src/shared/types").StudioJob): FalRemoteTask | undefined => {
+  const value = job.result?.remoteTask;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const task = value as Record<string, unknown>;
+  if (typeof task.requestId !== "string" || typeof task.statusUrl !== "string" || typeof task.responseUrl !== "string" || typeof task.model !== "string") return undefined;
+  return { requestId: task.requestId, statusUrl: task.statusUrl, responseUrl: task.responseUrl, model: task.model };
 };
 
 const absolutePath = (value: unknown, label: string): string => {
@@ -154,6 +163,28 @@ export const createStudioRuntime = (
     if (!provider)
       throw new Error(`模型 ${providerId} 尚未安装图片生成适配器。`);
     return provider.generateImage(input);
+  };
+  const generateWithResult = async (
+    providerId: ProviderId,
+    input: { prompt: string; size: "1024x1024" | "1024x1536" | "1536x1024"; quality?: "medium" | "high"; onRemoteTask?: (task: FalRemoteTask) => void },
+  ): Promise<{ image: Buffer; remoteTask?: FalRemoteTask }> => {
+    if (providerId === "fal") {
+      const result = await fal.generateImageWithTask(input);
+      return { image: result.image, remoteTask: result.remoteTask };
+    }
+    return { image: await generateWith(providerId, input) };
+  };
+  const refineWithResult = async (
+    providerId: ProviderId,
+    input: { prompt: string; size: "1024x1024" | "1024x1536" | "1536x1024"; referencePath: string; referenceMediaType: string; onRemoteTask?: (task: FalRemoteTask) => void },
+  ): Promise<{ image: Buffer; remoteTask?: FalRemoteTask }> => {
+    if (providerId === "fal") {
+      const result = await fal.refineImageWithTask(input);
+      return { image: result.image, remoteTask: result.remoteTask };
+    }
+    const provider = imageEditProviders[providerId];
+    if (!provider) throw new Error(`模型 ${providerId} 尚未安装图片修订适配器。`);
+    return { image: await provider.refineImage(input) };
   };
   const videoProviderFor = (providerId: ProviderId) => {
     const provider = videoProviders[providerId];
@@ -572,6 +603,7 @@ export const createStudioRuntime = (
             projectId?: string;
             creativeTaskId?: string;
             aspectRatio: CreativeCard["aspectRatio"];
+            referenceAssetIds?: string[];
             variants: Array<{ label: string; prompt: string }>;
           },
         ) => {
@@ -579,7 +611,11 @@ export const createStudioRuntime = (
             throw new Error("批量任务需要名称和至少一个变体。");
           if (input.creativeTaskId && !tasks.get(input.creativeTaskId))
             throw new Error("关联的创作任务不存在，无法建立候选批次。");
+          const referenceAssetIds = [...new Set(input.referenceAssetIds ?? [])];
+          const references = referenceAssetIds.map((id) => referenceForGeneration(id, input.projectId));
           const providerId = routeFor("image");
+          if (references.length && !imageEditProviders[providerId])
+            throw new Error("当前图片模型不支持批量参考图编辑，请切换到可用的修图模型。");
           const perImageCost = providerId === "fal"
             ? (input.aspectRatio === "1:1" ? 0.003 : 0.006)
             : providerId === "flux" ? 0.04 : undefined;
@@ -597,6 +633,7 @@ export const createStudioRuntime = (
             );
           return batches.create({
             ...input,
+            referenceAssetIds,
             name: input.name.trim(),
             providerId,
             estimatedCostUsd,
@@ -614,12 +651,8 @@ export const createStudioRuntime = (
         try {
           if (batch.creativeTaskId)
             tasks.update(batch.creativeTaskId, { status: "producing" });
-          const size =
-            batch.aspectRatio === "1:1"
-              ? "1024x1024"
-              : batch.aspectRatio === "16:9" || batch.aspectRatio === "3:2" || batch.aspectRatio === "4:3"
-                ? "1536x1024"
-                : "1024x1536";
+          const size = imageSizeForAspectRatio(batch.aspectRatio);
+          const references = batch.referenceAssetIds.map((id) => referenceForGeneration(id, batch.projectId));
           for (const item of batch.variants.filter(
             (variant) => variant.status === "planned",
           )) {
@@ -629,25 +662,25 @@ export const createStudioRuntime = (
                 projectId: batch.projectId ?? libraryProject.id,
                 kind: "image_generation",
                 providerId: batch.providerId,
-                request: { prompt: item.prompt, size, batchId, variantId: item.id },
+                request: { prompt: item.prompt, size, requestedAspectRatio: batch.aspectRatio, actualAspectRatio: size === "1024x1024" ? "1:1" : size === "1024x1536" ? "2:3" : "3:2", referenceAssetIds: batch.referenceAssetIds, appliedReferenceAssetIds: references.length ? [references[0].id] : [], batchId, variantId: item.id },
               });
               jobs.update(job.id, { status: "in_progress" });
               // 先落盘关联，再调用服务；进程中断后不会把可能已付费的变体伪装成 planned。
               batches.updateVariant(item.id, { status: "planned", jobId: job.id });
-              const image = await generateWith(batch.providerId, {
-                prompt: item.prompt,
-                size,
-              });
-              const asset = writeGeneratedAsset(image, {
+              const generated = references.length
+                ? await refineWithResult(batch.providerId, { prompt: `${item.prompt}\n参考图仅用于保持人物身份和服装连续性。`, size, referencePath: references[0].managedPath, referenceMediaType: references[0].mediaType, onRemoteTask: (remoteTask) => jobs.update(job!.id, { status: "in_progress", result: { remoteTask, requestedAspectRatio: batch.aspectRatio, actualSize: size, batchId, variantId: item.id } }) })
+                : await generateWithResult(batch.providerId, { prompt: item.prompt, size, onRemoteTask: (remoteTask) => jobs.update(job!.id, { status: "in_progress", result: { remoteTask, requestedAspectRatio: batch.aspectRatio, actualSize: size, batchId, variantId: item.id } }) });
+              const asset = writeGeneratedAsset(generated.image, {
                 type: "image",
                 mediaType: "image/png",
                 extension: ".png",
                 jobId: job.id,
                 projectId: batch.projectId,
+                sourceAssetIds: references.length ? [references[0].id] : [],
               });
               jobs.update(job.id, {
                 status: "completed",
-                result: { assetId: asset.id, batchId, variantId: item.id },
+                result: { assetId: asset.id, remoteTask: generated.remoteTask, requestedAspectRatio: batch.aspectRatio, actualSize: size, batchId, variantId: item.id },
                 error: null,
               });
               batches.updateVariant(item.id, {
@@ -660,8 +693,10 @@ export const createStudioRuntime = (
               failed = true;
               const message = error instanceof Error ? error.message : "批量出图失败。";
               if (job) {
+                const remoteTask = error instanceof FalRemoteTaskError ? error.remoteTask : undefined;
                 jobs.update(job.id, {
-                  status: isNetworkOutcomeUnknown(error) ? "unknown" : "failed",
+                  status: remoteTask || isNetworkOutcomeUnknown(error) ? "unknown" : "failed",
+                  ...(remoteTask ? { result: { remoteTask, requestedAspectRatio: batch.aspectRatio, actualSize: size, batchId, variantId: item.id } } : {}),
                   error: message,
                 });
                 batches.updateVariant(item.id, {
@@ -884,19 +919,16 @@ export const createStudioRuntime = (
           _event,
           input: {
             prompt: string;
+            negative?: string;
             projectId?: string;
             creativeTaskId?: string;
+            retryOfJobId?: string;
             aspectRatio: CreativeCard["aspectRatio"];
             referenceAssetIds?: string[];
             qualityTier?: "draft" | "standard" | "premium";
           },
         ) => {
-          const size =
-            input.aspectRatio === "1:1"
-              ? "1024x1024"
-              : input.aspectRatio === "16:9" || input.aspectRatio === "3:2" || input.aspectRatio === "4:3"
-                ? "1536x1024"
-                : "1024x1536";
+          const size = imageSizeForAspectRatio(input.aspectRatio);
           if (input.referenceAssetIds !== undefined && !Array.isArray(input.referenceAssetIds))
             throw new Error("参考素材列表格式不正确。");
           const referenceAssetIds = [...new Set(input.referenceAssetIds ?? [])];
@@ -915,29 +947,35 @@ export const createStudioRuntime = (
             providerId,
             request: {
               prompt: input.prompt,
+              negative: input.negative ?? "",
               size,
+              requestedAspectRatio: input.aspectRatio,
+              actualAspectRatio: size === "1024x1024" ? "1:1" : size === "1024x1536" ? "2:3" : "3:2",
               referenceAssetIds,
               appliedReferenceAssetIds: references.length ? [references[0].id] : [],
               qualityTier: input.qualityTier ?? "premium",
               creativeTaskId: input.creativeTaskId,
+              retryOfJobId: input.retryOfJobId,
             },
           });
           jobs.update(job.id, { status: "in_progress" });
           try {
-            const image =
+            const generated =
               references.length
-                ? await imageEditProviders[providerId]!.refineImage({
-                    prompt: `${input.prompt}\n参考图仅用于保持人物、服装和构图连续性；只按文字要求变化。`,
+                ? await refineWithResult(providerId, {
+                    prompt: `${input.prompt}${input.negative ? `\n避免：${input.negative}` : ""}\n参考图仅用于保持人物、服装和构图连续性；只按文字要求变化。`,
                     size,
                     referencePath: references[0].managedPath,
                     referenceMediaType: references[0].mediaType,
+                    onRemoteTask: (remoteTask) => jobs.update(job.id, { status: "in_progress", result: { remoteTask, requestedAspectRatio: input.aspectRatio, actualSize: size } }),
                   })
-                : await generateWith(providerId, {
-                    prompt: input.prompt,
+                : await generateWithResult(providerId, {
+                    prompt: `${input.prompt}${input.negative ? `\n避免：${input.negative}` : ""}`,
                     size,
                     quality,
+                    onRemoteTask: (remoteTask) => jobs.update(job.id, { status: "in_progress", result: { remoteTask, requestedAspectRatio: input.aspectRatio, actualSize: size } }),
                   });
-            const asset = writeGeneratedAsset(image, {
+            const asset = writeGeneratedAsset(generated.image, {
               type: "image",
               mediaType: "image/png",
               extension: ".png",
@@ -947,11 +985,13 @@ export const createStudioRuntime = (
             });
             return jobs.update(job.id, {
               status: "completed",
-              result: { assetId: asset.id },
+              result: { assetId: asset.id, remoteTask: generated.remoteTask, requestedAspectRatio: input.aspectRatio, actualSize: size },
             });
           } catch (error) {
+            const remoteTask = error instanceof FalRemoteTaskError ? error.remoteTask : undefined;
             jobs.update(job.id, {
-              status: isNetworkOutcomeUnknown(error) ? "unknown" : "failed",
+              status: remoteTask || isNetworkOutcomeUnknown(error) ? "unknown" : "failed",
+              ...(remoteTask ? { result: { remoteTask, requestedAspectRatio: input.aspectRatio, actualSize: size } } : {}),
               error: error instanceof Error ? error.message : "图片生成失败。",
             });
             throw error;
@@ -965,21 +1005,18 @@ export const createStudioRuntime = (
           input: {
             assetId: string;
             prompt: string;
+            negative?: string;
             projectId?: string;
             aspectRatio: CreativeCard["aspectRatio"];
+            creativeTaskId?: string;
+            retryOfJobId?: string;
           },
         ) => {
           const reference = referenceForGeneration(input.assetId, input.projectId);
           if (!input.prompt.trim()) throw new Error("请描述本次只要优化什么。");
-          const size =
-            input.aspectRatio === "1:1"
-              ? "1024x1024"
-              : input.aspectRatio === "16:9" || input.aspectRatio === "3:2" || input.aspectRatio === "4:3"
-                ? "1536x1024"
-                : "1024x1536";
+          const size = imageSizeForAspectRatio(input.aspectRatio);
           const providerId = routeFor("image_edit");
-          const imageEditProvider = imageEditProviders[providerId];
-          if (!imageEditProvider)
+          if (!imageEditProviders[providerId])
             throw new Error("当前高保真修图模型尚未安装适配器。");
           const job = jobs.create({
             projectId: input.projectId ?? libraryProject.id,
@@ -987,20 +1024,26 @@ export const createStudioRuntime = (
             providerId,
             request: {
               prompt: input.prompt,
+              negative: input.negative ?? "",
               size,
+              requestedAspectRatio: input.aspectRatio,
+              actualAspectRatio: size === "1024x1024" ? "1:1" : size === "1024x1536" ? "2:3" : "3:2",
               referenceAssetId: reference.id,
               mode: "refine",
+              creativeTaskId: input.creativeTaskId,
+              retryOfJobId: input.retryOfJobId,
             },
           });
           jobs.update(job.id, { status: "in_progress" });
           try {
-            const image = await imageEditProvider.refineImage({
-              prompt: input.prompt,
+            const generated = await refineWithResult(providerId, {
+              prompt: `${input.prompt}${input.negative ? `\n避免：${input.negative}` : ""}`,
               size,
               referencePath: reference.managedPath,
               referenceMediaType: reference.mediaType,
+              onRemoteTask: (remoteTask) => jobs.update(job.id, { status: "in_progress", result: { remoteTask, requestedAspectRatio: input.aspectRatio, actualSize: size } }),
             });
-            const asset = writeGeneratedAsset(image, {
+            const asset = writeGeneratedAsset(generated.image, {
               type: "image",
               mediaType: "image/png",
               extension: ".png",
@@ -1010,11 +1053,13 @@ export const createStudioRuntime = (
             });
             return jobs.update(job.id, {
               status: "completed",
-              result: { assetId: asset.id },
+              result: { assetId: asset.id, remoteTask: generated.remoteTask, requestedAspectRatio: input.aspectRatio, actualSize: size },
             });
           } catch (error) {
+            const remoteTask = error instanceof FalRemoteTaskError ? error.remoteTask : undefined;
             jobs.update(job.id, {
-              status: isNetworkOutcomeUnknown(error) ? "unknown" : "failed",
+              status: remoteTask || isNetworkOutcomeUnknown(error) ? "unknown" : "failed",
+              ...(remoteTask ? { result: { remoteTask, requestedAspectRatio: input.aspectRatio, actualSize: size } } : {}),
               error: error instanceof Error ? error.message : "图片修订失败。",
             });
             throw error;
@@ -1082,6 +1127,39 @@ export const createStudioRuntime = (
           }
         },
       );
+      ipcMain.handle("generation:poll-image", async (_event, jobId: string) => {
+        const job = jobs.get(jobId);
+        if (job?.status === "completed" && typeof job.result?.assetId === "string") return job;
+        const remoteTask = job ? remoteTaskFromJob(job) : undefined;
+        if (!job || job.kind !== "image_generation" || job.providerId !== "fal" || !remoteTask)
+          throw new Error("图片任务不存在或尚未获得可查询的远程编号。");
+        try {
+          const image = await fal.pollImage(remoteTask);
+          const referenceIds = Array.isArray(job.request.referenceAssetIds)
+            ? job.request.referenceAssetIds.filter((value): value is string => typeof value === "string")
+            : typeof job.request.referenceAssetId === "string" ? [job.request.referenceAssetId] : [];
+          const asset = writeGeneratedAsset(image, {
+            type: "image",
+            mediaType: "image/png",
+            extension: ".png",
+            jobId: job.id,
+            projectId: job.projectId,
+            sourceAssetIds: referenceIds.length ? [referenceIds[0]] : [],
+          });
+          return jobs.update(job.id, {
+            status: "completed",
+            result: { ...(job.result ?? {}), remoteTask, assetId: asset.id },
+            error: null,
+          });
+        } catch (error) {
+          const nextRemoteTask = error instanceof FalRemoteTaskError ? error.remoteTask : remoteTask;
+          return jobs.update(job.id, {
+            status: error instanceof FalRemoteTaskError ? "unknown" : "failed",
+            result: { ...(job.result ?? {}), remoteTask: nextRemoteTask },
+            error: error instanceof Error ? error.message : "图片状态查询失败。",
+          });
+        }
+      });
       ipcMain.handle("generation:poll-video", async (_event, jobId: string) => {
         const job = jobs.get(jobId);
         if (job?.status === "completed" && typeof job.result?.assetId === "string")

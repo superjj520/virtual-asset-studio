@@ -47,6 +47,17 @@ it('应用重启时有远程编号的视频进入未知状态而不是盲目重�
   expect(jobs.get(created.id)).toMatchObject({ status: 'unknown', result: { remoteId: 'remote-after-restart' } });
 });
 
+it('应用重启时有远程编号的图片继续保持未知状态，不创建新的排队请求', () => {
+  const database = new StudioDatabase(join(mkdtempSync(join(tmpdir(), 'vas-job-')), 'studio.sqlite'));
+  databases.push(database);
+  const jobs = new JobRepository(database);
+  const project = new ProjectRepository(database).getOrCreateLibraryProject();
+  const created = jobs.create({ projectId: project.id, kind: 'image_generation', providerId: 'fal', status: 'in_progress', request: { prompt: '重启恢复图片' } });
+  jobs.update(created.id, { status: 'in_progress', result: { remoteTask: { requestId: 'image-remote-1', statusUrl: 'https://fal/status', responseUrl: 'https://fal/result', model: 'fal-ai/flux/schnell' } } });
+  expect(jobs.recoverInterrupted()).toBe(1);
+  expect(jobs.get(created.id)).toMatchObject({ status: 'unknown', result: { remoteTask: { requestId: 'image-remote-1' } } });
+});
+
 it('提交中的视频作业不会以 queued 假装等待，重启时进入未知状态', () => {
   const database = new StudioDatabase(join(mkdtempSync(join(tmpdir(), 'vas-job-')), 'studio.sqlite'));
   databases.push(database);

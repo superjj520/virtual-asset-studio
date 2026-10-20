@@ -39,11 +39,13 @@ export class JobRepository {
       .run(now).changes;
     const videoUnknown = this.db.database.prepare("UPDATE jobs SET status = 'unknown', error = '应用关闭时视频任务已有远程编号，状态未核实；请查询远程状态，不要重新提交。', updated_at = ? WHERE status = 'in_progress' AND kind = 'image_to_video' AND json_extract(result_json, '$.remoteId') IS NOT NULL")
       .run(now).changes;
-    const recoverable = this.db.database.prepare("UPDATE jobs SET status = 'queued', error = '应用关闭前任务中断，可由用户确认后重试。', retry_count = retry_count + 1, updated_at = ? WHERE status = 'in_progress' AND kind != 'image_to_video'")
+    const imageUnknown = this.db.database.prepare("UPDATE jobs SET status = 'unknown', error = '应用关闭时图片任务已有远程编号；请继续查询原任务，不要重新提交。', updated_at = ? WHERE status = 'in_progress' AND kind = 'image_generation' AND json_extract(result_json, '$.remoteTask.requestId') IS NOT NULL")
+      .run(now).changes;
+    const recoverable = this.db.database.prepare("UPDATE jobs SET status = 'queued', error = '应用关闭前任务中断，可由用户确认后重试。', retry_count = retry_count + 1, updated_at = ? WHERE status = 'in_progress' AND kind != 'image_to_video' AND NOT (kind = 'image_generation' AND json_extract(result_json, '$.remoteTask.requestId') IS NOT NULL)")
       .run(now).changes;
     const videoWithoutRemoteId = this.db.database.prepare("UPDATE jobs SET status = 'unknown', error = '视频提交阶段中断，无法确认服务端是否已接收；禁止盲目重试。', updated_at = ? WHERE status = 'in_progress' AND kind = 'image_to_video' AND json_extract(result_json, '$.remoteId') IS NULL")
       .run(now).changes;
-    return queuedVideo + videoUnknown + recoverable + videoWithoutRemoteId;
+    return queuedVideo + videoUnknown + imageUnknown + recoverable + videoWithoutRemoteId;
   }
 
   update(id: string, patch: { status: JobStatus; result?: Record<string, unknown> | null; error?: string | null }): StudioJob {

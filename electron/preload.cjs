@@ -119,6 +119,7 @@ contextBridge.exposeInMainWorld("studio", {
     refineImage: (input) =>
       ipcRenderer.invoke("generation:refine-image", input),
     video: (input) => ipcRenderer.invoke("generation:video", input),
+    pollImage: (jobId) => ipcRenderer.invoke("generation:poll-image", jobId),
     pollVideo: (jobId) => ipcRenderer.invoke("generation:poll-video", jobId),
     jobs: (projectId) => ipcRenderer.invoke("jobs:list", projectId),
   },

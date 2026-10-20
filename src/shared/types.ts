@@ -180,6 +180,18 @@ export const normalizeCreativeAspectRatio = (value: unknown): CreativeAspectRati
   return "1:1";
 };
 
+export type ImageGenerationSize = "1024x1024" | "1024x1536" | "1536x1024";
+
+/** 当前图片适配器统一支持的尺寸；请求仍保留用户选择的目标画幅，便于后续裁切或换模型。 */
+export const imageSizeForAspectRatio = (aspectRatio: CreativeAspectRatio): ImageGenerationSize => {
+  if (aspectRatio === "1:1") return "1024x1024";
+  if (aspectRatio === "2:3" || aspectRatio === "9:16") return "1024x1536";
+  return "1536x1024";
+};
+
+export const aspectRatioForImageSize = (size: ImageGenerationSize): "1:1" | "2:3" | "3:2" =>
+  size === "1024x1024" ? "1:1" : size === "1024x1536" ? "2:3" : "3:2";
+
 export type CreativeCard = {
   projectId?: string;
   intent: string;
@@ -342,6 +354,8 @@ export type GenerationBatch = {
   name: string;
   providerId: ProviderId;
   aspectRatio: CreativeCard["aspectRatio"];
+  /** 批量候选继承的参考链，所有变体都必须使用同一组身份锚点。 */
+  referenceAssetIds: string[];
   estimatedCostUsd?: number;
   status: GenerationBatchStatus;
   variants: GenerationVariant[];

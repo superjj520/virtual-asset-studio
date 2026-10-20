@@ -3,7 +3,7 @@ import { AdaptiveDomainNavigation } from "./ui-adapters/AdaptiveDomainNavigation
 import { CharacterInspector } from "./character/CharacterInspector";
 import { composeCharacterCard, evaluateCharacterCoverage, type CharacterUseCase, type CharacterVariantSelection } from "./shared/character-slots";
 import { collectUsableReferenceAssetIds, getAssetCollectionBlueprint } from "./shared/asset-collection-blueprints";
-import { CREATIVE_ASPECT_RATIOS, normalizeCreativeAspectRatio } from "./shared/types";
+import { CREATIVE_ASPECT_RATIOS, normalizeCreativeAspectRatio, aspectRatioForImageSize } from "./shared/types";
 import type {
   Asset,
   AssetCollection,
@@ -598,6 +598,9 @@ export default function App() {
     );
     const updatedJobs = await Promise.all(
       currentJobs.map(async (job) => {
+        if (job.kind === "image_generation" && ["in_progress", "unknown"].includes(job.status) && typeof job.result?.remoteTask === "object" && window.studio.generation.pollImage) {
+          try { return await window.studio.generation.pollImage(job.id); } catch { return job; }
+        }
         if (job.kind !== "image_to_video" || !["in_progress", "unknown"].includes(job.status) || typeof job.result?.remoteId !== "string")
           return job;
         try {
@@ -616,7 +619,8 @@ export default function App() {
           ? "review" as const
           : undefined;
       const task = creativeTasks.find((item) => item.id === taskId);
-      return targetStatus && task && task.status !== targetStatus ? [{ taskId, targetStatus, task }] : [];
+      const terminal = task?.status === "completed" || task?.status === "archived";
+      return targetStatus && task && task.status !== targetStatus && !terminal ? [{ taskId, targetStatus, task }] : [];
     });
     if (taskStateUpdates.length) {
       const synced = await Promise.all(taskStateUpdates.map(async ({ taskId, targetStatus, task }) => {
@@ -636,19 +640,28 @@ export default function App() {
     setJobs(updatedJobs);
   }, [creativeTasks, selectedProjectId]);
   const retryJob = useCallback(async (job: StudioJob) => {
-    if (job.status !== "failed") return;
+    if (!["failed", "unknown"].includes(job.status)) return;
     try {
+      if (job.kind === "image_generation" && typeof job.result?.remoteTask === "object" && window.studio.generation.pollImage) {
+        await window.studio.generation.pollImage(job.id);
+        setNotice("已继续查询原图片任务，没有重复提交生成请求。");
+        await refreshJobs();
+        return;
+      }
       if (job.kind === "vision_analysis" && typeof job.request.assetId === "string") {
         await window.studio.vision.analyze(job.request.assetId);
       } else if (job.kind === "image_generation" && typeof job.request.prompt === "string") {
         const size = typeof job.request.size === "string" ? job.request.size : "1024x1024";
-        const aspectRatio = size === "1024x1536" ? "2:3" : size === "1536x1024" ? "16:9" : "1:1";
+        const aspectRatio = aspectRatioForImageSize(size as "1024x1024" | "1024x1536" | "1536x1024");
         if (job.request.mode === "refine" && typeof job.request.referenceAssetId === "string") {
-          await window.studio.generation.refineImage({ assetId: job.request.referenceAssetId, prompt: job.request.prompt, projectId: job.projectId, aspectRatio });
+          await window.studio.generation.refineImage({ assetId: job.request.referenceAssetId, prompt: job.request.prompt, negative: typeof job.request.negative === "string" ? job.request.negative : undefined, projectId: job.projectId, creativeTaskId: typeof job.request.creativeTaskId === "string" ? job.request.creativeTaskId : undefined, retryOfJobId: job.id, aspectRatio });
         } else {
           await window.studio.generation.image({
             prompt: job.request.prompt,
+            negative: typeof job.request.negative === "string" ? job.request.negative : undefined,
             projectId: job.projectId,
+            creativeTaskId: typeof job.request.creativeTaskId === "string" ? job.request.creativeTaskId : undefined,
+            retryOfJobId: job.id,
             aspectRatio,
             referenceAssetIds: Array.isArray(job.request.referenceAssetIds) ? job.request.referenceAssetIds.filter((item): item is string => typeof item === "string") : [],
             qualityTier: job.request.qualityTier === "draft" || job.request.qualityTier === "standard" || job.request.qualityTier === "premium" ? job.request.qualityTier : "standard",
@@ -1131,6 +1144,7 @@ export default function App() {
       const prompt = translation?.positive ?? promptBuild.positive;
       const job = await window.studio.generation.image({
         prompt,
+        negative: translation?.negative ?? promptBuild.negative,
         projectId: selectedProjectId || undefined,
         creativeTaskId: activeTaskId || undefined,
         aspectRatio: normalizedCard.aspectRatio,
@@ -1265,9 +1279,10 @@ export default function App() {
         projectId: selectedProjectId || undefined,
         creativeTaskId: activeTaskId,
         aspectRatio: card.aspectRatio,
+        referenceAssetIds: card.referenceAssetIds,
         variants: variables.map((scene, index) => ({
           label: `变体 ${index + 1}：${scene}`,
-          prompt: `${promptBuild.positive}\n本轮唯一变化：场景为${scene}。其余人物身份、服装、构图与限制保持不变。`,
+          prompt: `${promptBuild.positive}${promptBuild.negative ? `\n避免：${promptBuild.negative}` : ""}\n本轮唯一变化：场景为${scene}。其余人物身份、服装、构图与限制保持不变。`,
         })),
       });
       setBatches((current) => [batch, ...current]);

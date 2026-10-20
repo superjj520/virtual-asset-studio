@@ -130,6 +130,7 @@ interface Window {
         projectId?: string;
         creativeTaskId?: string;
         aspectRatio: import("./shared/types").CreativeCard["aspectRatio"];
+        referenceAssetIds?: string[];
         variants: Array<{ label: string; prompt: string }>;
       }) => Promise<import("./shared/types").GenerationBatch>;
       list: (
@@ -209,8 +210,10 @@ interface Window {
     generation: {
       image: (input: {
         prompt: string;
+        negative?: string;
         projectId?: string;
         creativeTaskId?: string;
+        retryOfJobId?: string;
         aspectRatio: import("./shared/types").CreativeCard["aspectRatio"];
         referenceAssetIds?: string[];
         qualityTier?: import("./shared/types").GenerationQualityTier;
@@ -218,7 +221,10 @@ interface Window {
       refineImage: (input: {
         assetId: string;
         prompt: string;
+        negative?: string;
         projectId?: string;
+        creativeTaskId?: string;
+        retryOfJobId?: string;
         aspectRatio: import("./shared/types").CreativeCard["aspectRatio"];
       }) => Promise<import("./shared/types").StudioJob>;
       video: (input: {
@@ -229,6 +235,7 @@ interface Window {
         seconds: 4 | 8 | 12;
       }) => Promise<import("./shared/types").StudioJob>;
       pollVideo: (jobId: string) => Promise<import("./shared/types").StudioJob>;
+      pollImage?: (jobId: string) => Promise<import("./shared/types").StudioJob>;
       jobs: (
         projectId?: string,
       ) => Promise<import("./shared/types").StudioJob[]>;

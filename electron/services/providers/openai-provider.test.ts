@@ -42,3 +42,17 @@ it('图生视频把起始帧、时长与尺寸一同提交给视频接口', asyn
   expect(form.get('size')).toBe('720x1280');
   expect(form.get('input_reference')).toBeInstanceOf(Blob);
 });
+
+it('视觉理解读取 Responses API 的 output 内容数组，不依赖 SDK 聚合字段', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'studio-provider-vision-'));
+  const referencePath = join(directory, 'reference.png');
+  writeFileSync(referencePath, Buffer.from([137, 80, 78, 71]));
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+    output: [{ content: [{ type: 'output_text', text: '{"subject":"成年女性","editablePrompt":"人物肖像"}' }] }],
+  }), { status: 200 }));
+  globalThis.fetch = fetchMock as typeof fetch;
+  const provider = new OpenAIProvider({ apiKey: () => 'sk-test-key-with-enough-length' });
+  const report = await provider.analyzeImage({ filePath: referencePath, mediaType: 'image/png' });
+  expect(report.subject).toBe('成年女性');
+  expect(report.editablePrompt).toBe('人物肖像');
+});
