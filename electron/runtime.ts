@@ -1,0 +1,1145 @@
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
+import type { IpcMain } from "electron";
+import { StudioDatabase } from "./db/client";
+import { AssetRepository } from "./services/assets/repository";
+import { ManagedStore } from "./services/files/managed-store";
+import {
+  ImportService,
+  type ImportAssetInput,
+} from "./services/import/import-service";
+import { ProjectRepository } from "./services/projects/repository";
+import { LearningPatternRepository } from "./services/learning/repository";
+import { extractPromptPattern } from "./services/learning/prompt-learning";
+import {
+  compilePrompt,
+  compileShotContract,
+} from "./services/creation/prompt-compiler";
+import type {
+  Asset,
+  CreativeCard,
+  ProviderCapability,
+  ProviderId,
+  ProviderStatus,
+  ShotContract,
+} from "../src/shared/types";
+import { SettingsRepository } from "./services/settings/repository";
+import { OpenAIProvider } from "./services/providers/openai-provider";
+import { FluxProvider } from "./services/providers/flux-provider";
+import { FalProvider } from "./services/providers/fal-provider";
+import { GeminiProvider } from "./services/providers/gemini-provider";
+import { DeepSeekProvider } from "./services/providers/deepseek-provider";
+import { GenerationBatchRepository } from "./services/batches/repository";
+import { JobRepository } from "./services/jobs/repository";
+import { hashBuffer } from "./services/files/hash";
+import { exportProject } from "./services/export/project-exporter";
+import { RelationshipRepository } from "./services/relationships/repository";
+import { ShotPlanRepository } from "./services/shots/repository";
+import { CharacterProfileRepository } from "./services/characters/repository";
+import { PromptSourceRepository } from "./services/learning/source-repository";
+import { importGitHubPromptSource } from "./services/learning/github-source-importer";
+import { importWebPromptSource } from "./services/learning/web-source-importer";
+import { PromptEntryRepository } from "./services/learning/prompt-entry-repository";
+import { VisualParadigmRepository } from "./services/paradigms/repository";
+import { buildReversePrompt } from "./services/understanding/reverse-prompt";
+import { CreativeRecipeRepository } from "./services/recipes/repository";
+import { CreativeTaskRepository } from "./services/tasks/repository";
+import { AssetCollectionRepository } from "./services/collections/repository";
+import { CharacterAssetPackImporter } from "./services/import/character-pack-importer";
+import { BackupService } from "./services/backup/backup-service";
+
+type SecretCipher = {
+  isAvailable: () => boolean;
+  encrypt: (value: string) => string;
+  decrypt: (value: string) => string;
+};
+
+const isNetworkOutcomeUnknown = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  return /网络请求失败|请求超时|响应内容读取超时|fetch failed|未能连接服务/i.test(message);
+};
+
+const absolutePath = (value: unknown, label: string): string => {
+  if (typeof value !== "string" || !value.trim() || value.includes("\0") || !isAbsolute(value))
+    throw new Error(`${label}必须是绝对路径。`);
+  return value;
+};
+
+export const createStudioRuntime = (
+  userDataDirectory: string,
+  cipher?: SecretCipher,
+) => {
+  mkdirSync(userDataDirectory, { recursive: true });
+  const database = new StudioDatabase(
+    join(userDataDirectory, "virtual-asset-studio.sqlite"),
+  );
+  const assets = new AssetRepository(database);
+  const projects = new ProjectRepository(database);
+  const learning = new LearningPatternRepository(database);
+  const store = new ManagedStore(join(userDataDirectory, "managed-assets"));
+  const importer = new ImportService(assets, store);
+  const settings = new SettingsRepository(database);
+  const jobs = new JobRepository(database);
+  const relationships = new RelationshipRepository(database);
+  const shots = new ShotPlanRepository(database);
+  const characters = new CharacterProfileRepository(database);
+  const batches = new GenerationBatchRepository(database);
+  const promptSources = new PromptSourceRepository(database);
+  const promptEntries = new PromptEntryRepository(database);
+  const paradigms = new VisualParadigmRepository(database);
+  const recipes = new CreativeRecipeRepository(database);
+  const tasks = new CreativeTaskRepository(database);
+  const collections = new AssetCollectionRepository(database);
+  const characterPackImporter = new CharacterAssetPackImporter(importer, characters, collections, projects);
+  const backupService = new BackupService(join(userDataDirectory, "virtual-asset-studio.sqlite"), join(userDataDirectory, "managed-assets"));
+  const libraryProject = projects.getOrCreateLibraryProject();
+  let databaseClosedForRestore = false;
+  jobs.recoverInterrupted();
+  batches.recoverInterrupted();
+  const apiKeyFor = (providerId: ProviderId) => {
+    const encrypted = settings.get(`${providerId}_api_key`);
+    if (!encrypted || !cipher?.isAvailable()) return undefined;
+    try {
+      return cipher.decrypt(encrypted);
+    } catch {
+      return undefined;
+    }
+  };
+  const openai = new OpenAIProvider({ apiKey: () => apiKeyFor("openai") });
+  const flux = new FluxProvider({ apiKey: () => apiKeyFor("flux") });
+  const fal = new FalProvider({ apiKey: () => apiKeyFor("fal") });
+  const gemini = new GeminiProvider({ apiKey: () => apiKeyFor("gemini") });
+  const deepseek = new DeepSeekProvider({
+    apiKey: () => apiKeyFor("deepseek"),
+  });
+  const imageProviders: Partial<
+    Record<
+      ProviderId,
+      {
+        generateImage: (input: {
+          prompt: string;
+          size: "1024x1024" | "1024x1536" | "1536x1024";
+          quality?: "medium" | "high";
+        }) => Promise<Buffer>;
+      }
+    >
+  > = { openai, flux, fal, gemini };
+  const imageEditProviders: Partial<Record<ProviderId, {
+    refineImage: (input: {
+      prompt: string;
+      size: "1024x1024" | "1024x1536" | "1536x1024";
+      referencePath: string;
+      referenceMediaType: string;
+    }) => Promise<Buffer>;
+  }>> = { openai, fal, gemini };
+  const videoProviders: Partial<
+    Record<
+      ProviderId,
+      {
+        createVideo: OpenAIProvider["createVideo"];
+        getVideo: OpenAIProvider["getVideo"];
+        downloadVideo: OpenAIProvider["downloadVideo"];
+      }
+    >
+  > = { openai };
+  const generateWith = (
+    providerId: ProviderId,
+    input: {
+      prompt: string;
+      size: "1024x1024" | "1024x1536" | "1536x1024";
+      quality?: "medium" | "high";
+    },
+  ) => {
+    const provider = imageProviders[providerId];
+    if (!provider)
+      throw new Error(`模型 ${providerId} 尚未安装图片生成适配器。`);
+    return provider.generateImage(input);
+  };
+  const videoProviderFor = (providerId: ProviderId) => {
+    const provider = videoProviders[providerId];
+    if (!provider) throw new Error(`模型 ${providerId} 尚未安装视频适配器。`);
+    return provider;
+  };
+  const providerConnections = () => [
+      {
+        id: "openai",
+        configured: openai.isConfigured(),
+        capabilities: ["vision", "image", "image_edit", "video"],
+      },
+      { id: "flux", configured: flux.isConfigured(), capabilities: ["image"] },
+      { id: "fal", configured: fal.isConfigured(), capabilities: ["image", "image_edit"] },
+      { id: "gemini", configured: gemini.isConfigured(), capabilities: ["image", "image_edit"] },
+      {
+        id: "deepseek",
+        configured: deepseek.isConfigured(),
+        capabilities: ["text"],
+      },
+    ] satisfies ProviderStatus["providers"];
+  const defaultRouteFor = (
+    capability: ProviderCapability,
+    providers: ProviderStatus["providers"],
+  ): ProviderId | undefined => {
+    const priorities: Record<ProviderCapability, ProviderId[]> = {
+      text: ["deepseek", "gemini", "openai"],
+      vision: ["openai"],
+      image: ["fal", "gemini", "openai", "flux"],
+      image_edit: ["fal", "gemini", "openai"],
+      video: ["openai"],
+    };
+    const compatible = (providerId: ProviderId) => providers.find(
+      (provider) => provider.id === providerId && provider.capabilities.includes(capability),
+    );
+    return priorities[capability].find((providerId) => compatible(providerId)?.configured)
+      ?? priorities[capability].find((providerId) => compatible(providerId))
+      ?? undefined;
+  };
+  const providerStatus = (): ProviderStatus => {
+    const providers = providerConnections();
+    const routes = (Object.keys({ text: true, vision: true, image: true, image_edit: true, video: true }) as ProviderCapability[])
+      .reduce<ProviderStatus["routes"]>((result, capability) => {
+        result[capability] = (settings.get(`route_${capability}`) as ProviderId | undefined)
+          ?? defaultRouteFor(capability, providers);
+        return result;
+      }, {});
+    return {
+      providers,
+      routes,
+      network: process.env.NODE_USE_ENV_PROXY === "1" && (process.env.HTTPS_PROXY || process.env.HTTP_PROXY)
+        ? "system_proxy"
+        : "direct",
+    };
+  };
+  const routeFor = (capability: ProviderCapability): ProviderId => {
+    const configured = providerStatus();
+    const providerId = configured.routes[capability];
+    const connection = configured.providers.find(
+      (item) => item.id === providerId,
+    );
+    if (
+      !providerId ||
+      !connection?.configured ||
+      !connection.capabilities.includes(capability)
+    ) {
+      throw new Error(
+        `“${capability}”尚未配置可用模型。请在模型连接页保存密钥并选择路由。`,
+      );
+    }
+    return providerId;
+  };
+  const budgetStatus = () => {
+    const monthlyBudgetUsd =
+      Number(settings.get("monthly_budget_usd")) || undefined;
+    const plannedSpendUsd = batches.plannedSpendSince(
+      new Date(
+        new Date().getFullYear(),
+        new Date().getMonth(),
+        1,
+      ).toISOString(),
+    );
+    return {
+      monthlyBudgetUsd,
+      plannedSpendUsd,
+      remainingUsd:
+        monthlyBudgetUsd === undefined
+          ? undefined
+          : Number(Math.max(0, monthlyBudgetUsd - plannedSpendUsd).toFixed(2)),
+    };
+  };
+
+  const referenceForGeneration = (assetId: string, projectId?: string): Asset => {
+    if (typeof assetId !== "string" || !assetId.trim())
+      throw new Error("参考素材编号无效。");
+    const asset = assets.findById(assetId);
+    if (!asset) throw new Error("参考素材不存在，请重新选择。");
+    if (!asset.mediaType.startsWith("image/"))
+      throw new Error("参考素材必须是图片。");
+    if (!existsSync(asset.managedPath))
+      throw new Error("参考素材文件不存在，请重新导入。");
+    if (asset.confirmation !== "confirmed")
+      throw new Error("参考素材尚未确认，不能用于生产。");
+    if (asset.rightsStatus !== "original" && asset.rightsStatus !== "authorized")
+      throw new Error("参考素材权利状态未获确认，不能用于生产。");
+    const assignments = database.database.prepare(
+      "SELECT project_id FROM project_assets WHERE asset_id = ?",
+    ).all(asset.id) as Array<{ project_id: string }>;
+    const isLibrary = !projectId || projectId === libraryProject.id;
+    if (isLibrary) {
+      if (assignments.some((assignment) => assignment.project_id !== libraryProject.id))
+        throw new Error("参考素材归属于其他项目，请先切换项目或明确归档关系。");
+    } else if (!assignments.some((assignment) => assignment.project_id === projectId)) {
+      throw new Error("参考素材未关联当前项目，请先在项目中归档。");
+    }
+    return asset;
+  };
+
+  const writeGeneratedAsset = (
+    value: Buffer,
+    input: {
+      type: "image" | "video";
+      mediaType: string;
+      extension: string;
+      jobId: string;
+      projectId?: string;
+      sourceAssetIds?: string[];
+    },
+  ) => {
+    const sha256 = hashBuffer(value);
+    if (assets.findByHash(sha256))
+      throw new Error("生成内容与已有资产重复，未创建新候选；请到现有资产复核来源和权利。");
+    const managedPath = store.writeGenerated(value, sha256, input.extension);
+    const sourceAssetIds = [
+      ...new Set((input.sourceAssetIds ?? []).filter(Boolean)),
+    ];
+    const result = assets.createOrGet({
+      type: input.type,
+      name: `${input.type === "image" ? "生成图" : "生成视频"}-${new Date().toISOString().replace(/[:.]/g, "-")}`,
+      managedPath,
+      sourcePath: `generated://job/${input.jobId}`,
+      sha256,
+      mediaType: input.mediaType,
+      rightsStatus: "unknown",
+      metadata: {
+        generatedFromJobId: input.jobId,
+        sourceAssetIds,
+        provenance: "ai_generated",
+        rightsReview: "pending",
+      },
+    });
+    if (input.projectId) projects.attachAsset(input.projectId, result.asset.id);
+    for (const sourceAssetId of sourceAssetIds)
+      relationships.create(
+        result.asset.id,
+        sourceAssetId,
+        input.type === "video" ? "shot_from" : "derived_from",
+      );
+    return result.asset;
+  };
+
+  return {
+    register(ipcMain: IpcMain) {
+      ipcMain.handle("studio:health", () => ({
+        appDataDir: userDataDirectory,
+        databaseReady: true,
+      }));
+      ipcMain.handle(
+        "assets:import",
+        async (_event, input: ImportAssetInput) => {
+          input = { ...input, filePath: absolutePath(input?.filePath, "素材路径") };
+          const result = await importer.import(input);
+          if (input.projectId)
+            projects.attachAsset(input.projectId, result.asset.id);
+          return result;
+        },
+      );
+      ipcMain.handle("assets:list", (_event, query) => assets.list(query));
+      ipcMain.handle("collections:create", (_event, input) => collections.create(input));
+      ipcMain.handle("collections:list", (_event, projectId?: string) => collections.list(projectId));
+      ipcMain.handle("collections:detail", (_event, id: string) => collections.getDetail(id));
+      ipcMain.handle("collections:update", (_event, id: string, patch) => collections.update(id, patch));
+      ipcMain.handle("collections:attach-asset", (_event, collectionId: string, assetId: string, role?: string, moduleKey?: string, notes?: string) => collections.attachAsset(collectionId, assetId, role, moduleKey, notes));
+      ipcMain.handle("collections:detach-asset", (_event, collectionId: string, assetId: string) => collections.detachAsset(collectionId, assetId));
+      ipcMain.handle(
+        "assets:update-confirmation",
+        (
+          _event,
+          assetId: string,
+          confirmation: "draft" | "confirmed" | "rejected",
+        ) => assets.updateConfirmation(assetId, confirmation),
+      );
+      ipcMain.handle("assets:update-rights", (_event, assetId: string, rightsStatus: import("../src/shared/types").RightsStatus, reason: string) =>
+        assets.updateRights(assetId, rightsStatus, reason));
+      ipcMain.handle(
+        "assets:set-master",
+        (_event, assetId: string, enabled: boolean, projectId?: string) => {
+          if (!projectId) throw new Error("请先选择项目，再锁定项目母版。");
+          return assets.setProjectMaster(projectId, assetId, Boolean(enabled));
+        },
+      );
+      ipcMain.handle(
+        "assets:review",
+        (
+          _event,
+          assetId: string,
+          review: {
+            identity: number;
+            scene: number;
+            realism: number;
+            videoReady: number;
+            note?: string;
+          },
+        ) => {
+          const values = [
+            review.identity,
+            review.scene,
+            review.realism,
+            review.videoReady,
+          ];
+          if (
+            values.some(
+              (value) => !Number.isInteger(value) || value < 1 || value > 5,
+            )
+          )
+            throw new Error("每项审片评分须为 1 到 5 分。");
+          return assets.mergeMetadata(assetId, {
+            review: { ...review, reviewedAt: new Date().toISOString() },
+          });
+        },
+      );
+      ipcMain.handle("assets:lineage", (_event, assetId: string) =>
+        relationships.listForAsset(assetId).flatMap((relationship) => {
+          const direction =
+            relationship.fromAssetId === assetId ? "source" : "derived";
+          const otherAssetId =
+            direction === "source"
+              ? relationship.toAssetId
+              : relationship.fromAssetId;
+          const asset = assets.findById(otherAssetId);
+          return asset
+            ? [
+                {
+                  relationship,
+                  direction,
+                  asset: { id: asset.id, name: asset.name, type: asset.type },
+                },
+              ]
+            : [];
+        }),
+      );
+      ipcMain.handle("assets:preview", (_event, assetId: string) => {
+        const asset = assets.findById(assetId);
+        if (!asset || !asset.mediaType.startsWith("image/")) return undefined;
+        const thumbnail = join(dirname(asset.managedPath), "thumbnail.webp");
+        const previewPath = existsSync(thumbnail)
+          ? thumbnail
+          : asset.managedPath;
+        const mediaType =
+          previewPath === thumbnail ? "image/webp" : asset.mediaType;
+        return `data:${mediaType};base64,${readFileSync(previewPath).toString("base64")}`;
+      });
+      ipcMain.handle("projects:create", (_event, name, medium) =>
+        projects.create(name, medium),
+      );
+      ipcMain.handle("projects:list", () => projects.list());
+      ipcMain.handle(
+        "recipes:create",
+        (_event, input: {
+          name: string; projectId?: string; creativeTaskId?: string; providerId?: ProviderId; purpose: string; card: CreativeCard;
+          prompt: string; negative: string; sourceAssetIds: string[];
+        }) => {
+          if (!input.name?.trim() || !input.purpose?.trim() || !input.prompt?.trim())
+            throw new Error("请填写配方名称、用途和提示词后再保存。");
+          if (input.creativeTaskId && !tasks.get(input.creativeTaskId))
+            throw new Error("关联的创作任务不存在，无法保存方法卡。");
+          return recipes.create({ ...input, name: input.name.trim(), purpose: input.purpose.trim() });
+        },
+      );
+      ipcMain.handle("recipes:list", (_event, projectId?: string) => recipes.list(projectId));
+      ipcMain.handle(
+        "recipes:update-status",
+        (_event, id: string, status: "validated" | "rejected", evidence: string) =>
+          recipes.updateStatus(id, status, evidence),
+      );
+      ipcMain.handle("projects:workspace", (_event, projectId: string) =>
+        projects.getWorkspace(projectId),
+      );
+      ipcMain.handle(
+        "projects:update-brief",
+        (_event, projectId: string, brief: import("../src/shared/types").ProjectBrief) => {
+          const values = [brief?.goal, brief?.audience, brief?.visualWorld, brief?.delivery, brief?.acceptance];
+          if (values.some((value) => typeof value !== "string"))
+            throw new Error("项目简报格式不完整。\n");
+          return projects.updateBrief(projectId, {
+            goal: brief.goal.trim(),
+            audience: brief.audience.trim(),
+            visualWorld: brief.visualWorld.trim(),
+            delivery: brief.delivery.trim(),
+            acceptance: brief.acceptance.trim(),
+          });
+        },
+      );
+      ipcMain.handle(
+        "projects:export",
+        (_event, projectId: string, destinationDirectory: string) => {
+          const project = projects.list().find((item) => item.id === projectId);
+          if (!project) throw new Error("项目不存在。");
+          destinationDirectory = absolutePath(destinationDirectory, "导出位置");
+          return exportProject(
+            project,
+            projects.listAssets(projectId),
+            destinationDirectory,
+            {
+              characters: characters.list(projectId).map((profile) => characters.getDetail(profile.id)),
+              collections: collections.list(projectId).map((collection) => collections.getDetail(collection.id)),
+              shots: shots.list(projectId),
+              recipes: recipes.list(projectId),
+              tasks: tasks.list(projectId),
+            },
+          );
+        },
+      );
+      ipcMain.handle("data:create-backup", async (_event, destinationDirectory: string) => {
+        destinationDirectory = absolutePath(destinationDirectory, "备份位置");
+        return backupService.create(database.database, destinationDirectory);
+      });
+      ipcMain.handle("data:restore-backup", (_event, backupDirectory: string) => {
+        backupDirectory = absolutePath(backupDirectory, "备份目录");
+        database.database.pragma("wal_checkpoint(TRUNCATE)");
+        database.close();
+        databaseClosedForRestore = true;
+        return backupService.restore(backupDirectory);
+      });
+      ipcMain.handle(
+        "creation:compile-prompt",
+        (_event, card: CreativeCard) => {
+          paradigms.recordUse(card.paradigmIds ?? []);
+          return compilePrompt(card);
+        },
+      );
+      ipcMain.handle(
+        "creation:enrich-card",
+        async (_event, card: CreativeCard) => {
+          const providerId = routeFor("text");
+          if (providerId !== "deepseek")
+            throw new Error(`模型 ${providerId} 尚未安装创作理解适配器。`);
+          return deepseek.enrichCreativeCard(card);
+        },
+      );
+      ipcMain.handle(
+        "creation:translate-prompt",
+        async (
+          _event,
+          input: {
+            prompt: string;
+            negative?: string;
+            providerId: "openai" | "flux";
+            qualityTier: "draft" | "standard" | "premium";
+          },
+        ) => {
+          if (routeFor("text") !== "deepseek")
+            throw new Error("当前文字路由尚未安装提示词适配器。");
+          if (!input.prompt?.trim()) throw new Error("请先生成结构化提示词。");
+          return deepseek.translatePrompt(input);
+        },
+      );
+      ipcMain.handle(
+        "characters:create",
+        (
+          _event,
+          input: {
+            name: string;
+            card: CreativeCard;
+            projectId?: string;
+            masterAssetId?: string;
+            group?: "lead" | "supporting" | "ensemble" | "guest";
+            lifecycle?: "draft" | "confirmed" | "archived";
+          },
+        ) => {
+          if (!input.name.trim()) throw new Error("请为角色填写名称。");
+          if (!input.card.identityAnchor.trim() && !input.card.subject.trim())
+            throw new Error("至少填写人物主体或不变特征后再保存角色。");
+          return characters.create({ ...input, name: input.name.trim() });
+        },
+      );
+      ipcMain.handle("characters:list", (_event, projectId?: string) =>
+        characters.list(projectId),
+      );
+      ipcMain.handle(
+        "characters:import-asset-pack",
+        (_event, input: { zipPath: string; projectId?: string; name?: string; rightsStatus?: import("../src/shared/types").RightsStatus; rightsReason?: string }) =>
+          characterPackImporter.import({ ...input, zipPath: absolutePath(input?.zipPath, "人物资产包路径") }),
+      );
+      ipcMain.handle("characters:detail", (_event, id: string) => characters.getDetail(id));
+      // 保留旧桥名称，兼容已安装的旧渲染层；新界面统一走 characters:import-asset-pack。
+      ipcMain.handle(
+        "character-pack:import",
+        (_event, input: { zipPath: string; projectId?: string; name?: string; rightsStatus?: import("../src/shared/types").RightsStatus; rightsReason?: string }) =>
+          characterPackImporter.import({ ...input, zipPath: absolutePath(input?.zipPath, "人物资产包路径") }),
+      );
+      ipcMain.handle("characters:create-variant", (_event, id: string, kind, name) => characters.createVariant(id, kind, name));
+      ipcMain.handle("characters:upsert-fact", (_event, id: string, input) => characters.upsertFact(id, input));
+      ipcMain.handle("tasks:create", (_event, input) => tasks.create(input));
+      ipcMain.handle("tasks:list", (_event, projectId?: string) => tasks.list(projectId));
+      ipcMain.handle("tasks:update", (_event, id: string, patch) => tasks.update(id, patch));
+      ipcMain.handle("characters:update", (_event, id: string, patch) =>
+        characters.update(id, patch),
+      );
+      ipcMain.handle(
+        "batches:create",
+        (
+          _event,
+          input: {
+            name: string;
+            projectId?: string;
+            creativeTaskId?: string;
+            aspectRatio: CreativeCard["aspectRatio"];
+            variants: Array<{ label: string; prompt: string }>;
+          },
+        ) => {
+          if (!input.name.trim() || !input.variants.length)
+            throw new Error("批量任务需要名称和至少一个变体。");
+          if (input.creativeTaskId && !tasks.get(input.creativeTaskId))
+            throw new Error("关联的创作任务不存在，无法建立候选批次。");
+          const providerId = routeFor("image");
+          const perImageCost = providerId === "fal"
+            ? (input.aspectRatio === "1:1" ? 0.003 : 0.006)
+            : providerId === "flux" ? 0.04 : undefined;
+          const estimatedCostUsd = perImageCost === undefined
+            ? undefined
+            : Number((input.variants.length * perImageCost).toFixed(2));
+          const budget = budgetStatus();
+          if (
+            estimatedCostUsd &&
+            budget.monthlyBudgetUsd !== undefined &&
+            budget.plannedSpendUsd + estimatedCostUsd > budget.monthlyBudgetUsd
+          )
+            throw new Error(
+              `本批预计 $${estimatedCostUsd}，会超过本月预算 $${budget.monthlyBudgetUsd}。请调整批量数量或提高预算。`,
+            );
+          return batches.create({
+            ...input,
+            name: input.name.trim(),
+            providerId,
+            estimatedCostUsd,
+          });
+        },
+      );
+      ipcMain.handle("batches:list", (_event, projectId?: string) =>
+        batches.list(projectId),
+      );
+      ipcMain.handle("batches:run", async (_event, batchId: string) => {
+        const batch = batches.claimForRun(batchId);
+        if (!batch)
+          throw new Error("批量任务不存在、已完成或正在运行；请刷新队列后再操作。");
+        let failed = false;
+        try {
+          if (batch.creativeTaskId)
+            tasks.update(batch.creativeTaskId, { status: "producing" });
+          const size =
+            batch.aspectRatio === "1:1"
+              ? "1024x1024"
+              : batch.aspectRatio === "16:9" || batch.aspectRatio === "3:2" || batch.aspectRatio === "4:3"
+                ? "1536x1024"
+                : "1024x1536";
+          for (const item of batch.variants.filter(
+            (variant) => variant.status === "planned",
+          )) {
+            let job: import("../src/shared/types").StudioJob | undefined;
+            try {
+              job = jobs.create({
+                projectId: batch.projectId ?? libraryProject.id,
+                kind: "image_generation",
+                providerId: batch.providerId,
+                request: { prompt: item.prompt, size, batchId, variantId: item.id },
+              });
+              jobs.update(job.id, { status: "in_progress" });
+              // 先落盘关联，再调用服务；进程中断后不会把可能已付费的变体伪装成 planned。
+              batches.updateVariant(item.id, { status: "planned", jobId: job.id });
+              const image = await generateWith(batch.providerId, {
+                prompt: item.prompt,
+                size,
+              });
+              const asset = writeGeneratedAsset(image, {
+                type: "image",
+                mediaType: "image/png",
+                extension: ".png",
+                jobId: job.id,
+                projectId: batch.projectId,
+              });
+              jobs.update(job.id, {
+                status: "completed",
+                result: { assetId: asset.id, batchId, variantId: item.id },
+                error: null,
+              });
+              batches.updateVariant(item.id, {
+                status: "completed",
+                jobId: job.id,
+                assetId: asset.id,
+                error: undefined,
+              });
+            } catch (error) {
+              failed = true;
+              const message = error instanceof Error ? error.message : "批量出图失败。";
+              if (job) {
+                jobs.update(job.id, {
+                  status: isNetworkOutcomeUnknown(error) ? "unknown" : "failed",
+                  error: message,
+                });
+                batches.updateVariant(item.id, {
+                  status: "failed",
+                  jobId: job.id,
+                  error: isNetworkOutcomeUnknown(error) ? `状态未知：${message} 请勿盲目重试。` : message,
+                });
+              } else {
+                batches.updateVariant(item.id, { status: "failed", error: message });
+              }
+            }
+          }
+          const completedBatch = batches.updateStatus(batchId, failed ? "partially_failed" : "completed");
+          if (batch.creativeTaskId)
+            tasks.update(batch.creativeTaskId, { status: failed ? "ready" : "review" });
+          return completedBatch;
+        } catch (error) {
+          try { batches.updateStatus(batchId, "interrupted"); } catch { /* 保留首个异常，避免掩盖数据库故障 */ }
+          if (batch.creativeTaskId) {
+            try { tasks.update(batch.creativeTaskId, { status: "ready" }); } catch { /* best effort */ }
+          }
+          throw error;
+        }
+      });
+      ipcMain.handle("creation:compile-shot", (_event, shot: ShotContract) =>
+        compileShotContract(shot),
+      );
+      ipcMain.handle(
+        "shots:create",
+        (
+          _event,
+          input: {
+            projectId: string;
+            name: string;
+            shot: ShotContract;
+            compiledPrompt: string;
+            referenceAssetId?: string;
+          },
+        ) => {
+          if (
+            !projects.list().some((project) => project.id === input.projectId)
+          )
+            throw new Error("请先选择一个项目。");
+          if (!input.name.trim()) throw new Error("请为镜头填写一个名称。");
+          return shots.create({ ...input, name: input.name.trim() });
+        },
+      );
+      ipcMain.handle("shots:list", (_event, projectId: string) =>
+        shots.list(projectId),
+      );
+      ipcMain.handle("learning:ingest-prompt", (_event, prompt: string) => {
+        if (typeof prompt !== "string" || !prompt.trim())
+          throw new Error("请输入需要学习的提示词。");
+        return learning.create(extractPromptPattern(prompt));
+      });
+      ipcMain.handle("learning:list", () => learning.list());
+      ipcMain.handle(
+        "learning:import-github-source",
+        async (_event, url: string) => {
+          const source = promptSources.create({
+            ...(await importGitHubPromptSource(url)),
+            sourceType: "github",
+          });
+          learning.create(
+            extractPromptPattern(
+              `外部提示词库来源：${source.repository}\n${source.summary}\n使用方式：仅作为检索与试用候选；不得自动覆盖角色设定。`,
+            ),
+          );
+          return source;
+        },
+      );
+      ipcMain.handle(
+        "learning:import-web-source",
+        async (_event, url: string) => {
+          const source = promptSources.create(await importWebPromptSource(url));
+          learning.create(
+            extractPromptPattern(
+              `外部公开参考页面：${source.title}\n来源：${source.url}\n页面简介：${source.summary}\n使用方式：页面仅登记为来源；具体提示词须由用户选择后再导入为候选模块，不得自动复制整站内容。`,
+            ),
+          );
+          return source;
+        },
+      );
+      ipcMain.handle("learning:list-sources", () => promptSources.list());
+      ipcMain.handle(
+        "learning:search-entries",
+        (
+          _event,
+          input: { query?: string; category?: string; limit?: number } = {},
+        ) => promptEntries.search(input.query, input.category, input.limit),
+      );
+      ipcMain.handle("learning:entry-categories", () =>
+        promptEntries.categories(),
+      );
+      ipcMain.handle("learning:entry-count", () => promptEntries.count());
+      ipcMain.handle("paradigms:list", () => paradigms.list());
+      ipcMain.handle("paradigms:compose", (_event, ids: string[]) =>
+        paradigms.compose(Array.isArray(ids) ? ids : []),
+      );
+      ipcMain.handle(
+        "paradigms:create",
+        (
+          _event,
+          input: {
+            name: string;
+            role: import("../src/shared/types").VisualParadigmRole;
+            description: string;
+            promptModule: string;
+          },
+        ) => {
+          if (
+            !input.name?.trim() ||
+            !input.description?.trim() ||
+            !input.promptModule?.trim()
+          )
+            throw new Error("请填写范式名称、它解决的视觉问题和可复用模块。");
+          return paradigms.create(input);
+        },
+      );
+      ipcMain.handle(
+        "learning:update-status",
+        (_event, id: string, status: "validated" | "rejected") => {
+          if (status !== "validated" && status !== "rejected")
+            throw new Error("学习模式状态不正确。");
+          const note =
+            status === "validated"
+              ? `用户于 ${new Date().toISOString()} 确认此策略可复用。`
+              : `用户于 ${new Date().toISOString()} 确认此策略不适合当前创作。`;
+          return learning.updateStatus(id, status, note);
+        },
+      );
+      ipcMain.handle("settings:provider-status", () => providerStatus());
+      ipcMain.handle("settings:budget-status", () => budgetStatus());
+      ipcMain.handle(
+        "settings:save-monthly-budget",
+        (_event, value: number) => {
+          if (!Number.isFinite(value) || value <= 0)
+            throw new Error("月度预算必须大于 0。");
+          settings.set("monthly_budget_usd", String(value));
+          return budgetStatus();
+        },
+      );
+      ipcMain.handle(
+        "settings:save-provider-key",
+        (_event, providerId: ProviderId, key: string) => {
+          if (!["openai", "flux", "fal", "deepseek", "gemini"].includes(providerId))
+            throw new Error("不支持的模型提供方。");
+          if (typeof key !== "string" || key.trim().length < 20)
+            throw new Error("API 密钥格式不正确。");
+          if (!cipher?.isAvailable())
+            throw new Error("当前系统无法使用本机加密存储。");
+          settings.set(`${providerId}_api_key`, cipher.encrypt(key.trim()));
+          return providerStatus();
+        },
+      );
+      ipcMain.handle(
+        "settings:save-route",
+        (_event, capability: ProviderCapability, providerId: ProviderId) => {
+          const connection = providerStatus().providers.find(
+            (item) => item.id === providerId,
+          );
+          if (!connection?.capabilities.includes(capability))
+            throw new Error("该模型不支持此能力。");
+          if (!connection.configured)
+            throw new Error("请先保存该模型的 API 密钥，再把它设为能力路由。");
+          settings.set(`route_${capability}`, providerId);
+          return providerStatus();
+        },
+      );
+      ipcMain.handle("vision:analyze", async (_event, assetId: string) => {
+        const asset = assets.findById(assetId);
+        if (!asset || !asset.mediaType.startsWith("image/"))
+          throw new Error("请选择一张图片资产。");
+        if (asset.confirmation !== 'confirmed' || !['authorized', 'original'].includes(asset.rightsStatus))
+          throw new Error('图片尚未完成审片和使用权确认，不能外传视觉模型。');
+        if (!existsSync(asset.managedPath)) throw new Error('图片文件不存在，请重新导入。');
+        const assignedProjects = database.database.prepare('SELECT project_id FROM project_assets WHERE asset_id = ?')
+          .all(asset.id) as { project_id: string }[];
+        const providerId = routeFor("vision");
+        if (providerId !== "openai")
+          throw new Error(
+            "当前视觉理解适配器仅支持 OpenAI；已保留路由扩展位。",
+          );
+        const job = jobs.create({
+          projectId: assignedProjects[0]?.project_id ?? libraryProject.id,
+          kind: "vision_analysis",
+          providerId,
+          request: { assetId, projectIds: assignedProjects.map((item) => item.project_id) },
+        });
+        jobs.update(job.id, { status: "in_progress" });
+        try {
+          const report = await openai.analyzeImage({
+            filePath: asset.managedPath,
+            mediaType: asset.mediaType,
+          });
+          assets.mergeMetadata(asset.id, {
+            understanding: report,
+            understoodAt: new Date().toISOString(),
+          });
+          return jobs.update(job.id, {
+            status: "completed",
+            result: { report, assetId },
+          });
+        } catch (error) {
+          jobs.update(job.id, {
+            status: isNetworkOutcomeUnknown(error) ? "unknown" : "failed",
+            error: error instanceof Error ? error.message : "视觉理解失败。",
+          });
+          throw error;
+        }
+      });
+      ipcMain.handle(
+        "vision:build-reverse-prompt",
+        (_event, report: import("../src/shared/types").ImageUnderstandingReport) =>
+          buildReversePrompt(report),
+      );
+      ipcMain.handle(
+        "generation:image",
+        async (
+          _event,
+          input: {
+            prompt: string;
+            projectId?: string;
+            creativeTaskId?: string;
+            aspectRatio: CreativeCard["aspectRatio"];
+            referenceAssetIds?: string[];
+            qualityTier?: "draft" | "standard" | "premium";
+          },
+        ) => {
+          const size =
+            input.aspectRatio === "1:1"
+              ? "1024x1024"
+              : input.aspectRatio === "16:9" || input.aspectRatio === "3:2" || input.aspectRatio === "4:3"
+                ? "1536x1024"
+                : "1024x1536";
+          if (input.referenceAssetIds !== undefined && !Array.isArray(input.referenceAssetIds))
+            throw new Error("参考素材列表格式不正确。");
+          const referenceAssetIds = [...new Set(input.referenceAssetIds ?? [])];
+          if (input.creativeTaskId && !tasks.get(input.creativeTaskId))
+            throw new Error("关联的创作任务不存在，请重新打开当前任务后再生成。");
+          const references = referenceAssetIds.map((id) =>
+            referenceForGeneration(id, input.projectId),
+          );
+          const providerId = routeFor("image");
+          if (references.length && !imageEditProviders[providerId])
+            throw new Error("当前图片模型不支持参考图编辑，请切换到可用的修图模型。");
+          const quality = input.qualityTier === "draft" ? "medium" : "high";
+          const job = jobs.create({
+            projectId: input.projectId ?? libraryProject.id,
+            kind: "image_generation",
+            providerId,
+            request: {
+              prompt: input.prompt,
+              size,
+              referenceAssetIds,
+              appliedReferenceAssetIds: references.length ? [references[0].id] : [],
+              qualityTier: input.qualityTier ?? "premium",
+              creativeTaskId: input.creativeTaskId,
+            },
+          });
+          jobs.update(job.id, { status: "in_progress" });
+          try {
+            const image =
+              references.length
+                ? await imageEditProviders[providerId]!.refineImage({
+                    prompt: `${input.prompt}\n参考图仅用于保持人物、服装和构图连续性；只按文字要求变化。`,
+                    size,
+                    referencePath: references[0].managedPath,
+                    referenceMediaType: references[0].mediaType,
+                  })
+                : await generateWith(providerId, {
+                    prompt: input.prompt,
+                    size,
+                    quality,
+                  });
+            const asset = writeGeneratedAsset(image, {
+              type: "image",
+              mediaType: "image/png",
+              extension: ".png",
+              jobId: job.id,
+              projectId: input.projectId,
+              sourceAssetIds: references.length ? [references[0].id] : [],
+            });
+            return jobs.update(job.id, {
+              status: "completed",
+              result: { assetId: asset.id },
+            });
+          } catch (error) {
+            jobs.update(job.id, {
+              status: isNetworkOutcomeUnknown(error) ? "unknown" : "failed",
+              error: error instanceof Error ? error.message : "图片生成失败。",
+            });
+            throw error;
+          }
+        },
+      );
+      ipcMain.handle(
+        "generation:refine-image",
+        async (
+          _event,
+          input: {
+            assetId: string;
+            prompt: string;
+            projectId?: string;
+            aspectRatio: CreativeCard["aspectRatio"];
+          },
+        ) => {
+          const reference = referenceForGeneration(input.assetId, input.projectId);
+          if (!input.prompt.trim()) throw new Error("请描述本次只要优化什么。");
+          const size =
+            input.aspectRatio === "1:1"
+              ? "1024x1024"
+              : input.aspectRatio === "16:9" || input.aspectRatio === "3:2" || input.aspectRatio === "4:3"
+                ? "1536x1024"
+                : "1024x1536";
+          const providerId = routeFor("image_edit");
+          const imageEditProvider = imageEditProviders[providerId];
+          if (!imageEditProvider)
+            throw new Error("当前高保真修图模型尚未安装适配器。");
+          const job = jobs.create({
+            projectId: input.projectId ?? libraryProject.id,
+            kind: "image_generation",
+            providerId,
+            request: {
+              prompt: input.prompt,
+              size,
+              referenceAssetId: reference.id,
+              mode: "refine",
+            },
+          });
+          jobs.update(job.id, { status: "in_progress" });
+          try {
+            const image = await imageEditProvider.refineImage({
+              prompt: input.prompt,
+              size,
+              referencePath: reference.managedPath,
+              referenceMediaType: reference.mediaType,
+            });
+            const asset = writeGeneratedAsset(image, {
+              type: "image",
+              mediaType: "image/png",
+              extension: ".png",
+              jobId: job.id,
+              projectId: input.projectId,
+              sourceAssetIds: [reference.id],
+            });
+            return jobs.update(job.id, {
+              status: "completed",
+              result: { assetId: asset.id },
+            });
+          } catch (error) {
+            jobs.update(job.id, {
+              status: isNetworkOutcomeUnknown(error) ? "unknown" : "failed",
+              error: error instanceof Error ? error.message : "图片修订失败。",
+            });
+            throw error;
+          }
+        },
+      );
+      ipcMain.handle(
+        "generation:video",
+        async (
+          _event,
+          input: {
+            prompt: string;
+            projectId?: string;
+            referenceAssetId?: string;
+            aspectRatio: CreativeCard["aspectRatio"];
+            seconds: 4 | 8 | 12;
+          },
+        ) => {
+          const reference = input.referenceAssetId !== undefined
+            ? referenceForGeneration(input.referenceAssetId, input.projectId)
+            : undefined;
+          const size = input.aspectRatio === "9:16" ? "720x1280" : "1280x720";
+          const providerId = routeFor("video");
+          const videoProvider = videoProviderFor(providerId);
+          const job = jobs.create({
+            projectId: input.projectId ?? libraryProject.id,
+            kind: "image_to_video",
+            providerId,
+            status: "in_progress",
+            request: {
+              prompt: input.prompt,
+              referenceAssetId: reference?.id,
+              size,
+              seconds: input.seconds,
+              submissionState: "submitting",
+            },
+          });
+          try {
+            const remote = await videoProvider.createVideo({
+              prompt: input.prompt,
+              model: "sora-2-pro",
+              size,
+              seconds: input.seconds,
+              referencePath: reference?.managedPath,
+              referenceMediaType: reference?.mediaType,
+            });
+            if (!remote || typeof remote.id !== "string" || !remote.id.trim()) {
+              const message = "视频提交响应缺少有效远程编号，无法确认服务端是否已接收；禁止盲目重试。";
+              jobs.update(job.id, { status: "unknown", error: message });
+              throw new Error(message);
+            }
+            return jobs.update(job.id, {
+              status:
+                remote.status === "completed" ? "completed" : "in_progress",
+              result: { remoteId: remote.id, progress: remote.progress ?? 0 },
+              error: null,
+            });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "视频任务创建失败。";
+            jobs.update(job.id, {
+              status: isNetworkOutcomeUnknown(error) || /禁止盲目重试/.test(message) ? "unknown" : "failed",
+              error: message,
+            });
+            throw error;
+          }
+        },
+      );
+      ipcMain.handle("generation:poll-video", async (_event, jobId: string) => {
+        const job = jobs.get(jobId);
+        if (job?.status === "completed" && typeof job.result?.assetId === "string")
+          return job;
+        const remoteId = job?.result?.remoteId;
+        if (
+          !job ||
+          job.kind !== "image_to_video" ||
+          typeof remoteId !== "string"
+        )
+          throw new Error("视频任务不存在或尚未获得远程编号。");
+        try {
+          const videoProvider = videoProviderFor(job.providerId as ProviderId);
+          const remote = await videoProvider.getVideo(remoteId);
+          if (remote.status === "completed") {
+            const video = await videoProvider.downloadVideo(remoteId);
+            const sourceAssetId =
+              typeof job.request.referenceAssetId === "string"
+                ? job.request.referenceAssetId
+                : undefined;
+            const asset = writeGeneratedAsset(video, {
+              type: "video",
+              mediaType: "video/mp4",
+              extension: ".mp4",
+              jobId: job.id,
+              projectId: job.projectId,
+              sourceAssetIds: sourceAssetId ? [sourceAssetId] : [],
+            });
+            return jobs.update(job.id, {
+              status: "completed",
+              result: { remoteId, progress: 100, assetId: asset.id },
+            });
+          }
+          if (remote.status === "failed")
+            return jobs.update(job.id, {
+              status: "failed",
+              error: remote.error?.message ?? "远程视频生成失败。",
+            });
+          return jobs.update(job.id, {
+            status: "in_progress",
+            result: { remoteId, progress: remote.progress ?? 0 },
+            error: null,
+          });
+        } catch (error) {
+          return jobs.update(job.id, {
+            // 轮询失败不等于远程任务失败；保留 remoteId 与 unknown，避免把查询错误变成可盲重试的普通失败。
+            status: "unknown",
+            error:
+              error instanceof Error ? error.message : "视频状态查询失败。",
+          });
+        }
+      });
+      ipcMain.handle("jobs:list", (_event, projectId?: string) =>
+        jobs.list(projectId),
+      );
+    },
+    close() {
+      if (!databaseClosedForRestore) database.close();
+    },
+  };
+};

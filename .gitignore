@@ -1,0 +1,12 @@
+node_modules/
+.DS_Store
+dist/
+release/
+.local-backups/
+*.tsbuildinfo
+playwright-report/
+test-results/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.env
