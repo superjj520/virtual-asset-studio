@@ -265,6 +265,8 @@ export const applySchema = (database: Database.Database) => {
       provider_id TEXT,
       name TEXT NOT NULL,
       purpose TEXT NOT NULL,
+      applicability TEXT NOT NULL DEFAULT '',
+      invalidation_conditions_json TEXT NOT NULL DEFAULT '[]',
       card_json TEXT NOT NULL,
       prompt TEXT NOT NULL,
       negative TEXT NOT NULL,
@@ -520,6 +522,10 @@ export const applySchema = (database: Database.Database) => {
     );
   if (!recipeColumns.some((column) => column.name === "provider_id"))
     database.exec("ALTER TABLE creative_recipes ADD COLUMN provider_id TEXT");
+  if (!recipeColumns.some((column) => column.name === "applicability"))
+    database.exec("ALTER TABLE creative_recipes ADD COLUMN applicability TEXT NOT NULL DEFAULT ''");
+  if (!recipeColumns.some((column) => column.name === "invalidation_conditions_json"))
+    database.exec("ALTER TABLE creative_recipes ADD COLUMN invalidation_conditions_json TEXT NOT NULL DEFAULT '[]'");
   database.prepare("INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (1, ?)").run(new Date().toISOString());
   if (!database.prepare("SELECT version FROM schema_migrations WHERE version = 2").get()) {
     const now = new Date().toISOString();

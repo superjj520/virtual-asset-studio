@@ -284,6 +284,8 @@ export default function App() {
   const [recipeReviewSelections, setRecipeReviewSelections] = useState<Record<string, string>>({});
   const [recipeName, setRecipeName] = useState("我的创作配方");
   const [recipePurpose, setRecipePurpose] = useState("角色场景连续创作");
+  const [recipeApplicability, setRecipeApplicability] = useState("同一角色身份与同一画面方向，只替换场景、动作或镜头");
+  const [recipeInvalidation, setRecipeInvalidation] = useState("更换角色身份\n切换到不相容的画面风格\n参考图审片或使用权状态失效");
   const [characterName, setCharacterName] = useState("");
   const [characterGroup, setCharacterGroup] = useState<CharacterGroup>("lead");
   const [characterDraftCard, setCharacterDraftCard] = useState<CreativeCard>(() => ({
@@ -1445,6 +1447,8 @@ export default function App() {
         creativeTaskId: activeTaskId || undefined,
         providerId: provider?.routes.image,
         purpose: recipePurpose,
+        applicability: recipeApplicability,
+        invalidationConditions: recipeInvalidation.split("\n").map((item) => item.trim()).filter(Boolean),
         card,
         prompt: translation?.positive ?? promptBuild.positive,
         negative: translation?.negative ?? promptBuild.negative,
@@ -1461,7 +1465,7 @@ export default function App() {
     setPromptBuild({ positive: recipe.prompt, negative: recipe.negative, modules: [] });
     setTranslation(undefined);
     setScreen("creation");
-    setNotice(`已加载配方「${recipe.name}」；建议只改本轮场景、动作或镜头。`);
+    setNotice(`已加载配方「${recipe.name}」；适用范围：${recipe.applicability}。命中失效条件时请停止套用并重新验证。`);
   };
   const reviewRecipe = async (recipe: CreativeRecipe, status: "validated" | "rejected") => {
     const evidence = status === "validated"
@@ -3368,6 +3372,14 @@ export default function App() {
                   适用用途
                   <input value={recipePurpose} onChange={(event) => setRecipePurpose(event.target.value)} />
                 </label>
+                <label>
+                  适用条件
+                  <input value={recipeApplicability} onChange={(event) => setRecipeApplicability(event.target.value)} />
+                </label>
+                <label>
+                  失效条件（每行一条）
+                  <textarea value={recipeInvalidation} onChange={(event) => setRecipeInvalidation(event.target.value)} />
+                </label>
                 <button onClick={() => void saveRecipe()}>保存为配方</button>
                 <label>
                   成图档位
@@ -3442,6 +3454,8 @@ export default function App() {
                 <div>
                   <h3>{recipe.name}</h3>
                   <p>用途：{recipe.purpose} · 参考资产：{recipe.sourceAssetIds.length} 个</p>
+                  <p>适用：{recipe.applicability || "未填写"}</p>
+                  <p>失效：{recipe.invalidationConditions.length ? recipe.invalidationConditions.join("；") : "未填写"}</p>
                   <p>来源任务：{recipe.creativeTaskId ? creativeTasks.find((task) => task.id === recipe.creativeTaskId)?.name ?? "已归档任务" : "未关联"} · 绘图模型：{providerLabel(recipe.providerId)}</p>
                   <p className="pattern-module">{recipe.prompt.slice(0, 260)}{recipe.prompt.length > 260 ? "…" : ""}</p>
                   {recipe.evidence.length > 0 && <p>验证记录：{recipe.evidence.join("；")}</p>}

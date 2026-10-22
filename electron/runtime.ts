@@ -500,10 +500,12 @@ export const createStudioRuntime = (
         "recipes:create",
         (_event, input: {
           name: string; projectId?: string; creativeTaskId?: string; providerId?: ProviderId; purpose: string; card: CreativeCard;
-          prompt: string; negative: string; sourceAssetIds: string[];
+          applicability: string; invalidationConditions: string[]; prompt: string; negative: string; sourceAssetIds: string[];
         }) => {
-          if (!input.name?.trim() || !input.purpose?.trim() || !input.prompt?.trim())
-            throw new Error("请填写配方名称、用途和提示词后再保存。");
+          if (!input.name?.trim() || !input.purpose?.trim() || !input.applicability?.trim() || !input.prompt?.trim())
+            throw new Error("请填写配方名称、用途、适用条件和提示词后再保存。");
+          if (!Array.isArray(input.invalidationConditions) || !input.invalidationConditions.some((item) => typeof item === "string" && item.trim()))
+            throw new Error("请至少填写一条配方失效条件。");
           if (input.creativeTaskId && !tasks.get(input.creativeTaskId))
             throw new Error("关联的创作任务不存在，无法保存方法卡。");
           return recipes.create({ ...input, name: input.name.trim(), purpose: input.purpose.trim() });

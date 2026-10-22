@@ -5,11 +5,12 @@ import { StudioDatabase } from '../../db/client';
 type Row = {
   id: string; project_id: string | null; creative_task_id: string | null; provider_id: ProviderId | null; name: string; purpose: string; card_json: string;
   prompt: string; negative: string; source_asset_ids_json: string; status: RecipeStatus;
-  evidence_json: string; created_at: string; updated_at: string;
+  applicability: string; invalidation_conditions_json: string; evidence_json: string; created_at: string; updated_at: string;
 };
 
 const map = (row: Row): CreativeRecipe => ({
   id: row.id, projectId: row.project_id ?? undefined, creativeTaskId: row.creative_task_id ?? undefined, providerId: row.provider_id ?? undefined, name: row.name, purpose: row.purpose,
+  applicability: row.applicability, invalidationConditions: JSON.parse(row.invalidation_conditions_json || '[]') as string[],
   card: JSON.parse(row.card_json) as CreativeCard, prompt: row.prompt, negative: row.negative,
   sourceAssetIds: JSON.parse(row.source_asset_ids_json) as string[], status: row.status,
   evidence: JSON.parse(row.evidence_json) as string[], createdAt: row.created_at, updatedAt: row.updated_at,
@@ -18,11 +19,12 @@ const map = (row: Row): CreativeRecipe => ({
 export class CreativeRecipeRepository {
   constructor(private readonly db: StudioDatabase) {}
 
-  create(input: Pick<CreativeRecipe, 'name' | 'projectId' | 'creativeTaskId' | 'providerId' | 'purpose' | 'card' | 'prompt' | 'negative' | 'sourceAssetIds'>): CreativeRecipe {
+  create(input: Pick<CreativeRecipe, 'name' | 'projectId' | 'creativeTaskId' | 'providerId' | 'purpose' | 'applicability' | 'invalidationConditions' | 'card' | 'prompt' | 'negative' | 'sourceAssetIds'>): CreativeRecipe {
     const id = randomUUID();
     const now = new Date().toISOString();
-    this.db.database.prepare('INSERT INTO creative_recipes (id, project_id, creative_task_id, provider_id, name, purpose, card_json, prompt, negative, source_asset_ids_json, status, evidence_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, input.projectId ?? null, input.creativeTaskId ?? null, input.providerId ?? null, input.name, input.purpose, JSON.stringify(input.card), input.prompt, input.negative, JSON.stringify([...new Set(input.sourceAssetIds)]), 'draft', '[]', now, now);
+    const invalidationConditions = [...new Set(input.invalidationConditions.map((item) => item.trim()).filter(Boolean))];
+    this.db.database.prepare('INSERT INTO creative_recipes (id, project_id, creative_task_id, provider_id, name, purpose, applicability, invalidation_conditions_json, card_json, prompt, negative, source_asset_ids_json, status, evidence_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, input.projectId ?? null, input.creativeTaskId ?? null, input.providerId ?? null, input.name, input.purpose, input.applicability.trim(), JSON.stringify(invalidationConditions), JSON.stringify(input.card), input.prompt, input.negative, JSON.stringify([...new Set(input.sourceAssetIds)]), 'draft', '[]', now, now);
     return this.get(id)!;
   }
 
@@ -38,6 +40,8 @@ export class CreativeRecipeRepository {
     if (!recipe) throw new Error('配方不存在。');
     let evidenceItems = evidence.trim() ? [evidence.trim()] : [];
     if (status === 'validated') {
+      if (!recipe.applicability.trim() || !recipe.invalidationConditions.length)
+        throw new Error('请先补齐适用条件和失效条件，再验证配方。');
       const review = this.db.database.prepare(`SELECT reviews.id, reviews.project_id, reviews.creative_task_id,
         reviews.asset_id, assets.name AS asset_name, assets.confirmation, assets.rights_status
         FROM image_review_records AS reviews INNER JOIN assets ON assets.id = reviews.asset_id

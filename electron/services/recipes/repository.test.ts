@@ -28,12 +28,13 @@ describe('CreativeRecipeRepository', () => {
 
     const recipe = repository.create({
       name: '夜色东方人像', projectId: project.id, creativeTaskId: task.id, providerId: 'openai', purpose: '角色定妆',
+      applicability: '同一角色的写实夜景', invalidationConditions: ['更换角色身份', '切换动漫风格'],
       card: { intent: '人物肖像', subject: '成年女性', identityAnchor: '', bodyAndWardrobe: '', expressionAndPose: '', scene: '', lighting: '', camera: '', style: '', avoid: '', aspectRatio: '9:16', referenceAssetIds: [] },
       prompt: '人物主体：成年女性；场景：深蓝夜景', negative: '水印', sourceAssetIds: ['asset-1'],
     });
 
     expect(recipe.status).toBe('draft');
-    expect(repository.list(project.id)).toMatchObject([{ name: '夜色东方人像', purpose: '角色定妆', creativeTaskId: task.id, providerId: 'openai', sourceAssetIds: ['asset-1'] }]);
+    expect(repository.list(project.id)).toMatchObject([{ name: '夜色东方人像', purpose: '角色定妆', applicability: '同一角色的写实夜景', invalidationConditions: ['更换角色身份', '切换动漫风格'], creativeTaskId: task.id, providerId: 'openai', sourceAssetIds: ['asset-1'] }]);
   });
 
   it('只有同一来源任务的已通过审片成图才能验证配方', () => {
@@ -58,6 +59,7 @@ describe('CreativeRecipeRepository', () => {
     const repository = new CreativeRecipeRepository(database);
     const recipe = repository.create({
       name: '通过配方', projectId: project.id, creativeTaskId: task.id, providerId: 'gemini', purpose: '角色定妆',
+      applicability: '同一角色定妆', invalidationConditions: ['更换角色身份'],
       card: task.card, prompt: '写实角色', negative: '水印', sourceAssetIds: [],
     });
 
@@ -65,5 +67,22 @@ describe('CreativeRecipeRepository', () => {
     expect(repository.updateStatus(recipe.id, 'validated', review.id)).toMatchObject({
       status: 'validated', evidence: [expect.stringContaining('通过成图')],
     });
+  });
+
+  it('缺少适用条件或失效条件时不能验证配方', () => {
+    const root = mkdtempSync(join(tmpdir(), 'studio-recipe-boundary-'));
+    paths.push(root);
+    const database = new StudioDatabase(join(root, 'studio.sqlite'));
+    const project = new ProjectRepository(database).create('边界测试项目', 'image');
+    const repository = new CreativeRecipeRepository(database);
+    const recipe = repository.create({
+      name: '缺少边界的配方', projectId: project.id, purpose: '验证状态门禁',
+      applicability: '', invalidationConditions: [],
+      card: { intent: '人物肖像', subject: '成年女性', identityAnchor: '', bodyAndWardrobe: '', expressionAndPose: '', scene: '', lighting: '', camera: '', style: '', avoid: '', aspectRatio: '2:3', referenceAssetIds: [] },
+      prompt: '写实人物肖像', negative: '水印', sourceAssetIds: [],
+    });
+
+    expect(() => repository.updateStatus(recipe.id, 'validated', 'review-id')).toThrow('请先补齐适用条件和失效条件');
+    expect(repository.list(project.id)[0].status).toBe('draft');
   });
 });

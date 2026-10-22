@@ -679,6 +679,10 @@ export type CreativeRecipe = {
   providerId?: ProviderId;
   name: string;
   purpose: string;
+  /** 配方在哪类任务中可以复用。 */
+  applicability: string;
+  /** 任一条件命中时应停止套用并重新验证。 */
+  invalidationConditions: string[];
   card: CreativeCard;
   prompt: string;
   negative: string;

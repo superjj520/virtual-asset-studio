@@ -92,7 +92,7 @@ interface Window {
       restoreBackup: (backupDirectory: string) => Promise<{ recoveryDirectory: string }>;
     };
     recipes: {
-      create: (input: Pick<import("./shared/types").CreativeRecipe, "name" | "projectId" | "creativeTaskId" | "providerId" | "purpose" | "card" | "prompt" | "negative" | "sourceAssetIds">) => Promise<import("./shared/types").CreativeRecipe>;
+      create: (input: Pick<import("./shared/types").CreativeRecipe, "name" | "projectId" | "creativeTaskId" | "providerId" | "purpose" | "applicability" | "invalidationConditions" | "card" | "prompt" | "negative" | "sourceAssetIds">) => Promise<import("./shared/types").CreativeRecipe>;
       list: (projectId?: string) => Promise<import("./shared/types").CreativeRecipe[]>;
       updateStatus: (id: string, status: "validated" | "rejected", evidence: string) => Promise<import("./shared/types").CreativeRecipe>;
     };
