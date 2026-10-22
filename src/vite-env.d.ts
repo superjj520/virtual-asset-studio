@@ -166,6 +166,34 @@ interface Window {
         input: Omit<import("./shared/types").CharacterMediaLink, "id" | "profileId" | "createdAt">,
       ) => Promise<import("./shared/types").CharacterMediaLink>;
     };
+    sceneWorkspace: {
+      create: (input: {
+        projectId?: string;
+        name: string;
+        kind: import("./shared/types").SceneKind;
+        lifecycle?: import("./shared/types").SceneLifecycle;
+        anchor: string;
+        layout?: string;
+        materials?: string;
+        colorSystem?: string;
+        requiredElements?: string;
+        forbiddenChanges?: string;
+        masterAssetId?: string;
+      }) => Promise<import("./shared/types").SceneProfile>;
+      list: (projectId?: string) => Promise<import("./shared/types").SceneProfile[]>;
+      update: (id: string, patch: Partial<Omit<import("./shared/types").SceneProfile, "id" | "createdAt" | "updatedAt">>) => Promise<import("./shared/types").SceneProfile>;
+      get: (profileId: string) => Promise<import("./shared/types").SceneWorkspaceSnapshot>;
+      createVersion: (profileId: string, input?: { label?: string; status?: import("./shared/types").SceneVersionStatus; changeSummary?: string }) => Promise<import("./shared/types").SceneVersion>;
+      createState: (profileId: string, input: {
+        versionId?: string; name: string; status?: import("./shared/types").SceneStateStatus;
+        timeOfDay?: string; weather?: string; season?: string; lighting?: string; atmosphere?: string;
+        setDressing?: string; continuityNotes?: string;
+      }) => Promise<import("./shared/types").SceneState>;
+      updateState: (id: string, patch: Partial<Pick<import("./shared/types").SceneState,
+        "versionId" | "name" | "status" | "timeOfDay" | "weather" | "season" | "lighting" | "atmosphere" | "setDressing" | "continuityNotes"
+      >>) => Promise<import("./shared/types").SceneState>;
+      attachMedia: (profileId: string, input: Omit<import("./shared/types").SceneMediaLink, "id" | "profileId" | "createdAt">) => Promise<import("./shared/types").SceneMediaLink>;
+    };
     tasks: {
       create: (input: Pick<import("./shared/types").CreativeTask, "projectId" | "characterProfileId" | "name" | "objective" | "collectionIds" | "card">) => Promise<import("./shared/types").CreativeTask>;
       list: (projectId?: string) => Promise<import("./shared/types").CreativeTask[]>;

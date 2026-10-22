@@ -189,7 +189,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--ds-primary); box
 .character-management-layout { display: flex; gap: var(--ds-space-4); align-items: flex-start; }
 .character-management-empty { display: block; }
 /* 空状态也必须沿用工作区最大可用宽度，避免角色建档入口被错误收窄。 */
-.character-management-empty .character-catalog { width: 100%; max-width: none; flex: 1 1 auto; }
+.character-management-layout.character-management-empty > .character-catalog { width: 100%; max-width: none; flex: 1 1 auto; }
 .character-management-layout .character-catalog { display: grid; grid-template-columns: 1fr; align-content: start; gap: var(--ds-space-3); }
 .character-management-layout > .character-catalog { flex: 0 0 300px; width: 300px; min-width: 0; }
 .character-detail-stack { display: grid; flex: 1 1 auto; min-width: 0; gap: var(--ds-space-4); }
@@ -215,6 +215,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--ds-primary); box
 .creation-character-context p:last-child { overflow: hidden; color: var(--ds-text-muted); font-size: 11px; line-height: 17px; text-overflow: ellipsis; white-space: nowrap; }
 .creation-character-context .form-actions { justify-content: flex-end; flex-wrap: nowrap; }
 .creation-character-context .form-actions > span { color: var(--ds-text-muted); font-size: 11px; white-space: nowrap; }
+.creation-scene-context { border-color: #0f8a72; background: #edf9f5; }
+.creation-character-context .scene-avatar { background: #0f8a72; }
 .character-inspector { min-width: 0; padding: var(--ds-space-5); border: 1px solid var(--ds-line); border-radius: var(--ds-radius-card); background: var(--ds-surface); }
 .character-runtime-panel { min-width: 0; padding: var(--ds-space-5); border: 1px solid var(--ds-line); border-radius: var(--ds-radius-card); background: var(--ds-surface); }
 .character-runtime-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ds-space-5); }
@@ -230,6 +232,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--ds-primary); box
 .character-runtime-grid { display: grid; grid-template-columns: minmax(240px, .9fr) minmax(320px, 1.1fr); gap: var(--ds-space-4); margin-top: var(--ds-space-4); }
 .character-runtime-list { display: grid; align-content: start; gap: var(--ds-space-2); min-width: 0; }
 .character-runtime-list h4, .runtime-editor h4 { margin: 0 0 var(--ds-space-2); color: var(--ds-text); font-size: 15px; }
+.scene-core-editor { margin-top: var(--ds-space-4); }
 .runtime-item { display: grid; gap: var(--ds-space-1); min-width: 0; padding: var(--ds-space-3); border: 1px solid var(--ds-line); border-radius: var(--ds-radius-control); background: var(--ds-surface); }
 .runtime-item.runtime-current { border-color: var(--ds-primary); background: var(--ds-primary-soft); }
 .runtime-item > div { display: flex; justify-content: space-between; gap: var(--ds-space-2); }

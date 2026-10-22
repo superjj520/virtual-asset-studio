@@ -304,6 +304,69 @@ export const applySchema = (database: Database.Database) => {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS scene_profiles (
+      id TEXT PRIMARY KEY,
+      project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK(kind IN ('interior', 'exterior', 'environment', 'fantasy', 'studio')),
+      lifecycle TEXT NOT NULL CHECK(lifecycle IN ('draft', 'confirmed', 'archived')),
+      anchor TEXT NOT NULL DEFAULT '',
+      layout TEXT NOT NULL DEFAULT '',
+      materials TEXT NOT NULL DEFAULT '',
+      color_system TEXT NOT NULL DEFAULT '',
+      required_elements TEXT NOT NULL DEFAULT '',
+      forbidden_changes TEXT NOT NULL DEFAULT '',
+      master_asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS scene_versions (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES scene_profiles(id) ON DELETE CASCADE,
+      version_number INTEGER NOT NULL,
+      label TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('draft', 'locked', 'superseded')),
+      change_summary TEXT NOT NULL DEFAULT '',
+      snapshot_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(profile_id, version_number)
+    );
+    CREATE TABLE IF NOT EXISTS scene_states (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES scene_profiles(id) ON DELETE CASCADE,
+      version_id TEXT REFERENCES scene_versions(id) ON DELETE SET NULL,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('draft', 'active', 'archived')),
+      time_of_day TEXT NOT NULL DEFAULT '',
+      weather TEXT NOT NULL DEFAULT '',
+      season TEXT NOT NULL DEFAULT '',
+      lighting TEXT NOT NULL DEFAULT '',
+      atmosphere TEXT NOT NULL DEFAULT '',
+      set_dressing TEXT NOT NULL DEFAULT '',
+      continuity_notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS scene_active_state_unique
+      ON scene_states(profile_id) WHERE status = 'active';
+    CREATE TABLE IF NOT EXISTS generation_session_scene_contexts (
+      session_id TEXT PRIMARY KEY REFERENCES generation_sessions(id) ON DELETE CASCADE,
+      profile_id TEXT NOT NULL REFERENCES scene_profiles(id) ON DELETE CASCADE,
+      version_id TEXT REFERENCES scene_versions(id) ON DELETE SET NULL,
+      state_id TEXT REFERENCES scene_states(id) ON DELETE SET NULL
+    );
+    CREATE TABLE IF NOT EXISTS scene_media_links (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES scene_profiles(id) ON DELETE CASCADE,
+      version_id TEXT REFERENCES scene_versions(id) ON DELETE SET NULL,
+      state_id TEXT REFERENCES scene_states(id) ON DELETE SET NULL,
+      session_id TEXT REFERENCES generation_sessions(id) ON DELETE SET NULL,
+      asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE RESTRICT,
+      role TEXT NOT NULL CHECK(role IN ('layout_reference', 'lighting_reference', 'material_reference', 'candidate', 'master', 'output', 'remix_source')),
+      parent_asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(session_id, asset_id, role)
+    );
     CREATE TABLE IF NOT EXISTS character_media_links (
       id TEXT PRIMARY KEY,
       profile_id TEXT NOT NULL REFERENCES character_profiles(id) ON DELETE CASCADE,
@@ -320,6 +383,10 @@ export const applySchema = (database: Database.Database) => {
     CREATE INDEX IF NOT EXISTS character_states_profile_idx ON character_states(profile_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS generation_sessions_character_idx ON generation_sessions(character_profile_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS character_media_profile_idx ON character_media_links(profile_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS scene_profiles_project_idx ON scene_profiles(project_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS scene_versions_profile_idx ON scene_versions(profile_id, version_number DESC);
+    CREATE INDEX IF NOT EXISTS scene_states_profile_idx ON scene_states(profile_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS scene_media_profile_idx ON scene_media_links(profile_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS asset_collections (
       id TEXT PRIMARY KEY,
       project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,

@@ -73,6 +73,16 @@ contextBridge.exposeInMainWorld("studio", {
     updateSessionStatus: (id, status) => ipcRenderer.invoke("generation-sessions:update-status", id, status),
     attachMedia: (profileId, input) => ipcRenderer.invoke("character-media:attach", profileId, input),
   },
+  sceneWorkspace: {
+    create: (input) => ipcRenderer.invoke("scenes:create", input),
+    list: (projectId) => ipcRenderer.invoke("scenes:list", projectId),
+    update: (id, patch) => ipcRenderer.invoke("scenes:update", id, patch),
+    get: (profileId) => ipcRenderer.invoke("scene-workspace:get", profileId),
+    createVersion: (profileId, input) => ipcRenderer.invoke("scene-versions:create", profileId, input),
+    createState: (profileId, input) => ipcRenderer.invoke("scene-states:create", profileId, input),
+    updateState: (id, patch) => ipcRenderer.invoke("scene-states:update", id, patch),
+    attachMedia: (profileId, input) => ipcRenderer.invoke("scene-media:attach", profileId, input),
+  },
   tasks: {
     create: (input) => ipcRenderer.invoke("tasks:create", input),
     list: (projectId) => ipcRenderer.invoke("tasks:list", projectId),

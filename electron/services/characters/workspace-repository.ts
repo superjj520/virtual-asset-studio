@@ -52,6 +52,9 @@ type SessionRow = {
   character_profile_id: string | null;
   character_version_id: string | null;
   character_state_id: string | null;
+  scene_profile_id?: string | null;
+  scene_version_id?: string | null;
+  scene_state_id?: string | null;
   creative_task_id: string | null;
   title: string;
   mode: GenerationSessionMode;
@@ -156,6 +159,9 @@ const mapSession = (row: SessionRow): GenerationSession => ({
   characterProfileId: row.character_profile_id ?? undefined,
   characterVersionId: row.character_version_id ?? undefined,
   characterStateId: row.character_state_id ?? undefined,
+  sceneProfileId: row.scene_profile_id ?? undefined,
+  sceneVersionId: row.scene_version_id ?? undefined,
+  sceneStateId: row.scene_state_id ?? undefined,
   creativeTaskId: row.creative_task_id ?? undefined,
   title: row.title,
   mode: row.mode,
@@ -367,6 +373,9 @@ export class CharacterWorkspaceRepository {
     characterProfileId?: string;
     characterVersionId?: string;
     characterStateId?: string;
+    sceneProfileId?: string;
+    sceneVersionId?: string;
+    sceneStateId?: string;
     creativeTaskId?: string;
     title: string;
     mode: GenerationSessionMode;
@@ -387,14 +396,40 @@ export class CharacterWorkspaceRepository {
     if (input.settings !== undefined && (!input.settings || typeof input.settings !== "object" || Array.isArray(input.settings)))
       throw new Error("生成会话设置格式不正确。");
     const profileId = input.characterProfileId;
+    let characterProjectId: string | undefined;
     if ((input.characterVersionId || input.characterStateId) && !profileId)
       throw new Error("选择角色版本或状态时必须绑定角色。");
     if (profileId) {
-      this.requireCharacter(profileId);
+      const character = this.requireCharacter(profileId);
+      characterProjectId = character.projectId;
+      if (input.projectId && character.projectId && input.projectId !== character.projectId)
+        throw new Error("角色不属于当前生成项目。");
       this.requireVersion(profileId, input.characterVersionId);
       const state = this.requireState(profileId, input.characterStateId);
       if (state?.versionId && input.characterVersionId && state.versionId !== input.characterVersionId)
         throw new Error("角色状态与所选版本不一致。");
+    }
+    if ((input.sceneVersionId || input.sceneStateId) && !input.sceneProfileId)
+      throw new Error("选择场景版本或状态时必须绑定场景。");
+    if (input.sceneProfileId) {
+      const scene = this.db.database.prepare("SELECT project_id FROM scene_profiles WHERE id = ?").get(input.sceneProfileId) as { project_id: string | null } | undefined;
+      if (!scene)
+        throw new Error("场景档案不存在。");
+      const sceneProjectId = scene.project_id ?? undefined;
+      if (input.projectId && sceneProjectId && input.projectId !== sceneProjectId)
+        throw new Error("场景不属于当前生成项目。");
+      if (characterProjectId && sceneProjectId && characterProjectId !== sceneProjectId)
+        throw new Error("角色与场景不属于同一项目。");
+      if (input.sceneVersionId) {
+        const version = this.db.database.prepare("SELECT profile_id FROM scene_versions WHERE id = ?").get(input.sceneVersionId) as { profile_id: string } | undefined;
+        if (!version || version.profile_id !== input.sceneProfileId) throw new Error("场景版本不属于当前场景。");
+      }
+      if (input.sceneStateId) {
+        const state = this.db.database.prepare("SELECT profile_id, version_id FROM scene_states WHERE id = ?").get(input.sceneStateId) as { profile_id: string; version_id: string | null } | undefined;
+        if (!state || state.profile_id !== input.sceneProfileId) throw new Error("场景状态不属于当前场景。");
+        if (state.version_id && input.sceneVersionId && state.version_id !== input.sceneVersionId)
+          throw new Error("场景状态与所选版本不一致。");
+      }
     }
     const references = [...new Set(input.referenceAssetIds ?? [])];
     for (const assetId of references)
@@ -425,20 +460,28 @@ export class CharacterWorkspaceRepository {
             role: "reference",
           });
       }
+      if (input.sceneProfileId) this.db.database.prepare(`INSERT INTO generation_session_scene_contexts
+        (session_id, profile_id, version_id, state_id) VALUES (?, ?, ?, ?)`)
+        .run(id, input.sceneProfileId, input.sceneVersionId ?? null, input.sceneStateId ?? null);
     });
     return this.getSession(id)!;
   }
 
   getSession(id: string): GenerationSession | undefined {
-    const row = this.db.database.prepare("SELECT * FROM generation_sessions WHERE id = ?")
+    const row = this.db.database.prepare(`SELECT sessions.*, contexts.profile_id AS scene_profile_id,
+      contexts.version_id AS scene_version_id, contexts.state_id AS scene_state_id
+      FROM generation_sessions AS sessions LEFT JOIN generation_session_scene_contexts AS contexts ON contexts.session_id = sessions.id
+      WHERE sessions.id = ?`)
       .get(id) as SessionRow | undefined;
     return row ? mapSession(row) : undefined;
   }
 
   listSessions(profileId: string): GenerationSession[] {
-    return (this.db.database.prepare(
-      "SELECT * FROM generation_sessions WHERE character_profile_id = ? ORDER BY updated_at DESC",
-    ).all(profileId) as SessionRow[]).map(mapSession);
+    return (this.db.database.prepare(`SELECT sessions.*, contexts.profile_id AS scene_profile_id,
+      contexts.version_id AS scene_version_id, contexts.state_id AS scene_state_id
+      FROM generation_sessions AS sessions LEFT JOIN generation_session_scene_contexts AS contexts ON contexts.session_id = sessions.id
+      WHERE sessions.character_profile_id = ? ORDER BY sessions.updated_at DESC`)
+      .all(profileId) as SessionRow[]).map(mapSession);
   }
 
   updateSessionStatus(id: string, status: GenerationSessionStatus): GenerationSession {

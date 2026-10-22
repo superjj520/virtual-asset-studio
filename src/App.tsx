@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AdaptiveDomainNavigation } from "./ui-adapters/AdaptiveDomainNavigation";
 import { CharacterInspector } from "./character/CharacterInspector";
 import { CharacterWorkspacePanel } from "./character/CharacterWorkspacePanel";
+import { SceneWorkspacePanel } from "./scene/SceneWorkspacePanel";
 import { composeCharacterCard, evaluateCharacterCoverage, type CharacterUseCase, type CharacterVariantSelection } from "./shared/character-slots";
 import { collectUsableReferenceAssetIds, getAssetCollectionBlueprint } from "./shared/asset-collection-blueprints";
 import { CREATIVE_ASPECT_RATIOS, normalizeCreativeAspectRatio, aspectRatioForImageSize } from "./shared/types";
@@ -32,6 +33,9 @@ import type {
   ProjectMedium,
   ProjectWorkspace,
   ReversePrompt,
+  SceneKind,
+  SceneProfile,
+  SceneWorkspaceSnapshot,
   PromptBuild,
   PromptEntry,
   PromptSource,
@@ -243,6 +247,7 @@ export default function App() {
     | "start"
     | "assets"
     | "characters"
+    | "scenes"
     | "collections"
     | "workspace"
     | "creation"
@@ -284,6 +289,15 @@ export default function App() {
     versionId?: string;
     stateId?: string;
   }>();
+  const [scenes, setScenes] = useState<SceneProfile[]>([]);
+  const [selectedSceneId, setSelectedSceneId] = useState("");
+  const [selectedSceneWorkspace, setSelectedSceneWorkspace] = useState<SceneWorkspaceSnapshot>();
+  const [activeSceneContext, setActiveSceneContext] = useState<{ profileId: string; versionId?: string; stateId?: string }>();
+  const [isCreatingScene, setIsCreatingScene] = useState(false);
+  const [sceneDraft, setSceneDraft] = useState({
+    name: "", kind: "interior" as SceneKind, anchor: "", layout: "", materials: "", colorSystem: "",
+    requiredElements: "", forbiddenChanges: "",
+  });
   const [masterPickerCharacterId, setMasterPickerCharacterId] = useState("");
   const [masterCandidateAssets, setMasterCandidateAssets] = useState<Asset[]>([]);
   const [masterChoiceId, setMasterChoiceId] = useState("");
@@ -528,7 +542,24 @@ export default function App() {
     return () => { current = false; };
   }, [selectedProjectId]);
   useEffect(() => {
+    let current = true;
+    window.studio.sceneWorkspace.list(selectedProjectId || undefined)
+      .then((profiles) => { if (current) setScenes(profiles); })
+      .catch(() => { if (current) setScenes([]); });
+    return () => { current = false; };
+  }, [selectedProjectId]);
+  useEffect(() => {
+    if (!selectedSceneId) { setSelectedSceneWorkspace(undefined); return; }
+    let current = true;
+    window.studio.sceneWorkspace.get(selectedSceneId)
+      .then((workspace) => { if (current && workspace.scene.id === selectedSceneId) setSelectedSceneWorkspace(workspace); })
+      .catch(() => { if (current) setSelectedSceneWorkspace(undefined); });
+    return () => { current = false; };
+  }, [selectedSceneId]);
+  useEffect(() => {
     selectCharacter(""); setGuideCharacterId("");
+    setSelectedSceneId(""); setSelectedSceneWorkspace(undefined);
+    setActiveCharacterContext(undefined); setActiveSceneContext(undefined);
     setSelectedAssetId(""); setSelectedCollectionId(""); setSelectedCollection(undefined);
     ++masterPickerRequestRef.current;
     ++characterRelationsRequestRef.current;
@@ -1200,6 +1231,56 @@ export default function App() {
     setScreen("creation");
     setNotice(`已带入「${workspace.character.name}」${state ? `的“${state.name}”状态` : "的基础设定"}；补充本次目标后生成提示词。`);
   };
+  const createSceneProfile = async () => {
+    try {
+      const scene = await window.studio.sceneWorkspace.create({
+        projectId: selectedProjectId || undefined,
+        lifecycle: "draft",
+        ...sceneDraft,
+      });
+      setScenes((current) => [scene, ...current]);
+      setSelectedSceneId(scene.id);
+      setSelectedSceneWorkspace(await window.studio.sceneWorkspace.get(scene.id));
+      setSceneDraft({ name: "", kind: "interior", anchor: "", layout: "", materials: "", colorSystem: "", requiredElements: "", forbiddenChanges: "" });
+      setIsCreatingScene(false);
+      setNotice(`已建立场景档案「${scene.name}」。`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "建立场景档案失败。");
+    }
+  };
+  const updateSceneLifecycle = async (scene: SceneProfile, lifecycle: SceneProfile["lifecycle"]) => {
+    try {
+      const updated = await window.studio.sceneWorkspace.update(scene.id, { lifecycle });
+      setScenes((current) => current.map((item) => item.id === updated.id ? updated : item));
+      if (selectedSceneId === updated.id) setSelectedSceneWorkspace(await window.studio.sceneWorkspace.get(updated.id));
+    } catch (error) { setNotice(error instanceof Error ? error.message : "更新场景状态失败。"); }
+  };
+  const startSceneImageCreation = (
+    workspace: SceneWorkspaceSnapshot,
+    context: { versionId?: string; stateId?: string },
+  ) => {
+    const state = context.stateId ? workspace.states.find((item) => item.id === context.stateId) : workspace.activeState;
+    const usableSceneAssets = workspace.media
+      .filter((item) => item.asset.confirmation === "confirmed" && ["authorized", "original"].includes(item.asset.rightsStatus))
+      .map((item) => item.assetId);
+    setCard((current) => normalizeCreativeCard({
+      ...current,
+      projectId: selectedProjectId || workspace.scene.projectId,
+      intent: current.intent || `在「${workspace.scene.name}」中完成场景化图片创作`,
+      subject: current.subject || "场景主视觉，无额外人物",
+      scene: [workspace.scene.anchor, workspace.scene.layout, workspace.scene.requiredElements,
+        state?.timeOfDay, state?.weather, state?.season, state?.atmosphere, state?.setDressing].filter(Boolean).join("；"),
+      lighting: mergeText(current.lighting, state?.lighting ?? ""),
+      style: mergeText(current.style, [workspace.scene.materials, workspace.scene.colorSystem].filter(Boolean).join("；")),
+      avoid: mergeText(current.avoid, workspace.scene.forbiddenChanges),
+      mustKeep: mergeText(current.mustKeep ?? "", state?.continuityNotes ?? ""),
+      referenceAssetIds: [...new Set([...current.referenceAssetIds, ...usableSceneAssets])],
+    }));
+    setActiveSceneContext({ profileId: workspace.scene.id, ...context });
+    setPromptBuild(undefined); setTranslation(undefined);
+    setActiveDomain("creation"); setScreen("creation");
+    setNotice(`已带入场景「${workspace.scene.name}」${state ? `的“${state.name}”状态` : "的空间基线"}。`);
+  };
   const generateImage = async () => {
     if (!promptBuild) {
       setNotice("请先生成结构化提示词。");
@@ -1221,13 +1302,19 @@ export default function App() {
       const characterWorkspace = characterId
         ? await window.studio.characterWorkspace.get(characterId)
         : undefined;
-      const session = characterId ? await window.studio.characterWorkspace.createSession({
-        projectId: selectedProjectId || characterWorkspace?.character.projectId,
+      const sceneWorkspace = activeSceneContext?.profileId
+        ? await window.studio.sceneWorkspace.get(activeSceneContext.profileId)
+        : undefined;
+      const session = characterId || sceneWorkspace ? await window.studio.characterWorkspace.createSession({
+        projectId: selectedProjectId || characterWorkspace?.character.projectId || sceneWorkspace?.scene.projectId,
         characterProfileId: characterId,
         characterVersionId: activeCharacterContext?.versionId ?? characterWorkspace?.activeVersion?.id,
         characterStateId: activeCharacterContext?.stateId ?? characterWorkspace?.activeState?.id,
+        sceneProfileId: sceneWorkspace?.scene.id,
+        sceneVersionId: activeSceneContext?.versionId ?? sceneWorkspace?.activeVersion?.id,
+        sceneStateId: activeSceneContext?.stateId ?? sceneWorkspace?.activeState?.id,
         creativeTaskId: activeTaskId || undefined,
-        title: `${characterWorkspace?.character.name ?? "角色"} · ${normalizedCard.scene || normalizedCard.intent || "图片创作"}`.slice(0, 80),
+        title: `${characterWorkspace?.character.name ?? sceneWorkspace?.scene.name ?? "图片创作"} · ${normalizedCard.scene || normalizedCard.intent || "候选"}`.slice(0, 80),
         mode: normalizedCard.referenceAssetIds.length ? "image_edit" : "text_to_image",
         prompt,
         negativePrompt: translation?.negative ?? promptBuild.negative,
@@ -1239,7 +1326,7 @@ export default function App() {
       const job = await window.studio.generation.image({
         prompt,
         negative: translation?.negative ?? promptBuild.negative,
-        projectId: selectedProjectId || undefined,
+        projectId: selectedProjectId || characterWorkspace?.character.projectId || sceneWorkspace?.scene.projectId,
         creativeTaskId: activeTaskId || undefined,
         generationSessionId: session?.id,
         aspectRatio: normalizedCard.aspectRatio,
@@ -1255,6 +1342,8 @@ export default function App() {
       await refresh();
       if (characterId && selectedCharacterIdRef.current === characterId)
         setSelectedCharacterWorkspace(await window.studio.characterWorkspace.get(characterId));
+      if (sceneWorkspace && selectedSceneId === sceneWorkspace.scene.id)
+        setSelectedSceneWorkspace(await window.studio.sceneWorkspace.get(sceneWorkspace.scene.id));
     } catch (error) {
       if (activeTaskId) {
         try {
@@ -1982,7 +2071,7 @@ export default function App() {
   };
   const domainSections = {
     creation: [["workspace", "项目总览"], ["start", "新建创作单"], ["creation", "当前创作卡"]],
-    assets: [["characters", "角色档案"], ["collections", "资产包"], ["assets", "素材库"]],
+    assets: [["characters", "角色档案"], ["scenes", "场景档案"], ["collections", "资产包"], ["assets", "素材库"]],
     production: [["production", "生产与审片"], ["shot", "镜头与视频"], ["jobs", "生成队列"]],
     templates: [["recipes", "方法卡"], ["paradigms", "画面范式"], ["learning", "学习收件箱"]],
   } as const;
@@ -2241,6 +2330,52 @@ export default function App() {
           />}
           {!selectedCharacterId && characters.length > 0 && <div className="empty-state character-placeholder"><strong>选择角色，开始核对</strong><p>按用途补齐素材证据。</p></div>}
           </div>
+          </div>}
+          {notice && <p className="notice" role="status">{notice}</p>}
+        </section>
+      )}
+      {screen === "scenes" && (
+        <section className="workspace character-workspace scene-workspace">
+          <header className="workspace-header">
+            <div>
+              <p className="eyebrow">资产 / 场景档案</p>
+              <h2>场景档案与环境连续性</h2>
+              <p className="result-note">固定空间结构，按状态切换时间、天气、光线和布景。</p>
+            </div>
+            <button className="primary-button" onClick={() => setIsCreatingScene(true)}>新建场景档案</button>
+          </header>
+          {isCreatingScene ? <section className="form-panel" aria-label="建立场景档案">
+            <div className="inspector-heading"><div><p className="eyebrow">资产 / 新建场景</p><h3>建立空间基线</h3></div></div>
+            <div className="form-grid">
+              <label>场景名称<input aria-label="场景名称" value={sceneDraft.name} onChange={(event) => setSceneDraft((value) => ({ ...value, name: event.target.value }))} placeholder="例如：雨夜玻璃温室" /></label>
+              <label>场景类型<select value={sceneDraft.kind} onChange={(event) => setSceneDraft((value) => ({ ...value, kind: event.target.value as SceneKind }))}><option value="interior">室内</option><option value="exterior">室外</option><option value="environment">自然／环境</option><option value="fantasy">幻想空间</option><option value="studio">影棚</option></select></label>
+              <label>空间锚点<textarea aria-label="空间锚点" value={sceneDraft.anchor} onChange={(event) => setSceneDraft((value) => ({ ...value, anchor: event.target.value }))} placeholder="一句话说明这个空间最不能改变的识别结构" /></label>
+              <label>空间结构<textarea value={sceneDraft.layout} onChange={(event) => setSceneDraft((value) => ({ ...value, layout: event.target.value }))} placeholder="入口、动线、门窗和主要区域的位置关系" /></label>
+              <label>材质体系<textarea value={sceneDraft.materials} onChange={(event) => setSceneDraft((value) => ({ ...value, materials: event.target.value }))} placeholder="例如：旧铁框、潮湿玻璃、深色石材" /></label>
+              <label>色彩体系<textarea value={sceneDraft.colorSystem} onChange={(event) => setSceneDraft((value) => ({ ...value, colorSystem: event.target.value }))} placeholder="例如：墨绿、冷蓝、少量暖金" /></label>
+              <label>必须出现<textarea value={sceneDraft.requiredElements} onChange={(event) => setSceneDraft((value) => ({ ...value, requiredElements: event.target.value }))} placeholder="例如：拱形门、中央石板路" /></label>
+              <label>禁止改变<textarea value={sceneDraft.forbiddenChanges} onChange={(event) => setSceneDraft((value) => ({ ...value, forbiddenChanges: event.target.value }))} placeholder="例如：禁止改变中轴结构和门窗位置" /></label>
+            </div>
+            <div className="form-actions"><button className="primary-button" onClick={() => void createSceneProfile()}>保存场景档案</button><button onClick={() => setIsCreatingScene(false)}>取消</button></div>
+          </section> : <div className={scenes.length ? "character-management-layout" : "character-management-layout character-management-empty"}>
+            <section className="character-catalog" aria-label="场景档案库">
+              {scenes.map((scene) => <article className={selectedSceneId === scene.id ? "character-profile character-current" : "character-profile"} key={scene.id}>
+                <div><span className="pattern-status">{scene.kind === "interior" ? "室内" : scene.kind === "exterior" ? "室外" : scene.kind === "fantasy" ? "幻想" : scene.kind === "studio" ? "影棚" : "环境"}</span><h3>{scene.name}</h3><p>{scene.anchor}</p><small>{scene.masterAssetId ? "已绑定场景母版" : "尚未绑定场景母版"}</small></div>
+                <div className="character-actions">
+                  <label>状态<select value={scene.lifecycle} onChange={(event) => void updateSceneLifecycle(scene, event.target.value as SceneProfile["lifecycle"])}><option value="draft">设定中</option><option value="confirmed">已确认</option><option value="archived">已归档</option></select></label>
+                  <button className="primary-button" onClick={() => { setSelectedSceneWorkspace(undefined); setSelectedSceneId(scene.id); }}>管理场景</button>
+                </div>
+              </article>)}
+              {!scenes.length && <div className="empty-state empty-state-action"><div><strong>还没有场景档案</strong><p>先建立空间基线，再扩展不同时间和天气。</p></div><button className="primary-button" onClick={() => setIsCreatingScene(true)}>建立场景档案</button></div>}
+            </section>
+            <div className="character-detail-stack">
+              {selectedSceneId && selectedSceneWorkspace?.scene.id !== selectedSceneId && <p role="status">正在读取场景工作室…</p>}
+              {selectedSceneWorkspace?.scene.id === selectedSceneId && <SceneWorkspacePanel snapshot={selectedSceneWorkspace} onChanged={(workspace) => {
+                setSelectedSceneWorkspace(workspace);
+                setScenes((current) => current.map((item) => item.id === workspace.scene.id ? workspace.scene : item));
+              }} onStartImage={(context) => startSceneImageCreation(selectedSceneWorkspace, context)} />}
+              {!selectedSceneId && scenes.length > 0 && <div className="empty-state character-placeholder"><strong>选择场景，开始管理</strong><p>空间基线与环境状态会分别保存。</p></div>}
+            </div>
           </div>}
           {notice && <p className="notice" role="status">{notice}</p>}
         </section>
@@ -2978,6 +3113,23 @@ export default function App() {
                 <span>{card.referenceAssetIds.length} 张参考图</span>
                 <button type="button" onClick={() => setScreen("characters")}>查看角色</button>
                 <button type="button" onClick={() => setActiveCharacterContext(undefined)}>解除锁定</button>
+              </div>
+            </section>
+          )}
+          {activeSceneContext && selectedSceneWorkspace?.scene.id === activeSceneContext.profileId && (
+            <section className="creation-character-context creation-scene-context" aria-label="本轮场景上下文">
+              <div>
+                <span className="context-avatar scene-avatar" aria-hidden="true">景</span>
+                <div>
+                  <p className="eyebrow">本轮锁定场景</p>
+                  <strong>{selectedSceneWorkspace.scene.name}</strong>
+                  <p>{selectedSceneWorkspace.versions.find((item) => item.id === activeSceneContext.versionId)?.label ?? selectedSceneWorkspace.activeVersion?.label ?? "当前空间"}{selectedSceneWorkspace.states.find((item) => item.id === activeSceneContext.stateId)?.name ? ` · ${selectedSceneWorkspace.states.find((item) => item.id === activeSceneContext.stateId)?.name}` : " · 基础环境"}</p>
+                </div>
+              </div>
+              <div className="form-actions">
+                <span>{selectedSceneWorkspace.media.filter((item) => ["layout_reference", "lighting_reference", "material_reference", "master"].includes(item.role)).length} 张场景参考</span>
+                <button type="button" onClick={() => setScreen("scenes")}>查看场景</button>
+                <button type="button" onClick={() => setActiveSceneContext(undefined)}>解除锁定</button>
               </div>
             </section>
           )}

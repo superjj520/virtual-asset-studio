@@ -38,6 +38,7 @@ import { RelationshipRepository } from "./services/relationships/repository";
 import { ShotPlanRepository } from "./services/shots/repository";
 import { CharacterProfileRepository } from "./services/characters/repository";
 import { CharacterWorkspaceRepository } from "./services/characters/workspace-repository";
+import { SceneWorkspaceRepository } from "./services/scenes/workspace-repository";
 import { PromptSourceRepository } from "./services/learning/source-repository";
 import { importGitHubPromptSource } from "./services/learning/github-source-importer";
 import { importWebPromptSource } from "./services/learning/web-source-importer";
@@ -94,6 +95,7 @@ export const createStudioRuntime = (
   const shots = new ShotPlanRepository(database);
   const characters = new CharacterProfileRepository(database);
   const characterWorkspace = new CharacterWorkspaceRepository(database, characters);
+  const sceneWorkspace = new SceneWorkspaceRepository(database);
   const batches = new GenerationBatchRepository(database);
   const promptSources = new PromptSourceRepository(database);
   const promptEntries = new PromptEntryRepository(database);
@@ -311,7 +313,7 @@ export const createStudioRuntime = (
   ) => {
     if (!sessionId) return undefined;
     const session = characterWorkspace.getSession(sessionId);
-    if (!session) throw new Error("生成会话不存在，请重新从角色工作室开始。");
+    if (!session) throw new Error("生成会话不存在，请重新从人物或场景工作室开始。");
     if (!allowedModes.includes(session.mode)) throw new Error("生成会话模式与当前生产操作不一致。");
     if (session.status === "completed" || session.status === "archived")
       throw new Error("生成会话已结束，请新建会话后再生产。");
@@ -323,14 +325,14 @@ export const createStudioRuntime = (
     assetId: string,
     parentAssetId?: string,
   ) => {
-    if (!session?.characterProfileId) return;
-    characterWorkspace.attachMedia(session.characterProfileId, {
-      versionId: session.characterVersionId,
-      stateId: session.characterStateId,
-      sessionId: session.id,
-      assetId,
-      parentAssetId,
-      role: "candidate",
+    if (!session) return;
+    if (session.characterProfileId) characterWorkspace.attachMedia(session.characterProfileId, {
+      versionId: session.characterVersionId, stateId: session.characterStateId, sessionId: session.id,
+      assetId, parentAssetId, role: "candidate",
+    });
+    if (session.sceneProfileId) sceneWorkspace.attachMedia(session.sceneProfileId, {
+      versionId: session.sceneVersionId, stateId: session.sceneStateId, sessionId: session.id,
+      assetId, parentAssetId, role: "candidate",
     });
     characterWorkspace.updateSessionStatus(session.id, "review");
   };
@@ -647,6 +649,14 @@ export const createStudioRuntime = (
       ipcMain.handle("character-media:attach", (_event, profileId: string, input) =>
         characterWorkspace.attachMedia(profileId, input),
       );
+      ipcMain.handle("scenes:create", (_event, input) => sceneWorkspace.createProfile(input));
+      ipcMain.handle("scenes:list", (_event, projectId?: string) => sceneWorkspace.listProfiles(projectId));
+      ipcMain.handle("scenes:update", (_event, id: string, patch) => sceneWorkspace.updateProfile(id, patch));
+      ipcMain.handle("scene-workspace:get", (_event, profileId: string) => sceneWorkspace.getWorkspace(profileId));
+      ipcMain.handle("scene-versions:create", (_event, profileId: string, input) => sceneWorkspace.createVersion(profileId, input));
+      ipcMain.handle("scene-states:create", (_event, profileId: string, input) => sceneWorkspace.createState(profileId, input));
+      ipcMain.handle("scene-states:update", (_event, id: string, patch) => sceneWorkspace.updateState(id, patch));
+      ipcMain.handle("scene-media:attach", (_event, profileId: string, input) => sceneWorkspace.attachMedia(profileId, input));
       ipcMain.handle(
         "batches:create",
         (

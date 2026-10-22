@@ -39,6 +39,16 @@ beforeEach(() => {
       updateSessionStatus: vi.fn(),
       attachMedia: vi.fn().mockResolvedValue(undefined),
     },
+    sceneWorkspace: {
+      create: vi.fn(),
+      list: vi.fn().mockResolvedValue([]),
+      update: vi.fn(),
+      get: vi.fn().mockResolvedValue(undefined),
+      createVersion: vi.fn(),
+      createState: vi.fn(),
+      updateState: vi.fn(),
+      attachMedia: vi.fn(),
+    },
     tasks: { create: vi.fn(), list: vi.fn().mockResolvedValue([]), update: vi.fn() },
     batches: { create: vi.fn(), list: vi.fn().mockResolvedValue([]), run: vi.fn() },
     shots: { create: vi.fn(), list: vi.fn().mockResolvedValue([]) },
@@ -72,6 +82,28 @@ it('默认进入创作工作总览，并提供四个工作域入口与主内容�
   expect(screen.getByRole('main')).toHaveAttribute('id', 'main-content');
   expect(screen.getByRole('button', { name: '创建第一个项目' })).toBeInTheDocument();
   expect(screen.getByRole('textbox', { name: '项目名称' })).toBeInTheDocument();
+});
+
+it('场景档案可从资产域进入工作室，并把锁定场景带入创作卡', async () => {
+  const scene = {
+    id: 'scene-1', name: '雨夜玻璃温室', kind: 'interior', lifecycle: 'confirmed', anchor: '狭长中轴温室',
+    layout: '中央石板路', materials: '潮湿玻璃', colorSystem: '墨绿与冷蓝', requiredElements: '拱形门',
+    forbiddenChanges: '不改变中轴结构', createdAt: '', updatedAt: '',
+  };
+  const version = { id: 'scene-version-1', profileId: scene.id, versionNumber: 1, label: '正式空间 V1', status: 'locked', changeSummary: '', snapshot: scene, createdAt: '' };
+  const state = { id: 'scene-state-1', profileId: scene.id, versionId: version.id, name: '雨夜', status: 'active', timeOfDay: '深夜', weather: '小雨', season: '', lighting: '冷月光', atmosphere: '玻璃水汽', setDressing: '', continuityNotes: '保持地面潮湿', createdAt: '', updatedAt: '' };
+  const workspace = { scene, versions: [version], states: [state], sessions: [], media: [], activeVersion: version, activeState: state };
+  vi.mocked(window.studio.sceneWorkspace.list).mockResolvedValue([scene] as never);
+  vi.mocked(window.studio.sceneWorkspace.get).mockResolvedValue(workspace as never);
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '资产' }));
+  fireEvent.click(await screen.findByRole('button', { name: '场景档案' }));
+  expect(await screen.findByRole('heading', { name: '场景档案与环境连续性' })).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole('button', { name: '管理场景' }));
+  fireEvent.click(await screen.findByRole('button', { name: '用当前场景开始图片创作' }));
+  expect(await screen.findByText('本轮锁定场景')).toBeInTheDocument();
+  expect(screen.getByText('狭长中轴温室；中央石板路；拱形门；深夜；小雨；玻璃水汽')).toBeInTheDocument();
 });
 
 it('重启中断的图片任务可在队列确认重试，并在新任务关联后隐藏重复入口', async () => {

@@ -382,6 +382,9 @@ export type GenerationSession = {
   characterProfileId?: string;
   characterVersionId?: string;
   characterStateId?: string;
+  sceneProfileId?: string;
+  sceneVersionId?: string;
+  sceneStateId?: string;
   creativeTaskId?: string;
   title: string;
   mode: GenerationSessionMode;
@@ -425,6 +428,82 @@ export type CharacterWorkspaceSnapshot = {
   media: Array<CharacterMediaLink & { asset: Asset }>;
   activeVersion?: CharacterVersion;
   activeState?: CharacterState;
+};
+
+export type SceneKind = "interior" | "exterior" | "environment" | "fantasy" | "studio";
+export type SceneLifecycle = "draft" | "confirmed" | "archived";
+export type SceneProfile = {
+  id: string;
+  projectId?: string;
+  name: string;
+  kind: SceneKind;
+  lifecycle: SceneLifecycle;
+  anchor: string;
+  layout: string;
+  materials: string;
+  colorSystem: string;
+  requiredElements: string;
+  forbiddenChanges: string;
+  masterAssetId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+export type SceneVersionStatus = "draft" | "locked" | "superseded";
+export type SceneVersionSnapshot = Omit<SceneProfile, "id" | "createdAt" | "updatedAt">;
+export type SceneVersion = {
+  id: string;
+  profileId: string;
+  versionNumber: number;
+  label: string;
+  status: SceneVersionStatus;
+  changeSummary: string;
+  snapshot: SceneVersionSnapshot;
+  createdAt: string;
+};
+export type SceneStateStatus = "draft" | "active" | "archived";
+export type SceneState = {
+  id: string;
+  profileId: string;
+  versionId?: string;
+  name: string;
+  status: SceneStateStatus;
+  timeOfDay: string;
+  weather: string;
+  season: string;
+  lighting: string;
+  atmosphere: string;
+  setDressing: string;
+  continuityNotes: string;
+  createdAt: string;
+  updatedAt: string;
+};
+export type SceneMediaRole =
+  | "layout_reference"
+  | "lighting_reference"
+  | "material_reference"
+  | "candidate"
+  | "master"
+  | "output"
+  | "remix_source";
+export type SceneMediaLink = {
+  id: string;
+  profileId: string;
+  versionId?: string;
+  stateId?: string;
+  sessionId?: string;
+  assetId: string;
+  role: SceneMediaRole;
+  parentAssetId?: string;
+  createdAt: string;
+};
+export type SceneWorkspaceSnapshot = {
+  scene: SceneProfile;
+  versions: SceneVersion[];
+  states: SceneState[];
+  sessions: GenerationSession[];
+  media: Array<SceneMediaLink & { asset: Asset }>;
+  activeVersion?: SceneVersion;
+  activeState?: SceneState;
 };
 
 /**

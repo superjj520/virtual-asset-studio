@@ -290,6 +290,32 @@ it('角色工作室生成会话把角色版本、状态、参考与候选结果�
   ]));
 });
 
+it('场景工作室生成会话把空间版本、环境状态与候选结果串成同一条生产记录', async () => {
+  const scene = await harness.handlers.get('scenes:create')!({}, {
+    name: '雨夜玻璃温室', kind: 'interior', lifecycle: 'confirmed', anchor: '狭长中轴温室',
+    layout: '中央石板路', materials: '潮湿玻璃', colorSystem: '墨绿与冷蓝',
+  });
+  const version = await harness.handlers.get('scene-versions:create')!({}, scene.id, { label: '正式空间 V1', status: 'locked' });
+  const state = await harness.handlers.get('scene-states:create')!({}, scene.id, {
+    versionId: version.id, name: '雨夜', status: 'active', timeOfDay: '深夜', lighting: '冷月光',
+  });
+  const session = await harness.handlers.get('generation-sessions:create')!({}, {
+    sceneProfileId: scene.id, sceneVersionId: version.id, sceneStateId: state.id,
+    title: '温室场景候选', mode: 'text_to_image', prompt: '雨夜玻璃温室', aspectRatio: '3:2', referenceAssetIds: [], settings: {},
+  });
+  await harness.handlers.get('settings:save-provider-key')!({}, 'openai', 'openai-test-key-placeholder-123456');
+  vi.stubGlobal('fetch', vi.fn(async () => ({
+    ok: true, json: async () => ({ data: [{ b64_json: Buffer.from('scene-session-image').toString('base64') }] }),
+  })));
+
+  const job = await harness.invoke('generation:image', { ...imageInput([]), aspectRatio: '3:2', generationSessionId: session.id });
+  const snapshot = await harness.handlers.get('scene-workspace:get')!({}, scene.id);
+  expect(snapshot.sessions[0]).toMatchObject({ id: session.id, status: 'review', sceneStateId: state.id });
+  expect(snapshot.media).toEqual(expect.arrayContaining([
+    expect.objectContaining({ assetId: job.result.assetId, role: 'candidate' }),
+  ]));
+});
+
 it('图片生成保留避免项和原任务关联，重试信息不会丢失', async () => {
   harness.handlers.get('settings:save-provider-key')!({}, 'openai', 'openai-test-key-placeholder-123456');
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ data: [{ b64_json: Buffer.from('retry-image').toString('base64') }] }) })));
