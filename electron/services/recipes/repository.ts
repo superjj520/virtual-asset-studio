@@ -34,8 +34,26 @@ export class CreativeRecipeRepository {
   }
 
   updateStatus(id: string, status: Exclude<RecipeStatus, 'draft'>, evidence: string): CreativeRecipe {
+    const recipe = this.get(id);
+    if (!recipe) throw new Error('配方不存在。');
+    let evidenceItems = evidence.trim() ? [evidence.trim()] : [];
+    if (status === 'validated') {
+      const review = this.db.database.prepare(`SELECT reviews.id, reviews.project_id, reviews.creative_task_id,
+        reviews.asset_id, assets.name AS asset_name, assets.confirmation, assets.rights_status
+        FROM image_review_records AS reviews INNER JOIN assets ON assets.id = reviews.asset_id
+        WHERE reviews.id = ? AND reviews.decision = 'approved'`).get(evidence.trim()) as {
+          id: string; project_id: string; creative_task_id: string | null; asset_id: string; asset_name: string;
+          confirmation: string; rights_status: string;
+        } | undefined;
+      if (!review) throw new Error('配方必须绑定一条已通过的图片审片记录，才能标记为已验证。');
+      if (recipe.projectId && review.project_id !== recipe.projectId) throw new Error('审片证据与配方所属项目不一致。');
+      if (recipe.creativeTaskId && review.creative_task_id !== recipe.creativeTaskId) throw new Error('审片证据不是该配方来源任务的结果。');
+      if (review.confirmation !== 'confirmed' || !['authorized', 'original'].includes(review.rights_status))
+        throw new Error('审片图片尚未完成画面确认和使用权复核。');
+      evidenceItems = [`审片记录 ${review.id} · 成图 ${review.asset_name}`];
+    }
     const result = this.db.database.prepare('UPDATE creative_recipes SET status = ?, evidence_json = ?, updated_at = ? WHERE id = ?')
-      .run(status, JSON.stringify(evidence.trim() ? [evidence.trim()] : []), new Date().toISOString(), id);
+      .run(status, JSON.stringify(evidenceItems), new Date().toISOString(), id);
     if (result.changes !== 1) throw new Error('配方不存在。');
     return this.get(id)!;
   }

@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld("studio", {
     review: (assetId, review) =>
       ipcRenderer.invoke("assets:review", assetId, review),
   },
+  imageReviews: {
+    workspace: (projectId) => ipcRenderer.invoke("image-reviews:workspace", projectId),
+    create: (input) => ipcRenderer.invoke("image-reviews:create", input),
+    promote: (input) => ipcRenderer.invoke("image-reviews:promote", input),
+  },
   collections: {
     create: (input) => ipcRenderer.invoke("collections:create", input),
     list: (projectId) => ipcRenderer.invoke("collections:list", projectId),

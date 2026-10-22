@@ -3,6 +3,7 @@ import { AdaptiveDomainNavigation } from "./ui-adapters/AdaptiveDomainNavigation
 import { CharacterInspector } from "./character/CharacterInspector";
 import { CharacterWorkspacePanel } from "./character/CharacterWorkspacePanel";
 import { SceneWorkspacePanel } from "./scene/SceneWorkspacePanel";
+import { ReviewWorkspacePanel } from "./review/ReviewWorkspacePanel";
 import { composeCharacterCard, evaluateCharacterCoverage, type CharacterUseCase, type CharacterVariantSelection } from "./shared/character-slots";
 import { collectUsableReferenceAssetIds, getAssetCollectionBlueprint } from "./shared/asset-collection-blueprints";
 import { CREATIVE_ASPECT_RATIOS, normalizeCreativeAspectRatio, aspectRatioForImageSize } from "./shared/types";
@@ -33,6 +34,7 @@ import type {
   ProjectMedium,
   ProjectWorkspace,
   ReversePrompt,
+  ReviewWorkspaceSnapshot,
   SceneKind,
   SceneProfile,
   SceneWorkspaceSnapshot,
@@ -254,6 +256,7 @@ export default function App() {
     | "creation"
     | "recipes"
     | "production"
+    | "review"
     | "shot"
     | "learning"
     | "paradigms"
@@ -271,6 +274,7 @@ export default function App() {
   });
   const [card, setCard] = useState<CreativeCard>(EMPTY_CARD);
   const [recipes, setRecipes] = useState<CreativeRecipe[]>([]);
+  const [recipeReviewSelections, setRecipeReviewSelections] = useState<Record<string, string>>({});
   const [recipeName, setRecipeName] = useState("我的创作配方");
   const [recipePurpose, setRecipePurpose] = useState("角色场景连续创作");
   const [characterName, setCharacterName] = useState("");
@@ -291,6 +295,7 @@ export default function App() {
     stateId?: string;
   }>();
   const [scenes, setScenes] = useState<SceneProfile[]>([]);
+  const [reviewWorkspace, setReviewWorkspace] = useState<ReviewWorkspaceSnapshot>();
   const [selectedSceneId, setSelectedSceneId] = useState("");
   const [selectedSceneWorkspace, setSelectedSceneWorkspace] = useState<SceneWorkspaceSnapshot>();
   const [activeSceneContext, setActiveSceneContext] = useState<{ profileId: string; versionId?: string; stateId?: string }>();
@@ -608,6 +613,7 @@ export default function App() {
     setShotCharacterVersionId(""); setShotCharacterStateId("");
     setShotSceneVersionId(""); setShotSceneStateId("");
     setSelectedAssetId(""); setSelectedCollectionId(""); setSelectedCollection(undefined);
+    setReviewWorkspace(undefined); setRecipeReviewSelections({});
     ++masterPickerRequestRef.current;
     ++characterRelationsRequestRef.current;
     setMasterPickerCharacterId(""); setMasterCandidateAssets([]); setMasterChoiceId("");
@@ -691,6 +697,23 @@ export default function App() {
       .then(setRecipes)
       .catch(() => setRecipes([]));
   }, [selectedProjectId]);
+  useEffect(() => {
+    if (screen !== "review" && screen !== "recipes") return;
+    if (!selectedProjectId) {
+      setReviewWorkspace(undefined);
+      return;
+    }
+    let current = true;
+    window.studio.imageReviews.workspace(selectedProjectId)
+      .then((workspace) => { if (current) setReviewWorkspace(workspace); })
+      .catch((error) => {
+        if (current) {
+          setReviewWorkspace(undefined);
+          setNotice(error instanceof Error ? error.message : "读取审片工作台失败。");
+        }
+      });
+    return () => { current = false; };
+  }, [screen, selectedProjectId]);
   useEffect(() => {
     if (selectedAssetId)
       window.studio.assets
@@ -814,7 +837,7 @@ export default function App() {
     const domainForScreen: Partial<Record<typeof screen, typeof activeDomain>> = {
       workspace: "creation", start: "creation", creation: "creation",
       assets: "assets", characters: "assets", collections: "assets",
-      production: "production", shot: "production", jobs: "production",
+      production: "production", review: "production", shot: "production", jobs: "production",
       recipes: "templates", paradigms: "templates", learning: "templates",
     };
     const domain = domainForScreen[screen];
@@ -1435,7 +1458,7 @@ export default function App() {
   };
   const reviewRecipe = async (recipe: CreativeRecipe, status: "validated" | "rejected") => {
     const evidence = status === "validated"
-      ? "已由用户基于实际出图确认可复用。"
+      ? recipeReviewSelections[recipe.id] ?? ""
       : "已由用户基于实际出图确认不适合复用。";
     try {
       const updated = await window.studio.recipes.updateStatus(recipe.id, status, evidence);
@@ -2201,7 +2224,7 @@ export default function App() {
   const domainSections = {
     creation: [["workspace", "项目总览"], ["start", "新建创作单"], ["creation", "当前创作卡"]],
     assets: [["characters", "角色档案"], ["scenes", "场景档案"], ["collections", "资产包"], ["assets", "素材库"]],
-    production: [["production", "生产与审片"], ["shot", "镜头工作室"], ["jobs", "生成队列"]],
+    production: [["production", "批量生产"], ["shot", "镜头工作室"], ["review", "审片与母版"], ["jobs", "生成队列"]],
     templates: [["recipes", "方法卡"], ["paradigms", "画面范式"], ["learning", "学习收件箱"]],
   } as const;
   const workspaceNextAction = (() => {
@@ -2211,7 +2234,7 @@ export default function App() {
     if (!characters.length) return { label: "建立角色档案", target: "characters" as const, hint: "把人物身份固定下来，后续场景才能持续复用。" };
     if (health.confirmedAssetCount === 0) return { label: "完成素材复核", target: "assets" as const, hint: "先确认使用权和审片状态，再进入生成。" };
     if (!creativeTasks.length) return { label: "开始第一条创作", target: "start" as const, hint: "只填写一句话目标和必须保持项，系统会建立创作基线。" };
-    if (health.candidateAssetCount > 0) return { label: "打开候选审片", target: "production" as const, hint: "从候选中选出主版本，再回资产库锁定母版。" };
+    if (health.candidateAssetCount > 0) return { label: "打开候选审片", target: "review" as const, hint: "从候选中选出主版本，并晋级到项目、角色或场景母版。" };
     return { label: "继续下一条创作", target: "start" as const, hint: "沿用已确认角色和资产包，只改变一个变量。" };
   })();
 
@@ -3489,7 +3512,15 @@ export default function App() {
                   <div className="pattern-actions">
                     <button onClick={() => loadRecipe(recipe)}>加载到创作卡</button>
                     {recipe.status === "draft" && <>
-                      <button onClick={() => void reviewRecipe(recipe, "validated")}>确认可复用</button>
+                      <select aria-label={`${recipe.name}验证成图`} value={recipeReviewSelections[recipe.id] ?? ""}
+                        onChange={(event) => setRecipeReviewSelections((current) => ({ ...current, [recipe.id]: event.target.value }))}>
+                        <option value="">选择已通过成图</option>
+                        {(reviewWorkspace?.reviews ?? []).filter((item) => item.decision === "approved" &&
+                          (!recipe.creativeTaskId || item.creativeTaskId === recipe.creativeTaskId)).map((item) => <option value={item.id} key={item.id}>
+                          {reviewWorkspace?.candidates.find((candidate) => candidate.asset.id === item.assetId)?.asset.name ?? item.assetId}
+                        </option>)}
+                      </select>
+                      <button disabled={!recipeReviewSelections[recipe.id]} onClick={() => void reviewRecipe(recipe, "validated")}>用成图验证</button>
                       <button onClick={() => void reviewRecipe(recipe, "rejected")}>淘汰配方</button>
                     </>}
                   </div>
@@ -3679,6 +3710,35 @@ export default function App() {
                 ))}
             </div>
           </section>
+        </section>
+      )}
+      {screen === "review" && (
+        <section className="workspace review-page">
+          <header className="workspace-header">
+            <div>
+              <p className="eyebrow">生产 / 审片与母版</p>
+              <h2>从候选里选出可复用的生产基线</h2>
+            </div>
+          </header>
+          {!selectedProjectId && <div className="empty-state empty-state-action"><div><strong>先选择项目</strong><p>审片记录、任务来源和母版归属都必须落在明确项目中。</p></div></div>}
+          {selectedProjectId && reviewWorkspace && <ReviewWorkspacePanel
+            snapshot={reviewWorkspace}
+            characters={characters}
+            scenes={scenes}
+            onChanged={async (workspace) => {
+              setReviewWorkspace(workspace);
+              const [, , updatedScenes] = await Promise.all([
+                refresh(),
+                refreshCharacterRelations(),
+                window.studio.sceneWorkspace.list(selectedProjectId),
+              ]);
+              setScenes(updatedScenes);
+              setProjectWorkspace(await window.studio.projects.workspace(selectedProjectId));
+              setNotice("审片工作台已更新。");
+            }}
+            onOpenAsset={(assetId) => { setSelectedAssetId(assetId); setScreen("assets"); }}
+          />}
+          {selectedProjectId && !reviewWorkspace && <p className="result-note">正在读取图片候选…</p>}
         </section>
       )}
       {screen === "shot" && (

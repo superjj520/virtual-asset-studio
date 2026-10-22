@@ -50,6 +50,7 @@ import { CreativeTaskRepository } from "./services/tasks/repository";
 import { AssetCollectionRepository } from "./services/collections/repository";
 import { CharacterAssetPackImporter } from "./services/import/character-pack-importer";
 import { BackupService } from "./services/backup/backup-service";
+import { ImageReviewRepository } from "./services/reviews/repository";
 
 type SecretCipher = {
   isAvailable: () => boolean;
@@ -105,6 +106,7 @@ export const createStudioRuntime = (
   const collections = new AssetCollectionRepository(database);
   const characterPackImporter = new CharacterAssetPackImporter(importer, characters, collections, projects);
   const backupService = new BackupService(join(userDataDirectory, "virtual-asset-studio.sqlite"), join(userDataDirectory, "managed-assets"));
+  const imageReviews = new ImageReviewRepository(database);
   const libraryProject = projects.getOrCreateLibraryProject();
   let databaseClosedForRestore = false;
   jobs.recoverInterrupted();
@@ -450,6 +452,9 @@ export const createStudioRuntime = (
           });
         },
       );
+      ipcMain.handle("image-reviews:workspace", (_event, projectId: string) => imageReviews.workspace(projectId));
+      ipcMain.handle("image-reviews:create", (_event, input) => imageReviews.create(input));
+      ipcMain.handle("image-reviews:promote", (_event, input) => imageReviews.promote(input));
       ipcMain.handle("assets:lineage", (_event, assetId: string) =>
         relationships.listForAsset(assetId).flatMap((relationship) => {
           const direction =

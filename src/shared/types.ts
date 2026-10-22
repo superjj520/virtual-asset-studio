@@ -51,6 +51,66 @@ export type AssetReview = {
   reviewedAt: string;
 };
 
+/** 图片审片采用追加记录，不覆盖历史判断。 */
+export type ImageReviewDecision = "pending" | "approved" | "rejected";
+export type ImageReviewScores = {
+  identity: number;
+  scene: number;
+  realism: number;
+  composition: number;
+  technical: number;
+};
+export type ImageReviewProvenance = {
+  providerId?: ProviderId;
+  prompt?: string;
+  negativePrompt?: string;
+  aspectRatio?: CreativeAspectRatio;
+  referenceAssetIds: string[];
+  characterProfileId?: string;
+  characterVersionId?: string;
+  characterStateId?: string;
+  sceneProfileId?: string;
+  sceneVersionId?: string;
+  sceneStateId?: string;
+};
+export type ImageReviewRecord = {
+  id: string;
+  projectId: string;
+  assetId: string;
+  creativeTaskId?: string;
+  generationSessionId?: string;
+  decision: ImageReviewDecision;
+  scores: ImageReviewScores;
+  note: string;
+  nextAction: string;
+  provenance: ImageReviewProvenance;
+  createdAt: string;
+};
+export type MasterPromotionTarget = "project" | "character" | "scene";
+export type MasterPromotion = {
+  id: string;
+  reviewId: string;
+  projectId: string;
+  assetId: string;
+  targetType: MasterPromotionTarget;
+  targetId: string;
+  versionId?: string;
+  stateId?: string;
+  createdAt: string;
+};
+export type ReviewCandidate = {
+  asset: Asset;
+  latestReview?: ImageReviewRecord;
+  reviewCount: number;
+  projectMaster: boolean;
+};
+export type ReviewWorkspaceSnapshot = {
+  projectId: string;
+  candidates: ReviewCandidate[];
+  reviews: ImageReviewRecord[];
+  promotions: MasterPromotion[];
+};
+
 export type AssetRelationship = {
   id: string;
   fromAssetId: string;

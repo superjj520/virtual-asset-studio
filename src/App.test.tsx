@@ -18,6 +18,7 @@ beforeEach(() => {
       setMaster: vi.fn(),
       review: vi.fn(),
     },
+    imageReviews: { workspace: vi.fn().mockResolvedValue({ projectId: "", candidates: [], reviews: [], promotions: [] }), create: vi.fn(), promote: vi.fn() },
     collections: { create: vi.fn(), list: vi.fn().mockResolvedValue([]), detail: vi.fn(), update: vi.fn(), attachAsset: vi.fn(), detachAsset: vi.fn() },
     projects: {
       create: vi.fn(),
@@ -148,6 +149,34 @@ it('镜头工作室锁定角色与场景上下文，并可带入图片创作', a
   expect(await screen.findByText('本轮锁定场景')).toBeInTheDocument();
   expect(screen.getByText('本轮锁定角色')).toBeInTheDocument();
   expect(window.studio.creation.compilePrompt).toHaveBeenCalledWith(expect.objectContaining({ scene: expect.stringContaining('玻璃温室中轴') }));
+});
+
+it('审片与母版独立承接图片候选，并保留来源与晋级入口', async () => {
+  const project = { id: 'project-review', name: '角色定妆', medium: 'image', brief: { goal: '', audience: '', visualWorld: '', delivery: '', acceptance: '' } };
+  const candidate = {
+    id: 'candidate-review', type: 'image', name: '候选 A', managedPath: '/tmp/candidate.png', sha256: 'review', mediaType: 'image/png',
+    rightsStatus: 'authorized', confirmation: 'confirmed', metadata: {}, createdAt: '', updatedAt: '',
+  };
+  const review = {
+    id: 'review-a', projectId: project.id, assetId: candidate.id, decision: 'approved',
+    scores: { identity: 5, scene: 4, realism: 4, composition: 5, technical: 4 }, note: '通过', nextAction: '',
+    provenance: { providerId: 'gemini', prompt: '角色定妆', aspectRatio: '2:3', referenceAssetIds: [] }, createdAt: '',
+  };
+  vi.mocked(window.studio.projects.list).mockResolvedValue([project] as never);
+  vi.mocked(window.studio.projects.workspace).mockResolvedValue({ project, health: {}, masterAssets: [], recommendedNextAction: '' } as never);
+  vi.mocked(window.studio.assets.preview).mockResolvedValue('data:image/png;base64,AA==');
+  vi.mocked(window.studio.imageReviews.workspace).mockResolvedValue({
+    projectId: project.id, candidates: [{ asset: candidate, latestReview: review, reviewCount: 1, projectMaster: false }], reviews: [review], promotions: [],
+  } as never);
+
+  render(<App />);
+  fireEvent.change(await screen.findByRole('combobox', { name: '当前项目' }), { target: { value: project.id } });
+  fireEvent.click(screen.getByRole('button', { name: '生产' }));
+  fireEvent.click(await screen.findByRole('button', { name: '审片与母版' }));
+  expect(await screen.findByRole('heading', { name: '从候选里选出可复用的生产基线' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: '候选 A' })).toBeInTheDocument();
+  expect(screen.getByText(/模型：gemini/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '晋级母版' })).toBeEnabled();
 });
 
 it('重启中断的图片任务可在队列确认重试，并在新任务关联后隐藏重复入口', async () => {

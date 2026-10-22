@@ -59,6 +59,37 @@ export const applySchema = (database: Database.Database) => {
       PRIMARY KEY(project_id, asset_id)
     );
     CREATE INDEX IF NOT EXISTS project_masters_asset_idx ON project_masters(asset_id);
+    CREATE TABLE IF NOT EXISTS image_review_records (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE RESTRICT,
+      creative_task_id TEXT REFERENCES creative_tasks(id) ON DELETE SET NULL,
+      generation_session_id TEXT REFERENCES generation_sessions(id) ON DELETE SET NULL,
+      decision TEXT NOT NULL CHECK(decision IN ('pending', 'approved', 'rejected')),
+      scores_json TEXT NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      next_action TEXT NOT NULL DEFAULT '',
+      provenance_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS image_review_project_created_idx
+      ON image_review_records(project_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS image_review_asset_created_idx
+      ON image_review_records(asset_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS master_promotions (
+      id TEXT PRIMARY KEY,
+      review_id TEXT NOT NULL REFERENCES image_review_records(id) ON DELETE RESTRICT,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE RESTRICT,
+      target_type TEXT NOT NULL CHECK(target_type IN ('project', 'character', 'scene')),
+      target_id TEXT NOT NULL,
+      version_id TEXT,
+      state_id TEXT,
+      created_at TEXT NOT NULL,
+      UNIQUE(review_id, target_type, target_id)
+    );
+    CREATE INDEX IF NOT EXISTS master_promotions_project_created_idx
+      ON master_promotions(project_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS jobs (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE RESTRICT,

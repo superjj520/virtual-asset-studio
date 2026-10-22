@@ -35,6 +35,26 @@ interface Window {
         review: Omit<import("./shared/types").AssetReview, "reviewedAt">,
       ) => Promise<import("./shared/types").Asset>;
     };
+    imageReviews: {
+      workspace: (projectId: string) => Promise<import("./shared/types").ReviewWorkspaceSnapshot>;
+      create: (input: {
+        projectId: string;
+        assetId: string;
+        decision: import("./shared/types").ImageReviewDecision;
+        scores: import("./shared/types").ImageReviewScores;
+        note?: string;
+        nextAction?: string;
+        creativeTaskId?: string;
+        generationSessionId?: string;
+      }) => Promise<import("./shared/types").ImageReviewRecord>;
+      promote: (input: {
+        reviewId: string;
+        targetType: import("./shared/types").MasterPromotionTarget;
+        targetId?: string;
+        versionId?: string;
+        stateId?: string;
+      }) => Promise<import("./shared/types").MasterPromotion>;
+    };
     collections: {
       create: (input: {
         projectId?: string;

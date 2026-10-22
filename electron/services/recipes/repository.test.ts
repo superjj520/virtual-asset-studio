@@ -6,6 +6,8 @@ import { StudioDatabase } from '../../db/client';
 import { ProjectRepository } from '../projects/repository';
 import { CreativeRecipeRepository } from './repository';
 import { CreativeTaskRepository } from '../tasks/repository';
+import { AssetRepository } from '../assets/repository';
+import { ImageReviewRepository } from '../reviews/repository';
 
 const paths: string[] = [];
 afterEach(() => paths.splice(0).forEach((path) => rmSync(path, { recursive: true, force: true })));
@@ -32,5 +34,36 @@ describe('CreativeRecipeRepository', () => {
 
     expect(recipe.status).toBe('draft');
     expect(repository.list(project.id)).toMatchObject([{ name: '夜色东方人像', purpose: '角色定妆', creativeTaskId: task.id, providerId: 'openai', sourceAssetIds: ['asset-1'] }]);
+  });
+
+  it('只有同一来源任务的已通过审片成图才能验证配方', () => {
+    const root = mkdtempSync(join(tmpdir(), 'studio-recipe-review-'));
+    paths.push(root);
+    const database = new StudioDatabase(join(root, 'studio.sqlite'));
+    const projects = new ProjectRepository(database);
+    const project = projects.create('测试项目', 'image');
+    const task = new CreativeTaskRepository(database).create({
+      projectId: project.id, name: '角色定妆', objective: '验证配方',
+      card: { intent: '人物肖像', subject: '成年女性', identityAnchor: '', bodyAndWardrobe: '', expressionAndPose: '', scene: '', lighting: '', camera: '', style: '', avoid: '', aspectRatio: '2:3', referenceAssetIds: [] },
+    });
+    const asset = new AssetRepository(database).createOrGet({
+      type: 'image', name: '通过成图', managedPath: join(root, 'approved.png'), sourcePath: 'generated://job/1', sha256: 'approved-image',
+      mediaType: 'image/png', rightsStatus: 'authorized', confirmation: 'draft', metadata: { rightsReview: 'approved', rightsReviewNote: '已核实' },
+    }).asset;
+    projects.attachAsset(project.id, asset.id);
+    const review = new ImageReviewRepository(database).create({
+      projectId: project.id, assetId: asset.id, creativeTaskId: task.id, decision: 'approved',
+      scores: { identity: 5, scene: 4, realism: 4, composition: 5, technical: 4 },
+    });
+    const repository = new CreativeRecipeRepository(database);
+    const recipe = repository.create({
+      name: '通过配方', projectId: project.id, creativeTaskId: task.id, providerId: 'gemini', purpose: '角色定妆',
+      card: task.card, prompt: '写实角色', negative: '水印', sourceAssetIds: [],
+    });
+
+    expect(() => repository.updateStatus(recipe.id, 'validated', '用户口头确认')).toThrow('必须绑定一条已通过的图片审片记录');
+    expect(repository.updateStatus(recipe.id, 'validated', review.id)).toMatchObject({
+      status: 'validated', evidence: [expect.stringContaining('通过成图')],
+    });
   });
 });
