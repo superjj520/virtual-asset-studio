@@ -286,6 +286,21 @@ export const imageSizeForAspectRatio = (aspectRatio: CreativeAspectRatio): Image
 export const aspectRatioForImageSize = (size: ImageGenerationSize): "1:1" | "2:3" | "3:2" =>
   size === "1024x1024" ? "1:1" : size === "1024x1536" ? "2:3" : "3:2";
 
+/** 参考图不是同一种用途：角色身份、服装与场景必须能被独立追踪。 */
+export type ReferenceAssetRole =
+  | "identity"
+  | "face"
+  | "wardrobe"
+  | "pose"
+  | "material"
+  | "scene";
+
+export type ReferenceAssetBinding = {
+  assetId: string;
+  role: ReferenceAssetRole;
+  priority: "primary" | "support";
+};
+
 export type CreativeCard = {
   projectId?: string;
   intent: string;
@@ -305,6 +320,8 @@ export type CreativeCard = {
   avoid: string;
   aspectRatio: CreativeAspectRatio;
   referenceAssetIds: string[];
+  /** 与 referenceAssetIds 同步；旧数据缺失时会自动迁移为首张主参考。 */
+  referenceBindings?: ReferenceAssetBinding[];
 };
 
 export type CreativeTaskStatus = "draft" | "ready" | "producing" | "blocked" | "review" | "completed" | "archived";
@@ -639,6 +656,7 @@ export type GenerationBatch = {
   aspectRatio: CreativeCard["aspectRatio"];
   /** 批量候选继承的参考链，所有变体都必须使用同一组身份锚点。 */
   referenceAssetIds: string[];
+  referenceBindings: ReferenceAssetBinding[];
   estimatedCostUsd?: number;
   status: GenerationBatchStatus;
   variants: GenerationVariant[];

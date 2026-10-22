@@ -898,13 +898,46 @@ textarea:focus {
   font-size: 13px;
 }
 .candidate-compare-grid p {
-  min-height: 54px;
   color: #9ca8bf;
   font-size: 12px;
   line-height: 1.45;
 }
 .candidate-compare-grid button {
   margin-bottom: 10px;
+}
+.candidate-compare-content {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+.candidate-compare-content strong,
+.candidate-compare-content p,
+.candidate-compare-content button {
+  margin: 0;
+}
+.candidate-provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.candidate-provenance span {
+  padding: 4px 6px;
+  color: var(--ink-muted);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  font-size: 11px;
+}
+.candidate-provenance-missing {
+  color: #b42318 !important;
+}
+.candidate-compare-content details {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.candidate-compare-content details p {
+  max-height: 120px;
+  margin-top: 7px;
+  overflow: auto;
 }
 .form-grid {
   display: grid;
@@ -923,6 +956,87 @@ textarea:focus {
 }
 .form-actions label {
   min-width: 140px;
+}
+.reference-bindings {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-muted);
+}
+.reference-bindings-header,
+.reference-binding-add,
+.reference-binding-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.reference-bindings-header {
+  justify-content: space-between;
+}
+.reference-bindings-header h3,
+.reference-bindings-header p,
+.reference-bindings-empty p {
+  margin: 0;
+}
+.reference-binding-list {
+  display: grid;
+  gap: 8px;
+}
+.reference-binding-row {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.reference-binding-name {
+  display: grid;
+  flex: 1 1 220px;
+  min-width: 150px;
+}
+.reference-binding-name small,
+.reference-binding-help {
+  color: var(--ink-muted);
+}
+.reference-binding-row label {
+  min-width: 104px;
+}
+.reference-send-status {
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.reference-send-status.is-sent {
+  color: #166534;
+  background: #dcfce7;
+}
+.reference-send-status.is-recorded {
+  color: var(--ink-muted);
+  background: var(--surface-muted);
+}
+.reference-binding-add {
+  justify-content: flex-end;
+}
+.reference-binding-add label {
+  flex: 1 1 320px;
+}
+.danger-link {
+  color: #b42318;
+}
+@media (max-width: 760px) {
+  .reference-binding-row,
+  .reference-binding-add {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .reference-binding-name,
+  .reference-binding-add label {
+    flex-basis: auto;
+    width: 100%;
+  }
 }
 .result-panel pre {
   margin: 8px 0 18px;
@@ -983,6 +1097,91 @@ textarea:focus {
 .pattern-rejected {
   color: #ffc4ca;
   background: #5d2935;
+}
+.generation-queue {
+  display: grid;
+  gap: 10px;
+}
+.generation-job-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+.generation-job-main {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 10px;
+  min-width: 0;
+}
+.generation-job-heading,
+.generation-job-actions,
+.generation-job-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.generation-job-heading h3,
+.generation-job-heading p,
+.generation-job-summary,
+.generation-job-error {
+  margin: 0;
+}
+.generation-job-heading p,
+.generation-job-summary {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.generation-job-tags span {
+  padding: 4px 7px;
+  border-radius: 999px;
+  color: var(--ink-muted);
+  background: var(--surface-muted);
+  font-size: 12px;
+}
+.generation-job-tags .job-failure-category,
+.generation-job-error {
+  color: #b42318;
+}
+.generation-job-card details {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.generation-job-trace {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0 0;
+}
+.generation-job-trace div {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 8px;
+}
+.generation-job-trace dt,
+.generation-job-trace dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.generation-job-actions {
+  justify-content: flex-end;
+  flex: 0 0 auto;
+}
+@media (max-width: 760px) {
+  .generation-job-card {
+    flex-direction: column;
+  }
+  .generation-job-actions {
+    justify-content: stretch;
+    width: 100%;
+  }
+  .generation-job-actions button {
+    flex: 1 1 auto;
+  }
 }
 .pattern-module {
   margin-top: 9px !important;

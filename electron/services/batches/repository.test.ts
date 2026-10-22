@@ -12,9 +12,10 @@ it('批量任务保留所属创作任务、每个候选的审核前状态与成�
   const batches = new GenerationBatchRepository(database);
   const project = new ProjectRepository(database).create('测试项目', 'image');
   const task = new CreativeTaskRepository(database).create({ projectId: project.id, name: '夜景角色定妆', objective: '测试候选场景', card: { intent: '角色定妆', subject: '成年女性', identityAnchor: '黑发', bodyAndWardrobe: '', expressionAndPose: '', scene: '', lighting: '', camera: '', style: '真人感', avoid: '', aspectRatio: '9:16', referenceAssetIds: [] } });
-  const batch = batches.create({ name: '夜景角色组', projectId: project.id, creativeTaskId: task.id, providerId: 'flux', aspectRatio: '9:16', referenceAssetIds: ['master-1', 'detail-2'], estimatedCostUsd: 0.08, variants: [{ label: '霓虹街头', prompt: '锁定人物，夜景霓虹街头' }, { label: '雨后玻璃', prompt: '锁定人物，雨后玻璃温室' }] });
+  const batch = batches.create({ name: '夜景角色组', projectId: project.id, creativeTaskId: task.id, providerId: 'flux', aspectRatio: '9:16', referenceAssetIds: ['master-1', 'detail-2'], referenceBindings: [{ assetId: 'master-1', role: 'face', priority: 'primary' }, { assetId: 'detail-2', role: 'wardrobe', priority: 'support' }], estimatedCostUsd: 0.08, variants: [{ label: '霓虹街头', prompt: '锁定人物，夜景霓虹街头' }, { label: '雨后玻璃', prompt: '锁定人物，雨后玻璃温室' }] });
   expect(batch.creativeTaskId).toBe(task.id);
   expect(batch.referenceAssetIds).toEqual(['master-1', 'detail-2']);
+  expect(batch.referenceBindings).toEqual([{ assetId: 'master-1', role: 'face', priority: 'primary' }, { assetId: 'detail-2', role: 'wardrobe', priority: 'support' }]);
   expect(batch.variants).toHaveLength(2);
   expect(batch.variants.every((item) => item.status === 'planned')).toBe(true);
   expect(batches.plannedSpendSince('2000-01-01T00:00:00.000Z')).toBe(0.08);

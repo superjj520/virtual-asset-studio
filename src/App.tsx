@@ -5,8 +5,12 @@ import { CharacterWorkspacePanel } from "./character/CharacterWorkspacePanel";
 import { SceneWorkspacePanel } from "./scene/SceneWorkspacePanel";
 import { ReviewWorkspacePanel } from "./review/ReviewWorkspacePanel";
 import { ProjectPipelinePanel } from "./project/ProjectPipelinePanel";
+import { ReferenceBindingsPanel } from "./creation/ReferenceBindingsPanel";
+import { GenerationQueuePanel } from "./production/GenerationQueuePanel";
+import { CandidateComparePanel } from "./production/CandidateComparePanel";
 import { composeCharacterCard, evaluateCharacterCoverage, type CharacterUseCase, type CharacterVariantSelection } from "./shared/character-slots";
 import { collectUsableReferenceAssetIds, getAssetCollectionBlueprint } from "./shared/asset-collection-blueprints";
+import { normalizeReferenceBindings } from "./shared/reference-bindings";
 import { CREATIVE_ASPECT_RATIOS, normalizeCreativeAspectRatio, aspectRatioForImageSize } from "./shared/types";
 import type {
   Asset,
@@ -183,11 +187,14 @@ const providerLabel = (providerId?: ProviderId) =>
 const taskStatusLabel = (status: CreativeTask["status"]) =>
   status === "review" ? "待审片" : status === "completed" ? "已完成" : status === "producing" ? "生成中" : status === "blocked" ? "生成阻塞" : "准备中";
 
-const normalizeCreativeCard = (card: CreativeCard): CreativeCard => ({
-  ...card,
-  aspectRatio: normalizeCreativeAspectRatio(card.aspectRatio),
-  referenceAssetIds: Array.isArray(card.referenceAssetIds) ? [...new Set(card.referenceAssetIds)] : [],
-});
+const normalizeCreativeCard = (card: CreativeCard): CreativeCard => {
+  const references = normalizeReferenceBindings(card.referenceAssetIds, card.referenceBindings);
+  return {
+    ...card,
+    aspectRatio: normalizeCreativeAspectRatio(card.aspectRatio),
+    ...references,
+  };
+};
 
 /**
  * 角色设定板不是一张普通肖像图：它把同一角色的身份、结构、表情、服装和姿态
@@ -785,6 +792,10 @@ export default function App() {
         if (job.request.mode === "refine" && typeof job.request.referenceAssetId === "string") {
           await window.studio.generation.refineImage({ assetId: job.request.referenceAssetId, prompt: job.request.prompt, negative: typeof job.request.negative === "string" ? job.request.negative : undefined, projectId: job.projectId, creativeTaskId: typeof job.request.creativeTaskId === "string" ? job.request.creativeTaskId : undefined, generationSessionId: typeof job.request.generationSessionId === "string" ? job.request.generationSessionId : undefined, retryOfJobId: job.id, aspectRatio });
         } else {
+          const retryReferences = normalizeReferenceBindings(
+            Array.isArray(job.request.referenceAssetIds) ? job.request.referenceAssetIds : [],
+            job.request.referenceBindings,
+          );
           await window.studio.generation.image({
             prompt: job.request.prompt,
             negative: typeof job.request.negative === "string" ? job.request.negative : undefined,
@@ -793,7 +804,7 @@ export default function App() {
             generationSessionId: typeof job.request.generationSessionId === "string" ? job.request.generationSessionId : undefined,
             retryOfJobId: job.id,
             aspectRatio,
-            referenceAssetIds: Array.isArray(job.request.referenceAssetIds) ? job.request.referenceAssetIds.filter((item): item is string => typeof item === "string") : [],
+            ...retryReferences,
             qualityTier: job.request.qualityTier === "draft" || job.request.qualityTier === "standard" || job.request.qualityTier === "premium" ? job.request.qualityTier : "standard",
           });
         }
@@ -821,8 +832,9 @@ export default function App() {
     }
   }, [refreshJobs, retryingJobIds]);
   useEffect(() => {
-    if (screen !== "jobs") return;
+    if (screen !== "jobs" && screen !== "production" && screen !== "review") return;
     void refreshJobs();
+    if (screen !== "jobs") return;
     const timer = window.setInterval(() => void refreshJobs(), 8_000);
     return () => window.clearInterval(timer);
   }, [screen, refreshJobs]);
@@ -1085,10 +1097,11 @@ export default function App() {
               asset: assets.find((asset) => asset.id === assetId),
               label: variant.label,
               prompt: variant.prompt,
+              job: jobs.find((job) => job.id === variant.jobId),
             })),
         ),
-      ).filter((item): item is { asset: Asset; label: string; prompt: string } => Boolean(item.asset)),
-    [assets, batches, compareAssetIds],
+      ).filter((item): item is { asset: Asset; label: string; prompt: string; job: StudioJob | undefined } => Boolean(item.asset)),
+    [assets, batches, compareAssetIds, jobs],
   );
   const toggleCandidateComparison = (assetId: string) => {
     setCompareAssetIds((current) =>
@@ -1384,7 +1397,7 @@ export default function App() {
         providerId: provider?.routes.image,
         aspectRatio: normalizedCard.aspectRatio,
         referenceAssetIds: normalizedCard.referenceAssetIds,
-        settings: { qualityTier },
+        settings: { qualityTier, referenceBindings: normalizedCard.referenceBindings },
       }) : undefined;
       const job = await window.studio.generation.image({
         prompt,
@@ -1394,6 +1407,7 @@ export default function App() {
         generationSessionId: session?.id,
         aspectRatio: normalizedCard.aspectRatio,
         referenceAssetIds: normalizedCard.referenceAssetIds,
+        referenceBindings: normalizedCard.referenceBindings,
         qualityTier,
       });
       const assetId = String(job.result?.assetId ?? "");
@@ -1529,6 +1543,7 @@ export default function App() {
         creativeTaskId: activeTaskId,
         aspectRatio: card.aspectRatio,
         referenceAssetIds: card.referenceAssetIds,
+        referenceBindings: card.referenceBindings,
         variants: variables.map((scene, index) => ({
           label: `变体 ${index + 1}：${scene}`,
           prompt: `${promptBuild.positive}${promptBuild.negative ? `\n避免：${promptBuild.negative}` : ""}\n本轮唯一变化：场景为${scene}。其余人物身份、服装、构图与限制保持不变。`,
@@ -3257,13 +3272,7 @@ export default function App() {
                 </label>
               ))}
             </div>
-            <p className="result-note">
-              已关联参考资产：
-              {card.referenceAssetIds.length
-                ? `${card.referenceAssetIds.length} 张；主参考会送入模型。`
-                : "暂无；先到资产库选择参考图。"}
-              <br />主参考需已确认且具备使用权。
-            </p>
+            <ReferenceBindingsPanel card={card} assets={assets} onChange={setCard} />
             <div className="form-actions">
               <label>
                 角色档案名称
@@ -3569,24 +3578,12 @@ export default function App() {
             <p className="result-note">
               选 2–4 张比较，再定主版本。
             </p>
-            {comparedCandidates.length >= 2 && (
-              <section className="candidate-compare" aria-label="候选横向比较">
-                <div className="candidate-compare-heading">
-                  <strong>横向比较：{comparedCandidates.length} 张候选</strong>
-                  <button onClick={() => setCompareAssetIds([])}>清空比较</button>
-                </div>
-                <div className="candidate-compare-grid">
-                  {comparedCandidates.map(({ asset, label, prompt }) => (
-                    <article key={asset.id}>
-                      <AssetVisual asset={asset} />
-                      <strong>{label}</strong>
-                      <p>{prompt.slice(0, 180)}{prompt.length > 180 ? "…" : ""}</p>
-                      <button onClick={() => { setSelectedAssetId(asset.id); setScreen("assets"); }}>查看并审片</button>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            )}
+            <CandidateComparePanel
+              items={comparedCandidates}
+              renderAsset={(asset) => <AssetVisual asset={asset} />}
+              onClear={() => setCompareAssetIds([])}
+              onOpen={(assetId) => { setSelectedAssetId(assetId); setScreen("review"); }}
+            />
             <div className="asset-grid">
               {batches
                 .flatMap((batch) =>
@@ -4102,61 +4099,12 @@ export default function App() {
           <p className="result-note">
             视频任务每 8 秒更新；完成后自动归档。
           </p>
-          <section className="pattern-list">
-            {jobs.map((job) => (
-              <article key={job.id}>
-                <span className={`pattern-status job-${job.status}`}>
-                  {job.status === "queued"
-                    ? "等待中"
-                    : job.status === "in_progress"
-                      ? "生成中"
-                      : job.status === "completed"
-                        ? "已完成"
-                        : job.status === "unknown"
-                          ? "状态未知"
-                          : "失败"}
-                </span>
-                <div>
-                  <h3>
-                    {job.kind === "vision_analysis"
-                      ? "视觉理解"
-                      : job.kind === "image_generation"
-                        ? "图片生成"
-                        : "图生视频"}
-                  </h3>
-                  <p>
-                    {job.error ||
-                      `${String(job.result?.progress ?? "")}${job.status === "in_progress" ? "% · 正在自动更新" : ""}`}
-                  </p>
-                </div>
-                {job.kind === "image_to_video" && (job.status === "in_progress" || job.status === "unknown") && typeof job.result?.remoteId === "string" && (
-                  <button onClick={() => void refreshJobs()}>安全查询</button>
-                )}
-                {(
-                  job.status === "failed" ||
-                  (job.kind === "image_generation" &&
-                    job.status === "queued" &&
-                    job.error === "应用关闭前任务中断，可由用户确认后重试。")
-                ) &&
-                  !retryingJobIds.has(job.id) &&
-                  !jobs.some(
-                    (candidate) => candidate.request.retryOfJobId === job.id,
-                  ) && (
-                    <button onClick={() => void retryJob(job)}>
-                      {job.status === "queued" ? "确认重试" : "按原请求重试"}
-                    </button>
-                  )}
-              </article>
-            ))}
-            {!jobs.length && (
-              <div className="empty-state">
-                <strong>没有生成任务</strong>
-                <p>
-                  先生成图片，或提交图生视频任务。
-                </p>
-              </div>
-            )}
-          </section>
+          <GenerationQueuePanel
+            jobs={jobs}
+            retryingJobIds={retryingJobIds}
+            onRefresh={() => void refreshJobs()}
+            onRetry={(job) => void retryJob(job)}
+          />
         </section>
       )}
       {screen === "settings" && (

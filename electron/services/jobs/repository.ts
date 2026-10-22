@@ -17,7 +17,21 @@ export class JobRepository {
 
   create(input: { projectId: string; kind: JobKind; providerId: string; request: Record<string, unknown>; status?: JobStatus }): StudioJob {
     const now = new Date().toISOString();
-    const job: StudioJob = { id: randomUUID(), projectId: input.projectId, kind: input.kind, providerId: input.providerId, status: input.status ?? 'queued', request: input.request, retryCount: 0, createdAt: now, updatedAt: now };
+    const retryOfJobId = typeof input.request.retryOfJobId === 'string' && input.request.retryOfJobId.trim()
+      ? input.request.retryOfJobId.trim()
+      : undefined;
+    const parent = retryOfJobId ? this.get(retryOfJobId) : undefined;
+    if (retryOfJobId && !parent) throw new Error('原始任务不存在，不能建立不可追溯的重试。');
+    if (parent && (parent.kind !== input.kind || parent.projectId !== input.projectId))
+      throw new Error('重试任务必须与原任务属于同一项目和任务类型。');
+    if (retryOfJobId) {
+      const existing = this.db.database.prepare("SELECT id FROM jobs WHERE json_extract(request_json, '$.retryOfJobId') = ? LIMIT 1").get(retryOfJobId) as { id: string } | undefined;
+      if (existing) throw new Error('该任务已经建立过重试，请继续查看现有重试任务。');
+    }
+    const request = parent
+      ? { ...input.request, retryOfJobId: parent.id, retryRootJobId: typeof parent.request.retryRootJobId === 'string' ? parent.request.retryRootJobId : parent.id }
+      : input.request;
+    const job: StudioJob = { id: randomUUID(), projectId: input.projectId, kind: input.kind, providerId: input.providerId, status: input.status ?? 'queued', request, retryCount: parent ? parent.retryCount + 1 : 0, createdAt: now, updatedAt: now };
     this.db.database.prepare('INSERT INTO jobs (id, project_id, kind, provider_id, status, request_json, retry_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(job.id, job.projectId, job.kind, job.providerId, job.status, JSON.stringify(job.request), job.retryCount, now, now);
     return job;

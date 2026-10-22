@@ -226,6 +226,7 @@ interface Window {
         creativeTaskId?: string;
         aspectRatio: import("./shared/types").CreativeCard["aspectRatio"];
         referenceAssetIds?: string[];
+        referenceBindings?: import("./shared/types").ReferenceAssetBinding[];
         variants: Array<{ label: string; prompt: string }>;
       }) => Promise<import("./shared/types").GenerationBatch>;
       list: (
@@ -322,6 +323,7 @@ interface Window {
         retryOfJobId?: string;
         aspectRatio: import("./shared/types").CreativeCard["aspectRatio"];
         referenceAssetIds?: string[];
+        referenceBindings?: import("./shared/types").ReferenceAssetBinding[];
         qualityTier?: import("./shared/types").GenerationQualityTier;
       }) => Promise<import("./shared/types").StudioJob>;
       refineImage: (input: {

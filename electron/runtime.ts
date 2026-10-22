@@ -16,9 +16,11 @@ import {
   compileShotContract,
 } from "./services/creation/prompt-compiler";
 import { imageSizeForAspectRatio } from "../src/shared/types";
+import { normalizeReferenceBindings } from "../src/shared/reference-bindings";
 import type {
   Asset,
   CreativeCard,
+  ReferenceAssetBinding,
   ProviderCapability,
   ProviderId,
   ProviderStatus,
@@ -676,6 +678,7 @@ export const createStudioRuntime = (
             creativeTaskId?: string;
             aspectRatio: CreativeCard["aspectRatio"];
             referenceAssetIds?: string[];
+            referenceBindings?: ReferenceAssetBinding[];
             variants: Array<{ label: string; prompt: string }>;
           },
         ) => {
@@ -683,7 +686,8 @@ export const createStudioRuntime = (
             throw new Error("批量任务需要名称和至少一个变体。");
           if (input.creativeTaskId && !tasks.get(input.creativeTaskId))
             throw new Error("关联的创作任务不存在，无法建立候选批次。");
-          const referenceAssetIds = [...new Set(input.referenceAssetIds ?? [])];
+          const referenceSelection = normalizeReferenceBindings(input.referenceAssetIds ?? [], input.referenceBindings);
+          const { referenceAssetIds, referenceBindings } = referenceSelection;
           const references = referenceAssetIds.map((id) => referenceForGeneration(id, input.projectId));
           const providerId = routeFor("image");
           if (references.length && !imageEditProviders[providerId])
@@ -706,6 +710,7 @@ export const createStudioRuntime = (
           return batches.create({
             ...input,
             referenceAssetIds,
+            referenceBindings,
             name: input.name.trim(),
             providerId,
             estimatedCostUsd,
@@ -734,7 +739,7 @@ export const createStudioRuntime = (
                 projectId: batch.projectId ?? libraryProject.id,
                 kind: "image_generation",
                 providerId: batch.providerId,
-                request: { prompt: item.prompt, size, requestedAspectRatio: batch.aspectRatio, actualAspectRatio: size === "1024x1024" ? "1:1" : size === "1024x1536" ? "2:3" : "3:2", referenceAssetIds: batch.referenceAssetIds, appliedReferenceAssetIds: references.length ? [references[0].id] : [], batchId, variantId: item.id },
+                request: { prompt: item.prompt, size, requestedAspectRatio: batch.aspectRatio, actualAspectRatio: size === "1024x1024" ? "1:1" : size === "1024x1536" ? "2:3" : "3:2", referenceAssetIds: batch.referenceAssetIds, referenceBindings: batch.referenceBindings, appliedReferenceAssetIds: references.length ? [references[0].id] : [], referenceUsage: batch.referenceBindings.map((binding) => ({ ...binding, status: binding.priority === "primary" ? "sent" : "recorded" })), batchId, variantId: item.id },
               });
               jobs.update(job.id, { status: "in_progress" });
               // 先落盘关联，再调用服务；进程中断后不会把可能已付费的变体伪装成 planned。
@@ -989,6 +994,7 @@ export const createStudioRuntime = (
             retryOfJobId?: string;
             aspectRatio: CreativeCard["aspectRatio"];
             referenceAssetIds?: string[];
+            referenceBindings?: ReferenceAssetBinding[];
             qualityTier?: "draft" | "standard" | "premium";
           },
         ) => {
@@ -996,7 +1002,11 @@ export const createStudioRuntime = (
           const session = sessionForGeneration(input.generationSessionId, ["text_to_image", "image_edit"]);
           if (input.referenceAssetIds !== undefined && !Array.isArray(input.referenceAssetIds))
             throw new Error("参考素材列表格式不正确。");
-          const referenceAssetIds = [...new Set(input.referenceAssetIds ?? [])];
+          const referenceSelection = normalizeReferenceBindings(
+            input.referenceAssetIds ?? [],
+            input.referenceBindings,
+          );
+          const { referenceAssetIds, referenceBindings } = referenceSelection;
           if (input.creativeTaskId && !tasks.get(input.creativeTaskId))
             throw new Error("关联的创作任务不存在，请重新打开当前任务后再生成。");
           const references = referenceAssetIds.map((id) =>
@@ -1017,7 +1027,12 @@ export const createStudioRuntime = (
               requestedAspectRatio: input.aspectRatio,
               actualAspectRatio: size === "1024x1024" ? "1:1" : size === "1024x1536" ? "2:3" : "3:2",
               referenceAssetIds,
+              referenceBindings,
               appliedReferenceAssetIds: references.length ? [references[0].id] : [],
+              referenceUsage: referenceBindings.map((binding) => ({
+                ...binding,
+                status: binding.priority === "primary" ? "sent" : "recorded",
+              })),
               qualityTier: input.qualityTier ?? "premium",
               creativeTaskId: input.creativeTaskId,
               generationSessionId: session?.id,

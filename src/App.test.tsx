@@ -761,7 +761,7 @@ it('引导选择参考图时排除未审片与权利未明的图片', async () =
   expect(screen.queryByRole('option', { name: '未审片' })).not.toBeInTheDocument();
 });
 
-it('创作卡说明主参考会进入当前绘图模型', async () => {
+it('创作卡明确区分实际送模主参考与仅记录参考', async () => {
   const project = { id: 'project-1', name: '人物项目', brief: { goal: '', audience: '', visualWorld: '', delivery: '', acceptance: '' } };
   const task = { id: 'task-1', name: '人物图', objective: '人物图', status: 'draft', card: { ...characterFixture('unused', 'unused').card, referenceAssetIds: ['ref-1', 'ref-2'] } };
   vi.mocked(window.studio.projects.list).mockResolvedValue([project] as never);
@@ -772,6 +772,7 @@ it('创作卡说明主参考会进入当前绘图模型', async () => {
   await screen.findByRole('option', { name: '人物项目' });
   fireEvent.change(await screen.findByRole('combobox', { name: '当前项目' }), { target: { value: 'project-1' } });
   fireEvent.click(await screen.findByRole('button', { name: /人物图.*人物图/ }));
-  expect(screen.getByText(/主参考会送入模型/)).toBeInTheDocument();
-  expect(screen.getByText(/主参考需已确认且具备使用权/)).toBeInTheDocument();
+  expect(screen.getByText('实际送模')).toBeInTheDocument();
+  expect(screen.getByText('仅记录')).toBeInTheDocument();
+  expect(screen.getByText(/只有已确认且使用权为原创或已授权/)).toBeInTheDocument();
 });

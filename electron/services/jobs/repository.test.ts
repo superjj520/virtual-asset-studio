@@ -68,3 +68,31 @@ it('提交中的视频作业不会以 queued 假装等待，重启时进入未�
   expect(jobs.recoverInterrupted()).toBe(1);
   expect(jobs.get(created.id)?.status).toBe('unknown');
 });
+
+it('重试任务保留根任务并递增次数，且同一失败任务不能重复创建直接重试', () => {
+  const database = new StudioDatabase(join(mkdtempSync(join(tmpdir(), 'vas-job-')), 'studio.sqlite'));
+  databases.push(database);
+  const jobs = new JobRepository(database);
+  const project = new ProjectRepository(database).getOrCreateLibraryProject();
+  const original = jobs.create({ projectId: project.id, kind: 'image_generation', providerId: 'gemini', request: { prompt: '角色主图' } });
+  const retry = jobs.create({ projectId: project.id, kind: 'image_generation', providerId: 'gemini', request: { prompt: '角色主图', retryOfJobId: original.id } });
+  const retryAgain = jobs.create({ projectId: project.id, kind: 'image_generation', providerId: 'gemini', request: { prompt: '角色主图', retryOfJobId: retry.id } });
+
+  expect(retry).toMatchObject({ retryCount: 1, request: { retryOfJobId: original.id, retryRootJobId: original.id } });
+  expect(retryAgain).toMatchObject({ retryCount: 2, request: { retryOfJobId: retry.id, retryRootJobId: original.id } });
+  expect(() => jobs.create({ projectId: project.id, kind: 'image_generation', providerId: 'gemini', request: { prompt: '重复', retryOfJobId: original.id } }))
+    .toThrow('该任务已经建立过重试');
+});
+
+it('拒绝跨项目或缺失父任务的伪重试链', () => {
+  const database = new StudioDatabase(join(mkdtempSync(join(tmpdir(), 'vas-job-')), 'studio.sqlite'));
+  databases.push(database);
+  const jobs = new JobRepository(database);
+  const project = new ProjectRepository(database).getOrCreateLibraryProject();
+  const original = jobs.create({ projectId: project.id, kind: 'image_generation', providerId: 'gemini', request: { prompt: '角色主图' } });
+
+  expect(() => jobs.create({ projectId: 'other-project', kind: 'image_generation', providerId: 'gemini', request: { prompt: '跨项目', retryOfJobId: original.id } }))
+    .toThrow('同一项目和任务类型');
+  expect(() => jobs.create({ projectId: project.id, kind: 'image_generation', providerId: 'gemini', request: { prompt: '缺失来源', retryOfJobId: 'missing' } }))
+    .toThrow('原始任务不存在');
+});
