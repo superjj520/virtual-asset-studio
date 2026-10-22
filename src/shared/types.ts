@@ -125,6 +125,24 @@ export type AssetLineageItem = {
   asset: Pick<Asset, "id" | "name" | "type">;
 };
 
+export type AssetUsageKind =
+  | "project"
+  | "project_master"
+  | "collection"
+  | "character"
+  | "scene"
+  | "job"
+  | "recipe"
+  | "review";
+export type AssetUsageReference = {
+  kind: AssetUsageKind;
+  scopeId: string;
+  scopeName: string;
+  context: string;
+  projectId?: string;
+  updatedAt: string;
+};
+
 /** 资产包是 B 端管理的最小归档单元：一个角色、一套场景或一个可复用主题。 */
 export type AssetCollectionKind =
   | "character"

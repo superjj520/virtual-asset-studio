@@ -6,6 +6,8 @@ import { StudioDatabase } from '../../db/client';
 import { AssetRepository } from './repository';
 import { ProjectRepository } from '../projects/repository';
 import { RelationshipRepository } from '../relationships/repository';
+import { AssetCollectionRepository } from '../collections/repository';
+import { CreativeRecipeRepository } from '../recipes/repository';
 import type { ProjectBrief } from '../../../src/shared/types';
 
 const directories: string[] = [];
@@ -15,6 +17,7 @@ const createStores = () => {
   directories.push(directory);
   const database = new StudioDatabase(join(directory, 'studio.sqlite'));
   return {
+    database,
     assets: new AssetRepository(database),
     projects: new ProjectRepository(database),
     relationships: new RelationshipRepository(database)
@@ -147,6 +150,32 @@ describe('AssetRepository', () => {
     expect(projects.getWorkspace(first.id).masterAssets.map((item) => item.id)).toEqual([asset.id]);
     expect(projects.getWorkspace(second.id).masterAssets).toEqual([]);
     expect(assets.findById(asset.id)?.metadata.role).toBeUndefined();
+  });
+
+  it('汇总素材在项目、母版、资产包和配方中的反向引用', () => {
+    const { database, assets, projects } = createStores();
+    const project = projects.create('引用追踪项目', 'image');
+    const asset = assets.createOrGet({
+      type: 'reference_image', name: '角色主参考', managedPath: '/managed/reference.png', sha256: 'usage-reference',
+      mediaType: 'image/png', rightsStatus: 'original', confirmation: 'confirmed', metadata: {},
+    }).asset;
+    projects.attachAsset(project.id, asset.id);
+    assets.setProjectMaster(project.id, asset.id, true);
+    const collection = new AssetCollectionRepository(database).create({ projectId: project.id, kind: 'reference', name: '主参考资产包' });
+    new AssetCollectionRepository(database).attachAsset(collection.id, asset.id, '身份锚点', 'source');
+    new CreativeRecipeRepository(database).create({
+      projectId: project.id, name: '角色定妆配方', purpose: '角色定妆', applicability: '同一角色',
+      invalidationConditions: ['更换角色'],
+      card: { intent: '人物肖像', subject: '成年女性', identityAnchor: '', bodyAndWardrobe: '', expressionAndPose: '', scene: '', lighting: '', camera: '', style: '', avoid: '', aspectRatio: '2:3', referenceAssetIds: [asset.id] },
+      prompt: '写实角色', negative: '水印', sourceAssetIds: [asset.id],
+    });
+
+    expect(assets.usage(asset.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'project', scopeName: '引用追踪项目', context: '项目素材' }),
+      expect.objectContaining({ kind: 'project_master', scopeName: '引用追踪项目', context: '项目母版' }),
+      expect.objectContaining({ kind: 'collection', scopeName: '主参考资产包', context: 'source · 身份锚点' }),
+      expect.objectContaining({ kind: 'recipe', scopeName: '角色定妆配方', context: '配方来源素材' }),
+    ]));
   });
 
   it('生成候选权利未明时须记录人工依据才能改为授权，并同步撤销失效角色锁定', () => {

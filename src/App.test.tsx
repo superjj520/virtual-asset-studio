@@ -13,6 +13,7 @@ beforeEach(() => {
       list: vi.fn().mockResolvedValue([]),
       preview: vi.fn(),
       lineage: vi.fn().mockResolvedValue([]),
+      usage: vi.fn().mockResolvedValue([]),
       updateConfirmation: vi.fn(),
       updateRights: vi.fn(),
       setMaster: vi.fn(),

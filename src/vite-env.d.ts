@@ -20,6 +20,7 @@ interface Window {
         projectId?: string;
         q?: string;
       }) => Promise<import("./shared/types").Asset[]>;
+      usage: (assetId: string) => Promise<import("./shared/types").AssetUsageReference[]>;
       preview: (assetId: string) => Promise<string | undefined>;
       lineage: (
         assetId: string,

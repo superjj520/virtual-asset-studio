@@ -8,6 +8,7 @@ import { ProjectPipelinePanel } from "./project/ProjectPipelinePanel";
 import { ReferenceBindingsPanel } from "./creation/ReferenceBindingsPanel";
 import { GenerationQueuePanel } from "./production/GenerationQueuePanel";
 import { CandidateComparePanel } from "./production/CandidateComparePanel";
+import { CollectionAssetFilterBar, filterCollectionAssets, type CollectionAssetFilters } from "./assets/CollectionAssetFilterBar";
 import { composeCharacterCard, evaluateCharacterCoverage, type CharacterUseCase, type CharacterVariantSelection } from "./shared/character-slots";
 import { collectUsableReferenceAssetIds, getAssetCollectionBlueprint } from "./shared/asset-collection-blueprints";
 import { normalizeReferenceBindings } from "./shared/reference-bindings";
@@ -18,6 +19,7 @@ import type {
   AssetCollectionDetail,
   AssetCollectionKind,
   AssetLineageItem,
+  AssetUsageReference,
   AssetType,
   BudgetStatus,
   CharacterProfile,
@@ -72,6 +74,17 @@ const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   video: "视频",
   audio: "音频",
   game_export: "游戏导出",
+};
+
+const ASSET_USAGE_LABELS: Record<AssetUsageReference["kind"], string> = {
+  project: "项目",
+  project_master: "项目母版",
+  collection: "资产包",
+  character: "角色",
+  scene: "场景",
+  job: "生成任务",
+  recipe: "创作配方",
+  review: "审片记录",
 };
 
 const PROJECT_MEDIUMS: { value: ProjectMedium; label: string }[] = [
@@ -345,6 +358,7 @@ export default function App() {
   const [editingCollection, setEditingCollection] = useState(false);
   const [collectionEditName, setCollectionEditName] = useState("");
   const [collectionEditDescription, setCollectionEditDescription] = useState("");
+  const [collectionAssetFilters, setCollectionAssetFilters] = useState<CollectionAssetFilters>({ query: "", moduleKey: "all", confirmation: "all", rights: "all" });
   const [creativeTasks, setCreativeTasks] = useState<CreativeTask[]>([]);
   const [activeTaskId, setActiveTaskId] = useState("");
   const [guideMode, setGuideMode] = useState<"new" | "saved" | "reference">("new");
@@ -405,6 +419,7 @@ export default function App() {
   const [selectedAssetId, setSelectedAssetId] = useState("");
   const [compareAssetIds, setCompareAssetIds] = useState<string[]>([]);
   const [lineage, setLineage] = useState<AssetLineageItem[]>([]);
+  const [assetUsage, setAssetUsage] = useState<AssetUsageReference[]>([]);
   const [analysis, setAnalysis] = useState<ImageUnderstandingReport>();
   const [reversePrompt, setReversePrompt] = useState<ReversePrompt>();
   const [refinementInstruction, setRefinementInstruction] = useState(
@@ -682,6 +697,9 @@ export default function App() {
     setCollectionEditDescription(selectedCollection.description);
   }, [selectedCollection]);
   useEffect(() => {
+    setCollectionAssetFilters({ query: "", moduleKey: "all", confirmation: "all", rights: "all" });
+  }, [selectedCollectionId]);
+  useEffect(() => {
     window.studio.tasks
       .list(selectedProjectId || undefined)
       .then(setCreativeTasks)
@@ -717,12 +735,25 @@ export default function App() {
     return () => { current = false; };
   }, [screen, selectedProjectId]);
   useEffect(() => {
-    if (selectedAssetId)
-      window.studio.assets
-        .lineage(selectedAssetId)
-        .then(setLineage)
-        .catch(() => setLineage([]));
-    else setLineage([]);
+    if (!selectedAssetId) {
+      setLineage([]);
+      setAssetUsage([]);
+      return;
+    }
+    setLineage([]);
+    setAssetUsage([]);
+    let current = true;
+    Promise.all([
+      window.studio.assets.lineage(selectedAssetId).catch(() => []),
+      typeof window.studio.assets.usage === "function"
+        ? window.studio.assets.usage(selectedAssetId).catch(() => [])
+        : Promise.resolve([] as AssetUsageReference[]),
+    ]).then(([nextLineage, nextUsage]) => {
+      if (!current) return;
+      setLineage(nextLineage);
+      setAssetUsage(nextUsage);
+    });
+    return () => { current = false; };
   }, [selectedAssetId, assets]);
   const refreshJobs = useCallback(async () => {
     const currentJobs = await window.studio.generation.jobs(
@@ -1073,6 +1104,11 @@ export default function App() {
   };
 
   const selectedAsset = assets.find((asset) => asset.id === selectedAssetId);
+  const selectedCollectionBlueprint = selectedCollection ? getAssetCollectionBlueprint(selectedCollection.kind) : undefined;
+  const filteredCollectionAssets = useMemo(
+    () => selectedCollection ? filterCollectionAssets(selectedCollection.assets, collectionAssetFilters) : [],
+    [collectionAssetFilters, selectedCollection],
+  );
   const availableSecondaryCategories = useMemo(
     () =>
       selectedType === "all"
@@ -2699,12 +2735,14 @@ export default function App() {
                   <p>{selectedCollection.readiness.nextAction}</p>
                   {selectedCollection.readiness.characterCoverage && <small>肖像必需细项：{selectedCollection.readiness.characterCoverage.confirmedRequiredCount}/{selectedCollection.readiness.characterCoverage.requiredCount}</small>}
                 </section>
-                <section className="collection-modules" aria-label="资产包模块完整度"><div className="collection-section-heading"><div><p className="eyebrow">模块完整度</p><strong>按模块补齐素材</strong></div><small>{selectedCollection.readiness.moduleCoverage?.confirmedRequiredCount ?? 0}/{selectedCollection.readiness.moduleCoverage?.requiredCount ?? 0} 个必需模块</small></div><div className="collection-module-grid">{(selectedCollection.readiness.moduleCoverage?.modules ?? getAssetCollectionBlueprint(selectedCollection.kind).modules.map((module) => ({ key: module.key, label: module.label, required: module.required, assetCount: 0, confirmedAssetCount: 0 }))).map((module) => <div key={module.key} className={module.required && module.confirmedAssetCount === 0 ? "collection-module module-missing" : "collection-module"}><span>{module.required ? "必需" : "可选"}</span><strong>{module.label}</strong><small>{module.confirmedAssetCount}/{module.assetCount} 项可用</small></div>)}</div></section>
+                <section className="collection-modules" aria-label="资产包模块完整度"><div className="collection-section-heading"><div><p className="eyebrow">模块完整度</p><strong>点击模块查看对应素材</strong></div><small>{selectedCollection.readiness.moduleCoverage?.confirmedRequiredCount ?? 0}/{selectedCollection.readiness.moduleCoverage?.requiredCount ?? 0} 个必需模块</small></div><div className="collection-module-grid">{(selectedCollection.readiness.moduleCoverage?.modules ?? selectedCollectionBlueprint!.modules.map((module) => ({ key: module.key, label: module.label, required: module.required, assetCount: 0, confirmedAssetCount: 0 }))).map((module) => <button type="button" key={module.key} onClick={() => setCollectionAssetFilters((current) => ({ ...current, moduleKey: current.moduleKey === module.key ? "all" : module.key }))} className={`${module.required && module.confirmedAssetCount === 0 ? "collection-module module-missing" : "collection-module"}${collectionAssetFilters.moduleKey === module.key ? " module-current" : ""}`}><span>{module.required ? "必需" : "可选"}</span><strong>{module.label}</strong><small>{module.confirmedAssetCount}/{module.assetCount} 项可用</small></button>)}</div></section>
                 {selectedCollection.characterProfileId && <button type="button" onClick={() => { selectCharacter(selectedCollection.characterProfileId!); setScreen("characters"); }}>打开所属角色细项</button>}
                 <div className="collection-assets">
-                  <div className="collection-section-heading"><div><p className="eyebrow">已归档素材</p><strong>{selectedCollection.assets.length} 项</strong></div><small>素材仍可被多个资产包引用。</small></div>
-                  {selectedCollection.assets.map((asset) => <div key={asset.id} className="collection-member"><button type="button" className="collection-member-main" onClick={() => { setSelectedAssetId(asset.id); setScreen("assets"); }}><span>{getAssetCollectionBlueprint(selectedCollection.kind).modules.find((module) => module.key === asset.moduleKey)?.label ?? "未分配模块"} · {asset.membershipRole}</span><strong>{asset.name}</strong><small>{ASSET_TYPE_LABELS[asset.type]} · {asset.confirmation === "confirmed" ? "已确认" : "待审核"}{asset.notes ? ` · ${asset.notes}` : ""}</small></button><button type="button" className="collection-member-remove" onClick={() => void detachSelectedCollectionAsset(asset.id)}>移除</button></div>)}
+                  <div className="collection-section-heading"><div><p className="eyebrow">已归档素材</p><strong>{selectedCollection.assets.length} 项</strong></div><small>按模块、状态和权利快速核对。</small></div>
+                  <CollectionAssetFilterBar filters={collectionAssetFilters} modules={selectedCollectionBlueprint!.modules} resultCount={filteredCollectionAssets.length} totalCount={selectedCollection.assets.length} onChange={setCollectionAssetFilters} />
+                  {filteredCollectionAssets.map((asset) => <div key={asset.id} className="collection-member"><button type="button" className="collection-member-main" onClick={() => { setSelectedAssetId(asset.id); setScreen("assets"); }}><span>{selectedCollectionBlueprint!.modules.find((module) => module.key === asset.moduleKey)?.label ?? "未分配模块"} · {asset.membershipRole}</span><strong>{asset.name}</strong><small>{ASSET_TYPE_LABELS[asset.type]} · {asset.confirmation === "confirmed" ? "已确认" : asset.confirmation === "rejected" ? "已淘汰" : "待审片"} · {asset.rightsStatus === "original" ? "原创" : asset.rightsStatus === "authorized" ? "已授权" : asset.rightsStatus === "restricted" ? "受限制" : "权利待核实"}{asset.projectMaster ? " · 项目母版" : ""}{asset.notes ? ` · ${asset.notes}` : ""}</small></button><button type="button" className="collection-member-remove" onClick={() => void detachSelectedCollectionAsset(asset.id)}>移除</button></div>)}
                   {!selectedCollection.assets.length && <p className="task-empty">这个资产包还没有素材。到“资产库”选中一个素材后，先选择模块，再点击“归入当前资产包”。</p>}
+                  {selectedCollection.assets.length > 0 && !filteredCollectionAssets.length && <div className="empty-state compact-empty"><strong>没有匹配素材</strong><p>调整筛选条件，或点击上方模块取消限定。</p></div>}
                 </div>
               </> : <div className="empty-state"><strong>选择一个资产包</strong><p>右侧查看素材、状态和引用。</p></div>}
             </article>
@@ -2878,6 +2916,16 @@ export default function App() {
                       .join(" · ")}
                   </p>
                 )}
+                <div className="asset-usage-summary" aria-label="素材引用位置">
+                  <strong>被哪里使用 · {assetUsage.length}</strong>
+                  {assetUsage.length > 0 ? <ul>{assetUsage.map((usage) => (
+                    <li key={`${usage.kind}-${usage.scopeId}-${usage.context}`}>
+                      <span>{ASSET_USAGE_LABELS[usage.kind]}</span>
+                      <b>{usage.scopeName}</b>
+                      <small>{usage.context}</small>
+                    </li>
+                  ))}</ul> : <small>尚未被项目、资产包、角色、场景、任务或配方引用。</small>}
+                </div>
               </div>
               {selectedCollection && <div className="collection-attach-controls"><label>归档到模块<select value={selectedCollectionModuleKey} onChange={(event) => setSelectedCollectionModuleKey(event.target.value)}>{getAssetCollectionBlueprint(selectedCollection.kind).modules.map((module) => <option value={module.key} key={module.key}>{module.required ? "必需 · " : "可选 · "}{module.label}</option>)}</select></label><label>本素材说明（可选）<input value={selectedCollectionMemberNotes} onChange={(event) => setSelectedCollectionMemberNotes(event.target.value)} placeholder="例如：只作为正面脸部证据，不作为最终母版" /></label></div>}
               <div className="form-actions">

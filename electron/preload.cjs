@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("studio", {
   assets: {
     import: (input) => ipcRenderer.invoke("assets:import", input),
     list: (query) => ipcRenderer.invoke("assets:list", query),
+    usage: (assetId) => ipcRenderer.invoke("assets:usage", assetId),
     preview: (assetId) => ipcRenderer.invoke("assets:preview", assetId),
     lineage: (assetId) => ipcRenderer.invoke("assets:lineage", assetId),
     updateConfirmation: (assetId, confirmation) =>

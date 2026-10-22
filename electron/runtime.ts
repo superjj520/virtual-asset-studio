@@ -405,6 +405,7 @@ export const createStudioRuntime = (
         },
       );
       ipcMain.handle("assets:list", (_event, query) => assets.list(query));
+      ipcMain.handle("assets:usage", (_event, assetId: string) => assets.usage(assetId));
       ipcMain.handle("collections:create", (_event, input) => collections.create(input));
       ipcMain.handle("collections:list", (_event, projectId?: string) => collections.list(projectId));
       ipcMain.handle("collections:detail", (_event, id: string) => collections.getDetail(id));
