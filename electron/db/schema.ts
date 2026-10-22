@@ -255,6 +255,71 @@ export const applySchema = (database: Database.Database) => {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS character_versions (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES character_profiles(id) ON DELETE CASCADE,
+      version_number INTEGER NOT NULL,
+      label TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('draft', 'locked', 'superseded')),
+      change_summary TEXT NOT NULL DEFAULT '',
+      snapshot_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(profile_id, version_number)
+    );
+    CREATE TABLE IF NOT EXISTS character_states (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES character_profiles(id) ON DELETE CASCADE,
+      version_id TEXT REFERENCES character_versions(id) ON DELETE SET NULL,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK(kind IN ('baseline', 'scene', 'performance')),
+      status TEXT NOT NULL CHECK(status IN ('draft', 'active', 'archived')),
+      wardrobe TEXT NOT NULL DEFAULT '',
+      hair TEXT NOT NULL DEFAULT '',
+      expression TEXT NOT NULL DEFAULT '',
+      pose TEXT NOT NULL DEFAULT '',
+      scene TEXT NOT NULL DEFAULT '',
+      emotion TEXT NOT NULL DEFAULT '',
+      continuity_notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS character_active_state_unique
+      ON character_states(profile_id) WHERE status = 'active';
+    CREATE TABLE IF NOT EXISTS generation_sessions (
+      id TEXT PRIMARY KEY,
+      project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+      character_profile_id TEXT REFERENCES character_profiles(id) ON DELETE SET NULL,
+      character_version_id TEXT REFERENCES character_versions(id) ON DELETE SET NULL,
+      character_state_id TEXT REFERENCES character_states(id) ON DELETE SET NULL,
+      creative_task_id TEXT REFERENCES creative_tasks(id) ON DELETE SET NULL,
+      title TEXT NOT NULL,
+      mode TEXT NOT NULL CHECK(mode IN ('text_to_image', 'image_edit', 'text_to_video', 'image_to_video', 'video_extend', 'talking')),
+      status TEXT NOT NULL CHECK(status IN ('draft', 'running', 'review', 'completed', 'failed', 'archived')),
+      prompt TEXT NOT NULL DEFAULT '',
+      negative_prompt TEXT NOT NULL DEFAULT '',
+      provider_id TEXT,
+      aspect_ratio TEXT NOT NULL,
+      reference_asset_ids_json TEXT NOT NULL DEFAULT '[]',
+      settings_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS character_media_links (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES character_profiles(id) ON DELETE CASCADE,
+      version_id TEXT REFERENCES character_versions(id) ON DELETE SET NULL,
+      state_id TEXT REFERENCES character_states(id) ON DELETE SET NULL,
+      session_id TEXT REFERENCES generation_sessions(id) ON DELETE SET NULL,
+      asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE RESTRICT,
+      role TEXT NOT NULL CHECK(role IN ('reference', 'candidate', 'master', 'start_frame', 'output', 'voice', 'remix_source')),
+      parent_asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(session_id, asset_id, role)
+    );
+    CREATE INDEX IF NOT EXISTS character_versions_profile_idx ON character_versions(profile_id, version_number DESC);
+    CREATE INDEX IF NOT EXISTS character_states_profile_idx ON character_states(profile_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS generation_sessions_character_idx ON generation_sessions(character_profile_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS character_media_profile_idx ON character_media_links(profile_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS asset_collections (
       id TEXT PRIMARY KEY,
       project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,

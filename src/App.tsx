@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AdaptiveDomainNavigation } from "./ui-adapters/AdaptiveDomainNavigation";
 import { CharacterInspector } from "./character/CharacterInspector";
+import { CharacterWorkspacePanel } from "./character/CharacterWorkspacePanel";
 import { composeCharacterCard, evaluateCharacterCoverage, type CharacterUseCase, type CharacterVariantSelection } from "./shared/character-slots";
 import { collectUsableReferenceAssetIds, getAssetCollectionBlueprint } from "./shared/asset-collection-blueprints";
 import { CREATIVE_ASPECT_RATIOS, normalizeCreativeAspectRatio, aspectRatioForImageSize } from "./shared/types";
@@ -15,6 +16,7 @@ import type {
   BudgetStatus,
   CharacterProfile,
   CharacterDetail,
+  CharacterWorkspaceSnapshot,
   CharacterFactInput,
   CharacterVariantKind,
   CharacterGroup,
@@ -276,6 +278,12 @@ export default function App() {
   const [characters, setCharacters] = useState<CharacterProfile[]>([]);
   const [selectedCharacterId, setSelectedCharacterId] = useState("");
   const [selectedCharacterDetail, setSelectedCharacterDetail] = useState<CharacterDetail>();
+  const [selectedCharacterWorkspace, setSelectedCharacterWorkspace] = useState<CharacterWorkspaceSnapshot>();
+  const [activeCharacterContext, setActiveCharacterContext] = useState<{
+    profileId: string;
+    versionId?: string;
+    stateId?: string;
+  }>();
   const [masterPickerCharacterId, setMasterPickerCharacterId] = useState("");
   const [masterCandidateAssets, setMasterCandidateAssets] = useState<Asset[]>([]);
   const [masterChoiceId, setMasterChoiceId] = useState("");
@@ -289,6 +297,7 @@ export default function App() {
   const selectCharacter = (id: string) => {
     selectedCharacterIdRef.current = id;
     setSelectedCharacterDetail(undefined);
+    setSelectedCharacterWorkspace(undefined);
     setSelectedCharacterId(id);
   };
   const [characterVariantSelections, setCharacterVariantSelections] = useState<Record<string, CharacterVariantSelection>>({});
@@ -399,14 +408,18 @@ export default function App() {
     const requestId = ++characterRelationsRequestRef.current;
     const characterId = selectedCharacterIdRef.current;
     const collectionId = selectedCollectionId;
-    const [profiles, detail, collectionDetail] = await Promise.all([
+    const [profiles, detail, characterWorkspace, collectionDetail] = await Promise.all([
       window.studio.characters.list(projectId || undefined),
       characterId ? window.studio.characters.detail(characterId) : Promise.resolve(undefined),
+      characterId ? window.studio.characterWorkspace.get(characterId).catch(() => undefined) : Promise.resolve(undefined),
       collectionId ? window.studio.collections.detail(collectionId) : Promise.resolve(undefined),
     ]);
     if (requestId !== characterRelationsRequestRef.current || selectedProjectIdRef.current !== projectId) return;
     setCharacters(profiles);
-    if (characterId && selectedCharacterIdRef.current === characterId) setSelectedCharacterDetail(detail);
+    if (characterId && selectedCharacterIdRef.current === characterId) {
+      setSelectedCharacterDetail(detail);
+      setSelectedCharacterWorkspace(characterWorkspace);
+    }
     if (collectionId) setSelectedCollection((current) => current?.id === collectionId ? collectionDetail : current);
   }, [selectedCollectionId, selectedProjectId]);
 
@@ -522,11 +535,24 @@ export default function App() {
     setMasterPickerCharacterId(""); setMasterCandidateAssets([]); setMasterChoiceId("");
   }, [selectedProjectId]);
   useEffect(() => {
-    if (!selectedCharacterId) { setSelectedCharacterDetail(undefined); return; }
+    if (!selectedCharacterId) { setSelectedCharacterDetail(undefined); setSelectedCharacterWorkspace(undefined); return; }
     let current = true;
-    window.studio.characters.detail(selectedCharacterId)
-      .then((detail) => { if (current && selectedCharacterIdRef.current === selectedCharacterId) setSelectedCharacterDetail(detail); })
-      .catch(() => { if (current && selectedCharacterIdRef.current === selectedCharacterId) setSelectedCharacterDetail(undefined); });
+    Promise.all([
+      window.studio.characters.detail(selectedCharacterId),
+      window.studio.characterWorkspace.get(selectedCharacterId).catch(() => undefined),
+    ])
+      .then(([detail, workspace]) => {
+        if (current && selectedCharacterIdRef.current === selectedCharacterId) {
+          setSelectedCharacterDetail(detail);
+          setSelectedCharacterWorkspace(workspace);
+        }
+      })
+      .catch(() => {
+        if (current && selectedCharacterIdRef.current === selectedCharacterId) {
+          setSelectedCharacterDetail(undefined);
+          setSelectedCharacterWorkspace(undefined);
+        }
+      });
     return () => { current = false; };
   }, [selectedCharacterId]);
   useEffect(() => {
@@ -663,13 +689,14 @@ export default function App() {
         const size = typeof job.request.size === "string" ? job.request.size : "1024x1024";
         const aspectRatio = aspectRatioForImageSize(size as "1024x1024" | "1024x1536" | "1536x1024");
         if (job.request.mode === "refine" && typeof job.request.referenceAssetId === "string") {
-          await window.studio.generation.refineImage({ assetId: job.request.referenceAssetId, prompt: job.request.prompt, negative: typeof job.request.negative === "string" ? job.request.negative : undefined, projectId: job.projectId, creativeTaskId: typeof job.request.creativeTaskId === "string" ? job.request.creativeTaskId : undefined, retryOfJobId: job.id, aspectRatio });
+          await window.studio.generation.refineImage({ assetId: job.request.referenceAssetId, prompt: job.request.prompt, negative: typeof job.request.negative === "string" ? job.request.negative : undefined, projectId: job.projectId, creativeTaskId: typeof job.request.creativeTaskId === "string" ? job.request.creativeTaskId : undefined, generationSessionId: typeof job.request.generationSessionId === "string" ? job.request.generationSessionId : undefined, retryOfJobId: job.id, aspectRatio });
         } else {
           await window.studio.generation.image({
             prompt: job.request.prompt,
             negative: typeof job.request.negative === "string" ? job.request.negative : undefined,
             projectId: job.projectId,
             creativeTaskId: typeof job.request.creativeTaskId === "string" ? job.request.creativeTaskId : undefined,
+            generationSessionId: typeof job.request.generationSessionId === "string" ? job.request.generationSessionId : undefined,
             retryOfJobId: job.id,
             aspectRatio,
             referenceAssetIds: Array.isArray(job.request.referenceAssetIds) ? job.request.referenceAssetIds.filter((item): item is string => typeof item === "string") : [],
@@ -679,7 +706,7 @@ export default function App() {
       } else if (job.kind === "image_to_video" && typeof job.request.prompt === "string") {
         const size = job.request.size === "720x1280" ? "9:16" : "16:9";
         const seconds = job.request.seconds === 8 || job.request.seconds === 12 ? job.request.seconds : 4;
-        await window.studio.generation.video({ prompt: job.request.prompt, projectId: job.projectId, referenceAssetId: typeof job.request.referenceAssetId === "string" ? job.request.referenceAssetId : undefined, aspectRatio: size, seconds });
+        await window.studio.generation.video({ prompt: job.request.prompt, projectId: job.projectId, referenceAssetId: typeof job.request.referenceAssetId === "string" ? job.request.referenceAssetId : undefined, generationSessionId: typeof job.request.generationSessionId === "string" ? job.request.generationSessionId : undefined, aspectRatio: size, seconds });
       } else {
         throw new Error("该失败任务缺少可安全重建的请求记录。");
       }
@@ -1144,6 +1171,35 @@ export default function App() {
     setScreen("creation");
     setNotice("已把反推提示词设为本轮创作基线；建议下一步只改变一个维度。\n");
   };
+  const startCharacterImageCreation = (
+    workspace: CharacterWorkspaceSnapshot,
+    context: { versionId?: string; stateId?: string },
+  ) => {
+    const state = context.stateId
+      ? workspace.states.find((item) => item.id === context.stateId)
+      : workspace.activeState;
+    const base = composeCharacterCard(
+      workspace.character,
+      characterVariantSelections[workspace.character.id],
+    );
+    const nextCard = normalizeCreativeCard({
+      ...base,
+      projectId: selectedProjectId || workspace.character.projectId,
+      bodyAndWardrobe: mergeText(base.bodyAndWardrobe, [state?.wardrobe, state?.hair].filter(Boolean).join("；")),
+      expressionAndPose: mergeText(base.expressionAndPose, [state?.expression, state?.pose, state?.emotion].filter(Boolean).join("；")),
+      scene: mergeText(base.scene, state?.scene ?? ""),
+      mustKeep: mergeText(base.mustKeep ?? "", state?.continuityNotes ?? ""),
+    });
+    setCard(nextCard);
+    setCharacterName(workspace.character.name);
+    setActiveCharacterContext({ profileId: workspace.character.id, ...context });
+    setPromptBuild(undefined);
+    setTranslation(undefined);
+    if (nextCard.referenceAssetIds[0]) setSelectedAssetId(nextCard.referenceAssetIds[0]);
+    setActiveDomain("creation");
+    setScreen("creation");
+    setNotice(`已带入「${workspace.character.name}」${state ? `的“${state.name}”状态` : "的基础设定"}；补充本次目标后生成提示词。`);
+  };
   const generateImage = async () => {
     if (!promptBuild) {
       setNotice("请先生成结构化提示词。");
@@ -1161,11 +1217,31 @@ export default function App() {
         setCreativeTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
       }
       const prompt = translation?.positive ?? promptBuild.positive;
+      const characterId = activeCharacterContext?.profileId ?? activeTask?.characterProfileId;
+      const characterWorkspace = characterId
+        ? await window.studio.characterWorkspace.get(characterId)
+        : undefined;
+      const session = characterId ? await window.studio.characterWorkspace.createSession({
+        projectId: selectedProjectId || characterWorkspace?.character.projectId,
+        characterProfileId: characterId,
+        characterVersionId: activeCharacterContext?.versionId ?? characterWorkspace?.activeVersion?.id,
+        characterStateId: activeCharacterContext?.stateId ?? characterWorkspace?.activeState?.id,
+        creativeTaskId: activeTaskId || undefined,
+        title: `${characterWorkspace?.character.name ?? "角色"} · ${normalizedCard.scene || normalizedCard.intent || "图片创作"}`.slice(0, 80),
+        mode: normalizedCard.referenceAssetIds.length ? "image_edit" : "text_to_image",
+        prompt,
+        negativePrompt: translation?.negative ?? promptBuild.negative,
+        providerId: provider?.routes.image,
+        aspectRatio: normalizedCard.aspectRatio,
+        referenceAssetIds: normalizedCard.referenceAssetIds,
+        settings: { qualityTier },
+      }) : undefined;
       const job = await window.studio.generation.image({
         prompt,
         negative: translation?.negative ?? promptBuild.negative,
         projectId: selectedProjectId || undefined,
         creativeTaskId: activeTaskId || undefined,
+        generationSessionId: session?.id,
         aspectRatio: normalizedCard.aspectRatio,
         referenceAssetIds: normalizedCard.referenceAssetIds,
         qualityTier,
@@ -1177,6 +1253,8 @@ export default function App() {
       }
       setNotice(`成图已归档为新资产${assetId ? `：${assetId}` : ""}；任务已进入候选审片。`);
       await refresh();
+      if (characterId && selectedCharacterIdRef.current === characterId)
+        setSelectedCharacterWorkspace(await window.studio.characterWorkspace.get(characterId));
     } catch (error) {
       if (activeTaskId) {
         try {
@@ -1495,13 +1573,21 @@ export default function App() {
     } catch (error) { setNotice(error instanceof Error ? error.message : "更新资产包状态失败。"); }
   };
   const loadCharacter = async (profile: CharacterProfile) => {
-    const detail = await window.studio.characters.detail(profile.id);
+    const [detail, workspace] = await Promise.all([
+      window.studio.characters.detail(profile.id),
+      window.studio.characterWorkspace.get(profile.id),
+    ]);
     const sourceCard = detail ? composeCharacterCard(detail, characterVariantSelections[profile.id]) : profile.card;
     setCard(normalizeCreativeCard({
       ...sourceCard,
       projectId: selectedProjectId || profile.projectId,
     }));
     if (sourceCard.referenceAssetIds[0]) setSelectedAssetId(sourceCard.referenceAssetIds[0]);
+    setActiveCharacterContext({
+      profileId: profile.id,
+      versionId: workspace.activeVersion?.id,
+      stateId: workspace.activeState?.id,
+    });
     setNotice(`已加载「${profile.name}」；本轮只需填写新的场景、动作或镜头。`);
   };
   const createCharacterSheetTask = async (profile?: CharacterProfile) => {
@@ -1706,6 +1792,18 @@ export default function App() {
       }
       await window.studio.collections.attachAsset(collection.id, candidate.id, "主参考");
       const updated = await window.studio.characters.update(profile.id, { masterAssetId: candidate.id });
+      let mediaLinkWarning = "";
+      try {
+        const workspace = await window.studio.characterWorkspace.get(profile.id);
+        await window.studio.characterWorkspace.attachMedia(profile.id, {
+          versionId: workspace.activeVersion?.id,
+          stateId: workspace.activeState?.id,
+          assetId: candidate.id,
+          role: "master",
+        });
+      } catch {
+        mediaLinkWarning = "；主参考已保存，角色工作室血缘待补录";
+      }
       if (profile.masterAssetId && profile.masterAssetId !== candidate.id)
         await window.studio.collections.attachAsset(collection.id, profile.masterAssetId, "历史参考");
       const updatedDetail = selectedCharacterIdRef.current === profile.id
@@ -1713,10 +1811,13 @@ export default function App() {
         : undefined;
       if (selectedProjectIdRef.current !== selectedProjectId) return;
       setCharacters((current) => current.map((item) => item.id === profile.id ? updated : item));
-      if (updatedDetail && selectedCharacterIdRef.current === profile.id) setSelectedCharacterDetail(updatedDetail);
+      if (updatedDetail && selectedCharacterIdRef.current === profile.id) {
+        setSelectedCharacterDetail(updatedDetail);
+        setSelectedCharacterWorkspace(await window.studio.characterWorkspace.get(profile.id).catch(() => undefined));
+      }
       setMasterPickerCharacterId("");
       setMasterChoiceId("");
-      setNotice(`已为「${profile.name}」${profile.masterAssetId ? "更换" : "绑定"}主参考图「${candidate.name}」；它已归入角色资产包。`);
+      setNotice(`已为「${profile.name}」${profile.masterAssetId ? "更换" : "绑定"}主参考图「${candidate.name}」；它已归入角色资产包${mediaLinkWarning}。`);
     } catch (error) {
       if (selectedProjectIdRef.current === selectedProjectId)
         setNotice(error instanceof Error ? error.message : "绑定主参考图失败，请重试。");
@@ -2117,7 +2218,17 @@ export default function App() {
             ))}
             {!characters.length && <div className="empty-state empty-state-action"><div><strong>还没有角色档案</strong><p>建立角色，持续复用主参考和设定。</p></div><button className="primary-button" onClick={openCharacterCreate}>建立角色档案</button></div>}
           </section>
-          {selectedCharacterId && selectedCharacterDetail?.id !== selectedCharacterId && <p role="status">正在读取角色细项…</p>}
+          <div className="character-detail-stack">
+          {selectedCharacterId && (selectedCharacterDetail?.id !== selectedCharacterId || selectedCharacterWorkspace?.character.id !== selectedCharacterId) && <p role="status">正在读取角色工作室…</p>}
+          {selectedCharacterWorkspace?.character.id === selectedCharacterId && <CharacterWorkspacePanel
+            snapshot={selectedCharacterWorkspace}
+            onChanged={(workspace) => {
+              setSelectedCharacterWorkspace(workspace);
+              setSelectedCharacterDetail(workspace.character);
+              setCharacters((current) => current.map((item) => item.id === workspace.character.id ? workspace.character : item));
+            }}
+            onStartImage={(context) => startCharacterImageCreation(selectedCharacterWorkspace, context)}
+          />}
           {selectedCharacterDetail?.id === selectedCharacterId && <CharacterInspector
             key={selectedCharacterDetail.id}
             detail={selectedCharacterDetail}
@@ -2129,6 +2240,7 @@ export default function App() {
             onOpenLibrary={() => setScreen("assets")}
           />}
           {!selectedCharacterId && characters.length > 0 && <div className="empty-state character-placeholder"><strong>选择角色，开始核对</strong><p>按用途补齐素材证据。</p></div>}
+          </div>
           </div>}
           {notice && <p className="notice" role="status">{notice}</p>}
         </section>
@@ -2845,6 +2957,30 @@ export default function App() {
               <p className="result-note">{activeTaskId ? "人物、候选和结果都会回写到此任务。" : "先建任务，再开始出图。"}</p>
             </div>
           </header>
+          {activeCharacterContext && selectedCharacterWorkspace?.character.id === activeCharacterContext.profileId && (
+            <section className="creation-character-context" aria-label="本轮角色上下文">
+              <div>
+                <span className="context-avatar" aria-hidden="true">角</span>
+                <div>
+                  <p className="eyebrow">本轮锁定角色</p>
+                  <strong>{selectedCharacterWorkspace.character.name}</strong>
+                  <p>
+                    {selectedCharacterWorkspace.versions.find((item) => item.id === activeCharacterContext.versionId)?.label
+                      ?? selectedCharacterWorkspace.activeVersion?.label
+                      ?? "当前档案"}
+                    {selectedCharacterWorkspace.states.find((item) => item.id === activeCharacterContext.stateId)?.name
+                      ? ` · ${selectedCharacterWorkspace.states.find((item) => item.id === activeCharacterContext.stateId)?.name}`
+                      : " · 基础状态"}
+                  </p>
+                </div>
+              </div>
+              <div className="form-actions">
+                <span>{card.referenceAssetIds.length} 张参考图</span>
+                <button type="button" onClick={() => setScreen("characters")}>查看角色</button>
+                <button type="button" onClick={() => setActiveCharacterContext(undefined)}>解除锁定</button>
+              </div>
+            </section>
+          )}
           <section className="form-panel">
             <div className="paradigm-summary">
               <div>

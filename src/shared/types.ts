@@ -318,6 +318,116 @@ export type CharacterDetail = CharacterProfile & {
 };
 
 /**
+ * 角色版本是一次不可变的生产快照。角色档案可以继续补充，但已经进入生成任务的
+ * 身份、规格、事实与主参考必须通过版本编号回溯，避免后续修改污染历史结果。
+ */
+export type CharacterVersionStatus = "draft" | "locked" | "superseded";
+export type CharacterVersionSnapshot = {
+  name: string;
+  card: CreativeCard;
+  specification: CharacterSpecification;
+  masterAssetId?: string;
+  facts: CharacterFact[];
+  variants: CharacterVariant[];
+};
+export type CharacterVersion = {
+  id: string;
+  profileId: string;
+  versionNumber: number;
+  label: string;
+  status: CharacterVersionStatus;
+  changeSummary: string;
+  snapshot: CharacterVersionSnapshot;
+  createdAt: string;
+};
+
+/** 可变化的演出上下文与角色核心分离；换装、换场景不会创建一个新角色。 */
+export type CharacterStateKind = "baseline" | "scene" | "performance";
+export type CharacterStateStatus = "draft" | "active" | "archived";
+export type CharacterState = {
+  id: string;
+  profileId: string;
+  versionId?: string;
+  name: string;
+  kind: CharacterStateKind;
+  status: CharacterStateStatus;
+  wardrobe: string;
+  hair: string;
+  expression: string;
+  pose: string;
+  scene: string;
+  emotion: string;
+  continuityNotes: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GenerationSessionMode =
+  | "text_to_image"
+  | "image_edit"
+  | "text_to_video"
+  | "image_to_video"
+  | "video_extend"
+  | "talking";
+export type GenerationSessionStatus =
+  | "draft"
+  | "running"
+  | "review"
+  | "completed"
+  | "failed"
+  | "archived";
+export type GenerationSession = {
+  id: string;
+  projectId?: string;
+  characterProfileId?: string;
+  characterVersionId?: string;
+  characterStateId?: string;
+  creativeTaskId?: string;
+  title: string;
+  mode: GenerationSessionMode;
+  status: GenerationSessionStatus;
+  prompt: string;
+  negativePrompt: string;
+  providerId?: ProviderId;
+  aspectRatio: CreativeAspectRatio;
+  referenceAssetIds: string[];
+  settings: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CharacterMediaRole =
+  | "reference"
+  | "candidate"
+  | "master"
+  | "start_frame"
+  | "output"
+  | "voice"
+  | "remix_source";
+export type CharacterMediaLink = {
+  id: string;
+  profileId: string;
+  versionId?: string;
+  stateId?: string;
+  sessionId?: string;
+  assetId: string;
+  role: CharacterMediaRole;
+  parentAssetId?: string;
+  createdAt: string;
+};
+
+/** 角色工作室一次读取需要的完整上下文。 */
+export type CharacterWorkspaceSnapshot = {
+  character: CharacterDetail;
+  versions: CharacterVersion[];
+  states: CharacterState[];
+  sessions: GenerationSession[];
+  media: Array<CharacterMediaLink & { asset: Asset }>;
+  activeVersion?: CharacterVersion;
+  activeState?: CharacterState;
+};
+
+/**
  * 人物资产包导入结果：把外部压缩包转成可继续管理的角色档案、资产包和素材集合。
  * rightsStatus/confirmation 仍由导入后的审片流程决定，不在导入时伪造为可生产状态。
  */

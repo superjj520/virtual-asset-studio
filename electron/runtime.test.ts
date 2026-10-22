@@ -246,6 +246,50 @@ it('无参考图的文本生图仍可在素材库启动', async () => {
   });
 });
 
+it('角色工作室生成会话把角色版本、状态、参考与候选结果串成同一条生产记录', async () => {
+  const profile = await harness.invoke('characters:create', {
+    name: '动态角色',
+    card: {
+      intent: '角色连续创作', subject: '成年角色', identityAnchor: '固定脸部结构',
+      bodyAndWardrobe: '', expressionAndPose: '', scene: '', lighting: '', camera: '', style: '',
+      avoid: '身份漂移', aspectRatio: '1:1', referenceAssetIds: [],
+    },
+  });
+  const version = await harness.handlers.get('character-versions:create')!({}, profile.id, { label: '初始版本' });
+  const state = await harness.handlers.get('character-states:create')!({}, profile.id, {
+    versionId: version.id, name: '夜景状态', kind: 'scene', status: 'active', scene: '夜晚街头',
+  });
+  const reference = addAsset();
+  const session = await harness.handlers.get('generation-sessions:create')!({}, {
+    characterProfileId: profile.id,
+    characterVersionId: version.id,
+    characterStateId: state.id,
+    title: '夜景肖像',
+    mode: 'text_to_image',
+    prompt: '同一角色夜景肖像',
+    negativePrompt: '身份漂移',
+    aspectRatio: '1:1',
+    referenceAssetIds: [reference.id],
+    settings: {},
+  });
+  await harness.handlers.get('settings:save-provider-key')!({}, 'openai', 'openai-test-key-placeholder-123456');
+  vi.stubGlobal('fetch', vi.fn(async () => ({
+    ok: true,
+    json: async () => ({ data: [{ b64_json: Buffer.from('character-session-image').toString('base64') }] }),
+  })));
+
+  const job = await harness.invoke('generation:image', {
+    ...imageInput([reference.id]),
+    generationSessionId: session.id,
+  });
+  const snapshot = await harness.handlers.get('character-workspace:get')!({}, profile.id);
+  expect(snapshot.sessions[0]).toMatchObject({ id: session.id, status: 'review' });
+  expect(snapshot.media).toEqual(expect.arrayContaining([
+    expect.objectContaining({ assetId: reference.id, role: 'reference' }),
+    expect.objectContaining({ assetId: job.result.assetId, role: 'candidate', parentAssetId: reference.id }),
+  ]));
+});
+
 it('图片生成保留避免项和原任务关联，重试信息不会丢失', async () => {
   harness.handlers.get('settings:save-provider-key')!({}, 'openai', 'openai-test-key-placeholder-123456');
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ data: [{ b64_json: Buffer.from('retry-image').toString('base64') }] }) })));

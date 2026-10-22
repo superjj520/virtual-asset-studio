@@ -119,6 +119,53 @@ interface Window {
         >,
       ) => Promise<import("./shared/types").CharacterProfile>;
     };
+    characterWorkspace: {
+      get: (profileId: string) => Promise<import("./shared/types").CharacterWorkspaceSnapshot>;
+      createVersion: (
+        profileId: string,
+        input?: {
+          label?: string;
+          status?: import("./shared/types").CharacterVersionStatus;
+          changeSummary?: string;
+        },
+      ) => Promise<import("./shared/types").CharacterVersion>;
+      createState: (
+        profileId: string,
+        input: {
+          versionId?: string;
+          name: string;
+          kind: import("./shared/types").CharacterStateKind;
+          status?: import("./shared/types").CharacterStateStatus;
+          wardrobe?: string;
+          hair?: string;
+          expression?: string;
+          pose?: string;
+          scene?: string;
+          emotion?: string;
+          continuityNotes?: string;
+        },
+      ) => Promise<import("./shared/types").CharacterState>;
+      updateState: (
+        id: string,
+        patch: Partial<Pick<import("./shared/types").CharacterState,
+          "name" | "kind" | "status" | "versionId" | "wardrobe" | "hair" | "expression" |
+          "pose" | "scene" | "emotion" | "continuityNotes"
+        >>,
+      ) => Promise<import("./shared/types").CharacterState>;
+      createSession: (
+        input: Omit<import("./shared/types").GenerationSession, "id" | "createdAt" | "updatedAt" | "status"> & {
+          status?: import("./shared/types").GenerationSessionStatus;
+        },
+      ) => Promise<import("./shared/types").GenerationSession>;
+      updateSessionStatus: (
+        id: string,
+        status: import("./shared/types").GenerationSessionStatus,
+      ) => Promise<import("./shared/types").GenerationSession>;
+      attachMedia: (
+        profileId: string,
+        input: Omit<import("./shared/types").CharacterMediaLink, "id" | "profileId" | "createdAt">,
+      ) => Promise<import("./shared/types").CharacterMediaLink>;
+    };
     tasks: {
       create: (input: Pick<import("./shared/types").CreativeTask, "projectId" | "characterProfileId" | "name" | "objective" | "collectionIds" | "card">) => Promise<import("./shared/types").CreativeTask>;
       list: (projectId?: string) => Promise<import("./shared/types").CreativeTask[]>;
@@ -213,6 +260,7 @@ interface Window {
         negative?: string;
         projectId?: string;
         creativeTaskId?: string;
+        generationSessionId?: string;
         retryOfJobId?: string;
         aspectRatio: import("./shared/types").CreativeCard["aspectRatio"];
         referenceAssetIds?: string[];
@@ -224,6 +272,7 @@ interface Window {
         negative?: string;
         projectId?: string;
         creativeTaskId?: string;
+        generationSessionId?: string;
         retryOfJobId?: string;
         aspectRatio: import("./shared/types").CreativeCard["aspectRatio"];
       }) => Promise<import("./shared/types").StudioJob>;
@@ -231,6 +280,7 @@ interface Window {
         prompt: string;
         projectId?: string;
         referenceAssetId?: string;
+        generationSessionId?: string;
         aspectRatio: import("./shared/types").CreativeCard["aspectRatio"];
         seconds: 4 | 8 | 12;
       }) => Promise<import("./shared/types").StudioJob>;

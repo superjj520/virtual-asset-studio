@@ -37,6 +37,7 @@ import { exportProject } from "./services/export/project-exporter";
 import { RelationshipRepository } from "./services/relationships/repository";
 import { ShotPlanRepository } from "./services/shots/repository";
 import { CharacterProfileRepository } from "./services/characters/repository";
+import { CharacterWorkspaceRepository } from "./services/characters/workspace-repository";
 import { PromptSourceRepository } from "./services/learning/source-repository";
 import { importGitHubPromptSource } from "./services/learning/github-source-importer";
 import { importWebPromptSource } from "./services/learning/web-source-importer";
@@ -92,6 +93,7 @@ export const createStudioRuntime = (
   const relationships = new RelationshipRepository(database);
   const shots = new ShotPlanRepository(database);
   const characters = new CharacterProfileRepository(database);
+  const characterWorkspace = new CharacterWorkspaceRepository(database, characters);
   const batches = new GenerationBatchRepository(database);
   const promptSources = new PromptSourceRepository(database);
   const promptEntries = new PromptEntryRepository(database);
@@ -301,6 +303,36 @@ export const createStudioRuntime = (
       throw new Error("参考素材未关联当前项目，请先在项目中归档。");
     }
     return asset;
+  };
+
+  const sessionForGeneration = (
+    sessionId: string | undefined,
+    allowedModes: import("../src/shared/types").GenerationSessionMode[],
+  ) => {
+    if (!sessionId) return undefined;
+    const session = characterWorkspace.getSession(sessionId);
+    if (!session) throw new Error("生成会话不存在，请重新从角色工作室开始。");
+    if (!allowedModes.includes(session.mode)) throw new Error("生成会话模式与当前生产操作不一致。");
+    if (session.status === "completed" || session.status === "archived")
+      throw new Error("生成会话已结束，请新建会话后再生产。");
+    return session;
+  };
+
+  const attachSessionOutput = (
+    session: import("../src/shared/types").GenerationSession | undefined,
+    assetId: string,
+    parentAssetId?: string,
+  ) => {
+    if (!session?.characterProfileId) return;
+    characterWorkspace.attachMedia(session.characterProfileId, {
+      versionId: session.characterVersionId,
+      stateId: session.characterStateId,
+      sessionId: session.id,
+      assetId,
+      parentAssetId,
+      role: "candidate",
+    });
+    characterWorkspace.updateSessionStatus(session.id, "review");
   };
 
   const writeGeneratedAsset = (
@@ -593,6 +625,27 @@ export const createStudioRuntime = (
       ipcMain.handle("tasks:update", (_event, id: string, patch) => tasks.update(id, patch));
       ipcMain.handle("characters:update", (_event, id: string, patch) =>
         characters.update(id, patch),
+      );
+      ipcMain.handle("character-workspace:get", (_event, profileId: string) =>
+        characterWorkspace.getWorkspace(profileId),
+      );
+      ipcMain.handle("character-versions:create", (_event, profileId: string, input) =>
+        characterWorkspace.createVersion(profileId, input),
+      );
+      ipcMain.handle("character-states:create", (_event, profileId: string, input) =>
+        characterWorkspace.createState(profileId, input),
+      );
+      ipcMain.handle("character-states:update", (_event, id: string, patch) =>
+        characterWorkspace.updateState(id, patch),
+      );
+      ipcMain.handle("generation-sessions:create", (_event, input) =>
+        characterWorkspace.createSession(input),
+      );
+      ipcMain.handle("generation-sessions:update-status", (_event, id: string, status) =>
+        characterWorkspace.updateSessionStatus(id, status),
+      );
+      ipcMain.handle("character-media:attach", (_event, profileId: string, input) =>
+        characterWorkspace.attachMedia(profileId, input),
       );
       ipcMain.handle(
         "batches:create",
@@ -922,6 +975,7 @@ export const createStudioRuntime = (
             negative?: string;
             projectId?: string;
             creativeTaskId?: string;
+            generationSessionId?: string;
             retryOfJobId?: string;
             aspectRatio: CreativeCard["aspectRatio"];
             referenceAssetIds?: string[];
@@ -929,6 +983,7 @@ export const createStudioRuntime = (
           },
         ) => {
           const size = imageSizeForAspectRatio(input.aspectRatio);
+          const session = sessionForGeneration(input.generationSessionId, ["text_to_image", "image_edit"]);
           if (input.referenceAssetIds !== undefined && !Array.isArray(input.referenceAssetIds))
             throw new Error("参考素材列表格式不正确。");
           const referenceAssetIds = [...new Set(input.referenceAssetIds ?? [])];
@@ -955,9 +1010,11 @@ export const createStudioRuntime = (
               appliedReferenceAssetIds: references.length ? [references[0].id] : [],
               qualityTier: input.qualityTier ?? "premium",
               creativeTaskId: input.creativeTaskId,
+              generationSessionId: session?.id,
               retryOfJobId: input.retryOfJobId,
             },
           });
+          if (session) characterWorkspace.updateSessionStatus(session.id, "running");
           jobs.update(job.id, { status: "in_progress" });
           try {
             const generated =
@@ -983,6 +1040,7 @@ export const createStudioRuntime = (
               projectId: input.projectId,
               sourceAssetIds: references.length ? [references[0].id] : [],
             });
+            attachSessionOutput(session, asset.id, references[0]?.id);
             return jobs.update(job.id, {
               status: "completed",
               result: { assetId: asset.id, remoteTask: generated.remoteTask, requestedAspectRatio: input.aspectRatio, actualSize: size },
@@ -994,6 +1052,8 @@ export const createStudioRuntime = (
               ...(remoteTask ? { result: { remoteTask, requestedAspectRatio: input.aspectRatio, actualSize: size } } : {}),
               error: error instanceof Error ? error.message : "图片生成失败。",
             });
+            if (session && !remoteTask && !isNetworkOutcomeUnknown(error))
+              characterWorkspace.updateSessionStatus(session.id, "failed");
             throw error;
           }
         },
@@ -1009,10 +1069,12 @@ export const createStudioRuntime = (
             projectId?: string;
             aspectRatio: CreativeCard["aspectRatio"];
             creativeTaskId?: string;
+            generationSessionId?: string;
             retryOfJobId?: string;
           },
         ) => {
           const reference = referenceForGeneration(input.assetId, input.projectId);
+          const session = sessionForGeneration(input.generationSessionId, ["image_edit"]);
           if (!input.prompt.trim()) throw new Error("请描述本次只要优化什么。");
           const size = imageSizeForAspectRatio(input.aspectRatio);
           const providerId = routeFor("image_edit");
@@ -1031,9 +1093,11 @@ export const createStudioRuntime = (
               referenceAssetId: reference.id,
               mode: "refine",
               creativeTaskId: input.creativeTaskId,
+              generationSessionId: session?.id,
               retryOfJobId: input.retryOfJobId,
             },
           });
+          if (session) characterWorkspace.updateSessionStatus(session.id, "running");
           jobs.update(job.id, { status: "in_progress" });
           try {
             const generated = await refineWithResult(providerId, {
@@ -1051,6 +1115,7 @@ export const createStudioRuntime = (
               projectId: input.projectId,
               sourceAssetIds: [reference.id],
             });
+            attachSessionOutput(session, asset.id, reference.id);
             return jobs.update(job.id, {
               status: "completed",
               result: { assetId: asset.id, remoteTask: generated.remoteTask, requestedAspectRatio: input.aspectRatio, actualSize: size },
@@ -1062,6 +1127,8 @@ export const createStudioRuntime = (
               ...(remoteTask ? { result: { remoteTask, requestedAspectRatio: input.aspectRatio, actualSize: size } } : {}),
               error: error instanceof Error ? error.message : "图片修订失败。",
             });
+            if (session && !remoteTask && !isNetworkOutcomeUnknown(error))
+              characterWorkspace.updateSessionStatus(session.id, "failed");
             throw error;
           }
         },
@@ -1074,6 +1141,7 @@ export const createStudioRuntime = (
             prompt: string;
             projectId?: string;
             referenceAssetId?: string;
+            generationSessionId?: string;
             aspectRatio: CreativeCard["aspectRatio"];
             seconds: 4 | 8 | 12;
           },
@@ -1081,6 +1149,7 @@ export const createStudioRuntime = (
           const reference = input.referenceAssetId !== undefined
             ? referenceForGeneration(input.referenceAssetId, input.projectId)
             : undefined;
+          const session = sessionForGeneration(input.generationSessionId, ["text_to_video", "image_to_video", "video_extend", "talking"]);
           const size = input.aspectRatio === "9:16" ? "720x1280" : "1280x720";
           const providerId = routeFor("video");
           const videoProvider = videoProviderFor(providerId);
@@ -1092,11 +1161,13 @@ export const createStudioRuntime = (
             request: {
               prompt: input.prompt,
               referenceAssetId: reference?.id,
+              generationSessionId: session?.id,
               size,
               seconds: input.seconds,
               submissionState: "submitting",
             },
           });
+          if (session) characterWorkspace.updateSessionStatus(session.id, "running");
           try {
             const remote = await videoProvider.createVideo({
               prompt: input.prompt,
@@ -1123,6 +1194,8 @@ export const createStudioRuntime = (
               status: isNetworkOutcomeUnknown(error) || /禁止盲目重试/.test(message) ? "unknown" : "failed",
               error: message,
             });
+            if (session && !isNetworkOutcomeUnknown(error) && !/禁止盲目重试/.test(message))
+              characterWorkspace.updateSessionStatus(session.id, "failed");
             throw error;
           }
         },
@@ -1146,6 +1219,11 @@ export const createStudioRuntime = (
             projectId: job.projectId,
             sourceAssetIds: referenceIds.length ? [referenceIds[0]] : [],
           });
+          const sessionId = typeof job.request.generationSessionId === "string"
+            ? job.request.generationSessionId
+            : undefined;
+          const session = sessionId ? characterWorkspace.getSession(sessionId) : undefined;
+          attachSessionOutput(session, asset.id, referenceIds[0]);
           return jobs.update(job.id, {
             status: "completed",
             result: { ...(job.result ?? {}), remoteTask, assetId: asset.id },
@@ -1188,6 +1266,11 @@ export const createStudioRuntime = (
               projectId: job.projectId,
               sourceAssetIds: sourceAssetId ? [sourceAssetId] : [],
             });
+            const sessionId = typeof job.request.generationSessionId === "string"
+              ? job.request.generationSessionId
+              : undefined;
+            const session = sessionId ? characterWorkspace.getSession(sessionId) : undefined;
+            attachSessionOutput(session, asset.id, sourceAssetId);
             return jobs.update(job.id, {
               status: "completed",
               result: { remoteId, progress: 100, assetId: asset.id },

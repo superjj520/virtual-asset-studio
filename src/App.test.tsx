@@ -30,6 +30,15 @@ beforeEach(() => {
     recipes: { create: vi.fn(), list: vi.fn().mockResolvedValue([]), updateStatus: vi.fn() },
     creation: { compilePrompt: vi.fn(), enrichCard: vi.fn(), translatePrompt: vi.fn(), compileShot: vi.fn() },
     characters: { create: vi.fn(), list: vi.fn().mockResolvedValue([]), detail: vi.fn(), importAssetPack: vi.fn(), createVariant: vi.fn(), upsertFact: vi.fn(), update: vi.fn() },
+    characterWorkspace: {
+      get: vi.fn().mockResolvedValue(undefined),
+      createVersion: vi.fn(),
+      createState: vi.fn(),
+      updateState: vi.fn(),
+      createSession: vi.fn(),
+      updateSessionStatus: vi.fn(),
+      attachMedia: vi.fn().mockResolvedValue(undefined),
+    },
     tasks: { create: vi.fn(), list: vi.fn().mockResolvedValue([]), update: vi.fn() },
     batches: { create: vi.fn(), list: vi.fn().mockResolvedValue([]), run: vi.fn() },
     shots: { create: vi.fn(), list: vi.fn().mockResolvedValue([]) },
@@ -261,6 +270,10 @@ it('创建角色后可从当前项目的合格图片绑定主参考并归入角�
   vi.mocked(window.studio.projects.workspace).mockResolvedValue({ project, masterAssets: [], recentGenerations: [], recentTasks: [], health: { assetCount: 0, confirmedAssetCount: 0, candidateAssetCount: 0, masterAssetCount: 0, generationCount: 0 } } as never);
   vi.mocked(window.studio.characters.list).mockResolvedValue([profile] as never);
   vi.mocked(window.studio.characters.detail).mockImplementation(async () => ({ ...profile, facts: [], variants: [], evidenceAssets: bound ? [available] : [] }) as never);
+  vi.mocked(window.studio.characterWorkspace.get).mockImplementation(async () => ({
+    character: { ...profile, facts: [], variants: [], evidenceAssets: bound ? [available] : [] },
+    versions: [], states: [], sessions: [], media: [],
+  }) as never);
   vi.mocked(window.studio.collections.list).mockResolvedValue([collection] as never);
   vi.mocked(window.studio.collections.attachAsset).mockResolvedValue({ ...collection, assets: [], readiness: {} } as never);
   vi.mocked(window.studio.characters.update).mockImplementation(async () => { bound = true; return { ...profile, masterAssetId: available.id } as never; });

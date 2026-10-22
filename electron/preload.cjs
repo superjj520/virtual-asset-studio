@@ -64,6 +64,15 @@ contextBridge.exposeInMainWorld("studio", {
     upsertFact: (id, input) => ipcRenderer.invoke("characters:upsert-fact", id, input),
     update: (id, patch) => ipcRenderer.invoke("characters:update", id, patch),
   },
+  characterWorkspace: {
+    get: (profileId) => ipcRenderer.invoke("character-workspace:get", profileId),
+    createVersion: (profileId, input) => ipcRenderer.invoke("character-versions:create", profileId, input),
+    createState: (profileId, input) => ipcRenderer.invoke("character-states:create", profileId, input),
+    updateState: (id, patch) => ipcRenderer.invoke("character-states:update", id, patch),
+    createSession: (input) => ipcRenderer.invoke("generation-sessions:create", input),
+    updateSessionStatus: (id, status) => ipcRenderer.invoke("generation-sessions:update-status", id, status),
+    attachMedia: (profileId, input) => ipcRenderer.invoke("character-media:attach", profileId, input),
+  },
   tasks: {
     create: (input) => ipcRenderer.invoke("tasks:create", input),
     list: (projectId) => ipcRenderer.invoke("tasks:list", projectId),
