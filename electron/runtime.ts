@@ -590,7 +590,7 @@ export const createStudioRuntime = (
           input: {
             prompt: string;
             negative?: string;
-            providerId: "openai" | "flux";
+            providerId: "openai" | "flux" | "fal" | "gemini";
             qualityTier: "draft" | "standard" | "premium";
           },
         ) => {
@@ -692,7 +692,7 @@ export const createStudioRuntime = (
           const referenceSelection = normalizeReferenceBindings(input.referenceAssetIds ?? [], input.referenceBindings);
           const { referenceAssetIds, referenceBindings } = referenceSelection;
           const references = referenceAssetIds.map((id) => referenceForGeneration(id, input.projectId));
-          const providerId = routeFor("image");
+          const providerId = routeFor(references.length ? "image_edit" : "image");
           if (references.length && !imageEditProviders[providerId])
             throw new Error("当前图片模型不支持批量参考图编辑，请切换到可用的修图模型。");
           const perImageCost = providerId === "fal"
@@ -1015,7 +1015,7 @@ export const createStudioRuntime = (
           const references = referenceAssetIds.map((id) =>
             referenceForGeneration(id, input.projectId),
           );
-          const providerId = routeFor("image");
+          const providerId = routeFor(references.length ? "image_edit" : "image");
           if (references.length && !imageEditProviders[providerId])
             throw new Error("当前图片模型不支持参考图编辑，请切换到可用的修图模型。");
           const quality = input.qualityTier === "draft" ? "medium" : "high";

@@ -181,12 +181,23 @@ it('未选项目时不能引用只归属于其他项目的素材', async () => {
   await expect(harness.invoke('generation:image', imageInput([reference.id]))).rejects.toThrow(/参考素材.*项目/);
 });
 
-it('有参考图却选择不支持参考编辑的模型时拒绝生成', async () => {
+it('带参考图时使用独立的高保真修图路由，不受纯生图路由影响', async () => {
   const reference = addAsset();
   const saveKey = harness.handlers.get('settings:save-provider-key')!;
   saveKey({}, 'flux', 'flux-test-key-placeholder-123456');
+  saveKey({}, 'openai', 'openai-test-key-placeholder-123456');
   harness.handlers.get('settings:save-route')!({}, 'image', 'flux');
-  await expect(harness.invoke('generation:image', imageInput([reference.id]))).rejects.toThrow(/参考图.*模型/);
+  harness.handlers.get('settings:save-route')!({}, 'image_edit', 'openai');
+  const fetchMock = vi.fn(async () => ({
+    ok: true,
+    json: async () => ({ data: [{ b64_json: Buffer.from('edited-image').toString('base64') }] }),
+  }));
+  vi.stubGlobal('fetch', fetchMock);
+
+  const job = await harness.invoke('generation:image', imageInput([reference.id]));
+
+  expect(job.providerId).toBe('openai');
+  expect(fetchMock).toHaveBeenCalledWith('https://api.openai.com/v1/images/edits', expect.objectContaining({ method: 'POST' }));
 });
 
 it('生成结果待复核权利，且仅记录实际送入模型的参考素材', async () => {

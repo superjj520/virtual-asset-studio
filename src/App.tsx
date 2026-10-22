@@ -1171,6 +1171,9 @@ export default function App() {
       ),
     );
   };
+  const currentImageCapability: ProviderCapability = card.referenceAssetIds.length ? "image_edit" : "image";
+  const canGenerateCurrentImage = canUse(currentImageCapability);
+  const currentImageProvider = provider?.routes[currentImageCapability];
   const saveProviderKey = async (providerId: ProviderId) => {
     try {
       const key = providerKeys[providerId];
@@ -1432,7 +1435,7 @@ export default function App() {
         mode: normalizedCard.referenceAssetIds.length ? "image_edit" : "text_to_image",
         prompt,
         negativePrompt: translation?.negative ?? promptBuild.negative,
-        providerId: provider?.routes.image,
+        providerId: card.referenceAssetIds.length ? provider?.routes.image_edit : provider?.routes.image,
         aspectRatio: normalizedCard.aspectRatio,
         referenceAssetIds: normalizedCard.referenceAssetIds,
         settings: { qualityTier, referenceBindings: normalizedCard.referenceBindings },
@@ -1541,9 +1544,9 @@ export default function App() {
       setNotice("请先生成结构化提示词。");
       return;
     }
-    const imageProvider = provider?.routes.image;
-    if (imageProvider !== "openai" && imageProvider !== "flux" && imageProvider !== "fal") {
-      setNotice("请先在模型连接页选择 OpenAI、FLUX 或 fal 的图片路由。");
+    const imageProvider = card.referenceAssetIds.length ? provider?.routes.image_edit : provider?.routes.image;
+    if (imageProvider !== "openai" && imageProvider !== "flux" && imageProvider !== "fal" && imageProvider !== "gemini") {
+      setNotice(`请先在模型连接页选择可用的${card.referenceAssetIds.length ? "修图" : "图片"}路由。`);
       return;
     }
     try {
@@ -3453,12 +3456,12 @@ export default function App() {
                 </button>
                 <button
                   className="primary-button"
-                  disabled={!canUse("image") || Boolean(characterReferenceIssues)}
+                  disabled={!canGenerateCurrentImage || Boolean(characterReferenceIssues)}
                   onClick={() => void generateImage()}
                 >
-                  {canUse("image")
-                    ? "使用已选绘图模型生成成图"
-                    : "请先配置绘图模型"}
+                  {canGenerateCurrentImage
+                    ? `使用 ${providerLabel(currentImageProvider)} ${currentImageCapability === "image_edit" ? "保持参考生成" : "生成成图"}`
+                    : `请先配置${currentImageCapability === "image_edit" ? "修图" : "绘图"}模型`}
                 </button>
               </div>
               {translation && (

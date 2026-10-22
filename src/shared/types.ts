@@ -714,7 +714,7 @@ export type CreativeRecipe = {
 export type GenerationQualityTier = "draft" | "standard" | "premium";
 
 export type PromptTranslation = {
-  providerId: Extract<ProviderId, "openai" | "flux" | "fal">;
+  providerId: Extract<ProviderId, "openai" | "flux" | "fal" | "gemini">;
   qualityTier: GenerationQualityTier;
   positive: string;
   negative: string;

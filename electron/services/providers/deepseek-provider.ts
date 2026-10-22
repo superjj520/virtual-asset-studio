@@ -55,7 +55,7 @@ export class DeepSeekProvider {
   async translatePrompt(input: {
     prompt: string;
     negative?: string;
-    providerId: "openai" | "flux" | "fal";
+    providerId: "openai" | "flux" | "fal" | "gemini";
     qualityTier: GenerationQualityTier;
   }): Promise<PromptTranslation> {
     const apiKey = this.options.apiKey();
