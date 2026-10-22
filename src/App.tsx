@@ -4,6 +4,7 @@ import { CharacterInspector } from "./character/CharacterInspector";
 import { CharacterWorkspacePanel } from "./character/CharacterWorkspacePanel";
 import { SceneWorkspacePanel } from "./scene/SceneWorkspacePanel";
 import { ReviewWorkspacePanel } from "./review/ReviewWorkspacePanel";
+import { ProjectPipelinePanel } from "./project/ProjectPipelinePanel";
 import { composeCharacterCard, evaluateCharacterCoverage, type CharacterUseCase, type CharacterVariantSelection } from "./shared/character-slots";
 import { collectUsableReferenceAssetIds, getAssetCollectionBlueprint } from "./shared/asset-collection-blueprints";
 import { CREATIVE_ASPECT_RATIOS, normalizeCreativeAspectRatio, aspectRatioForImageSize } from "./shared/types";
@@ -13,7 +14,6 @@ import type {
   AssetCollectionDetail,
   AssetCollectionKind,
   AssetLineageItem,
-  AssetReview,
   AssetType,
   BudgetStatus,
   CharacterProfile,
@@ -401,13 +401,6 @@ export default function App() {
   const [refinementInstruction, setRefinementInstruction] = useState(
     "保持人物身份、构图与服装不变，只优化真实皮肤纹理、头发细节、布料材质、自然光影与背景代入感；不要文字或水印。",
   );
-  const [review, setReview] = useState<Omit<AssetReview, "reviewedAt">>({
-    identity: 3,
-    scene: 3,
-    realism: 3,
-    videoReady: 3,
-    note: "",
-  });
   const [jobs, setJobs] = useState<StudioJob[]>([]);
   const [retryingJobIds, setRetryingJobIds] = useState<Set<string>>(
     () => new Set(),
@@ -1594,16 +1587,6 @@ export default function App() {
       setNotice(error instanceof Error ? error.message : "更新审核状态失败。");
     }
   };
-  const saveReview = async () => {
-    if (!selectedAssetId) return;
-    try {
-      await window.studio.assets.review(selectedAssetId, review);
-      await refresh();
-      setNotice("审片评分已保存；后续可按角色一致性与视频可用度筛选主版本。");
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "保存审片评分失败。");
-    }
-  };
   const openCharacterCreate = () => {
     setCharacterName("");
     setCharacterGroup("lead");
@@ -2228,15 +2211,26 @@ export default function App() {
     templates: [["recipes", "方法卡"], ["paradigms", "画面范式"], ["learning", "学习收件箱"]],
   } as const;
   const workspaceNextAction = (() => {
-    const health = projectWorkspace?.health;
-    if (!health) return { label: "查看项目状态", target: "workspace" as const, hint: "正在读取项目状态。" };
-    if (health.assetCount === 0) return { label: "导入第一批素材", target: "assets" as const, hint: "先把参考图或场景图纳入受管素材库。" };
-    if (!characters.length) return { label: "建立角色档案", target: "characters" as const, hint: "把人物身份固定下来，后续场景才能持续复用。" };
-    if (health.confirmedAssetCount === 0) return { label: "完成素材复核", target: "assets" as const, hint: "先确认使用权和审片状态，再进入生成。" };
-    if (!creativeTasks.length) return { label: "开始第一条创作", target: "start" as const, hint: "只填写一句话目标和必须保持项，系统会建立创作基线。" };
-    if (health.candidateAssetCount > 0) return { label: "打开候选审片", target: "review" as const, hint: "从候选中选出主版本，并晋级到项目、角色或场景母版。" };
-    return { label: "继续下一条创作", target: "start" as const, hint: "沿用已确认角色和资产包，只改变一个变量。" };
+    if (!projectWorkspace) return { label: "查看项目状态", target: "workspace" as const, hint: "正在读取项目状态。" };
+    const blocker = projectWorkspace.blockers?.[0];
+    if (blocker) return { label: "立即处理", target: blocker.target, hint: `${blocker.label}：${blocker.detail}` };
+    const stage = projectWorkspace.pipeline?.find((item) => item.status !== "complete");
+    if (stage) return { label: stage.nextAction, target: stage.target, hint: stage.summary };
+    return { label: "继续下一条创作", target: "start" as const, hint: projectWorkspace.recommendedNextAction };
   })();
+  const openPipelineTarget = (target: ProjectWorkspace["pipeline"][number]["target"]) => {
+    setNotice("");
+    setActiveDomain(
+      ["workspace", "start", "creation"].includes(target) ? "creation"
+        : ["characters", "assets"].includes(target) ? "assets"
+          : ["shot", "review", "jobs"].includes(target) ? "production"
+            : "templates",
+    );
+    setScreen(target);
+    if (target === "workspace") requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(".brief-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
 
   return (
     <div className="app-shell">
@@ -2570,20 +2564,7 @@ export default function App() {
             </section>
           ) : (
             <>
-              <section className="workspace-metrics" aria-label="项目健康度">
-                {[
-                  ["项目资产", projectWorkspace?.health.assetCount ?? 0],
-                  ["已确认", projectWorkspace?.health.confirmedAssetCount ?? 0],
-                  ["待比较", projectWorkspace?.health.candidateAssetCount ?? 0],
-                  ["已锁母版", projectWorkspace?.health.masterAssetCount ?? 0],
-                  ["生成执行", projectWorkspace?.health.generationCount ?? 0],
-                ].map(([label, value]) => (
-                  <div key={String(label)}>
-                    <span>{label}</span>
-                    <strong>{value}</strong>
-                  </div>
-                ))}
-              </section>
+              <ProjectPipelinePanel snapshot={projectWorkspace} onNavigate={openPipelineTarget} />
               <section className="task-board" aria-label="创作任务">
                 <div className="task-board-header">
                   <div><p className="eyebrow">创作任务</p><strong>每次创作都有记录</strong></div>
@@ -2632,8 +2613,7 @@ export default function App() {
                   type="button"
                   className="primary-button"
                   onClick={() => {
-                    setNotice("");
-                    setScreen(workspaceNextAction.target);
+                    openPipelineTarget(workspaceNextAction.target);
                   }}
                 >
                   {workspaceNextAction.label}
@@ -2897,6 +2877,9 @@ export default function App() {
                 <button disabled={!selectedCollection} onClick={() => void attachSelectedAssetToCollection()}>
                   {selectedCollection ? `归入「${selectedCollection.name}」` : "先在资产结构选择资产包"}
                 </button>
+                {selectedProjectId && selectedAsset.mediaType.startsWith("image/") && <button onClick={() => { setActiveDomain("production"); setScreen("review"); }}>
+                  到统一审片台
+                </button>}
                 <button
                   disabled={
                     !canUse("vision") ||
@@ -2933,62 +2916,6 @@ export default function App() {
               >
                 {canUse("image_edit") ? "修订为视频起始帧" : "先配置修图模型"}
               </button>
-            </section>
-          )}
-          {selectedAsset?.mediaType.startsWith("image/") && (
-            <section className="form-panel">
-              <p className="eyebrow">审片评分 / 角色资产验收</p>
-              <p className="result-note">
-                评分不是模型自评，而是为主版本、批量策略和视频起始帧提供可追溯证据。
-              </p>
-              <div className="form-grid">
-                {(
-                  [
-                    ["identity", "角色一致性"],
-                    ["scene", "场景贴合"],
-                    ["realism", "真人质感"],
-                    ["videoReady", "视频起始帧可用度"],
-                  ] as [
-                    keyof Omit<AssetReview, "reviewedAt" | "note">,
-                    string,
-                  ][]
-                ).map(([key, label]) => (
-                  <label key={key}>
-                    {label}
-                    <select
-                      value={review[key]}
-                      onChange={(event) =>
-                        setReview((current) => ({
-                          ...current,
-                          [key]: Number(event.target.value),
-                        }))
-                      }
-                    >
-                      {[1, 2, 3, 4, 5].map((value) => (
-                        <option value={value} key={value}>
-                          {value} 分
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ))}
-              </div>
-              <label>
-                本轮判断
-                <textarea
-                  value={review.note}
-                  onChange={(event) =>
-                    setReview((current) => ({
-                      ...current,
-                      note: event.target.value,
-                    }))
-                  }
-                  placeholder="例如：脸部稳定，但皮肤偏塑料；下一张只优化皮肤与发丝。"
-                />
-              </label>
-              <div className="form-actions">
-                <button onClick={() => void saveReview()}>保存审片评分</button>
-              </div>
             </section>
           )}
           {analysis && (

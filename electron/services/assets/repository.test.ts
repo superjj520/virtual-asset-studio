@@ -100,7 +100,25 @@ describe('AssetRepository', () => {
     expect(workspace.project.brief).toEqual(brief);
     expect(workspace.health).toMatchObject({ assetCount: 2, confirmedAssetCount: 1, candidateAssetCount: 1, masterAssetCount: 1 });
     expect(workspace.masterAssets.map((asset) => asset.id)).toEqual([master.id]);
-    expect(workspace.recommendedNextAction).toContain('已锁定 1 个母版');
+    expect(workspace.pipeline.map((stage) => [stage.key, stage.status])).toEqual([
+      ['creation', 'ready'], ['assets', 'complete'], ['production', 'complete'], ['templates', 'not_started'],
+    ]);
+    expect(workspace.blockers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'review', count: 1, target: 'review' }),
+    ]));
+    expect(workspace.recommendedNextAction).toContain('候选待审片');
+  });
+
+  it('空项目明确标记四域未开始，并把缺失简报作为第一处理项', () => {
+    const { projects } = createStores();
+    const project = projects.create('新企划', 'image');
+
+    const workspace = projects.getWorkspace(project.id);
+
+    expect(workspace.pipeline).toHaveLength(4);
+    expect(workspace.pipeline.every((stage) => stage.status === 'not_started')).toBe(true);
+    expect(workspace.blockers[0]).toMatchObject({ code: 'brief', count: 5, target: 'workspace' });
+    expect(workspace.recommendedNextAction).toContain('简报待补齐');
   });
 
   it('将已确认资产设为母版时保留原有资产 DNA', () => {

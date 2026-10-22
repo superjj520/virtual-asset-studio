@@ -214,10 +214,44 @@ export type ProjectHealth = {
   generationCount: number;
 };
 
+export type ProjectPipelineStageKey = "creation" | "assets" | "production" | "templates";
+export type ProjectPipelineStageStatus = "not_started" | "needs_attention" | "ready" | "complete";
+export type ProjectPipelineTarget =
+  | "workspace"
+  | "start"
+  | "creation"
+  | "characters"
+  | "assets"
+  | "shot"
+  | "review"
+  | "jobs"
+  | "recipes";
+
+/** 首页只呈现每个工作域最关键的状态与下一步，避免把管理后台再次做成功能清单。 */
+export type ProjectPipelineStage = {
+  key: ProjectPipelineStageKey;
+  label: string;
+  status: ProjectPipelineStageStatus;
+  summary: string;
+  nextAction: string;
+  target: ProjectPipelineTarget;
+  primaryCount: number;
+};
+
+export type ProjectBlocker = {
+  code: "brief" | "rights" | "review" | "job" | "recipe";
+  label: string;
+  detail: string;
+  count: number;
+  target: ProjectPipelineTarget;
+};
+
 export type ProjectWorkspace = {
   project: Project;
   health: ProjectHealth;
   masterAssets: Asset[];
+  pipeline: ProjectPipelineStage[];
+  blockers: ProjectBlocker[];
   recommendedNextAction: string;
 };
 

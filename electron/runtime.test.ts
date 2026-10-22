@@ -19,6 +19,8 @@ let harness: {
   assets: AssetRepository;
   projects: ProjectRepository;
   runtime: ReturnType<typeof createStudioRuntime>;
+  isAvailable: ReturnType<typeof vi.fn<() => boolean>>;
+  decrypt: ReturnType<typeof vi.fn<(value: string) => string>>;
   handlers: Map<string, Handler>;
   invoke: (channel: string, input: unknown) => Promise<any>;
 };
@@ -26,10 +28,12 @@ let harness: {
 beforeEach(() => {
   const directory = mkdtempSync(join(tmpdir(), 'studio-generation-intake-'));
   const handlers = new Map<string, Handler>();
+  const isAvailable = vi.fn(() => true);
+  const decrypt = vi.fn((value: string) => value);
   const runtime = createStudioRuntime(directory, {
-    isAvailable: () => true,
+    isAvailable,
     encrypt: (value) => value,
-    decrypt: (value) => value,
+    decrypt,
   });
   runtime.register({ handle: (channel: string, handler: Handler) => { handlers.set(channel, handler); } } as IpcMain);
   const database = new StudioDatabase(join(directory, 'virtual-asset-studio.sqlite'));
@@ -39,6 +43,8 @@ beforeEach(() => {
     assets: new AssetRepository(database),
     projects: new ProjectRepository(database),
     runtime,
+    isAvailable,
+    decrypt,
     handlers,
     invoke: async (channel, input) => {
       const handler = handlers.get(channel);
@@ -105,9 +111,13 @@ it('运行时注册人物资产包导入桥，供界面把外部压缩包接入�
 
 it('首次配置 Gemini 后图片与修图路由自动切到已配置的 Gemini', async () => {
   await harness.handlers.get('settings:save-provider-key')!({}, 'gemini', 'gemini-test-key-12345678901234567890');
+  harness.isAvailable.mockClear();
+  harness.decrypt.mockClear();
 
   const status = await harness.invoke('settings:provider-status');
 
+  expect(harness.isAvailable).not.toHaveBeenCalled();
+  expect(harness.decrypt).not.toHaveBeenCalled();
   expect(status.providers.find((provider: any) => provider.id === 'gemini')).toMatchObject({ configured: true });
   expect(status.routes.image).toBe('gemini');
   expect(status.routes.image_edit).toBe('gemini');

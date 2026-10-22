@@ -96,9 +96,18 @@ app.whenReady().then(async () => {
   const runtimePath = path.join(__dirname, '..', 'dist', 'electron', 'runtime.mjs');
   const { createStudioRuntime } = await import(pathToFileURL(runtimePath).href);
   runtime = createStudioRuntime(app.getPath('userData'), {
-    isAvailable: () => safeStorage.isEncryptionAvailable(),
-    encrypt: (value) => safeStorage.encryptString(value).toString('base64'),
-    decrypt: (value) => safeStorage.decryptString(Buffer.from(value, 'base64'))
+    isAvailable: () => {
+      startupLog('安全存储：检查可用性。');
+      return safeStorage.isEncryptionAvailable();
+    },
+    encrypt: (value) => {
+      startupLog('安全存储：加密新凭据。');
+      return safeStorage.encryptString(value).toString('base64');
+    },
+    decrypt: (value) => {
+      startupLog('安全存储：读取已保存凭据。');
+      return safeStorage.decryptString(Buffer.from(value, 'base64'));
+    }
   });
   runtime.register(ipcMain);
   startupLog('运行时初始化完成，创建窗口。');

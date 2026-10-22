@@ -120,6 +120,10 @@ export const createStudioRuntime = (
       return undefined;
     }
   };
+  // 首页只需要知道本机是否保存过凭据。不要在状态查询中初始化安全存储；
+  // 真正调用模型或保存新密钥时才检查并解密，避免应用启动即触发 macOS 钥匙串授权。
+  const hasStoredApiKey = (providerId: ProviderId) =>
+    Boolean(settings.get(`${providerId}_api_key`));
   const openai = new OpenAIProvider({ apiKey: () => apiKeyFor("openai") });
   const flux = new FluxProvider({ apiKey: () => apiKeyFor("flux") });
   const fal = new FalProvider({ apiKey: () => apiKeyFor("fal") });
@@ -200,15 +204,15 @@ export const createStudioRuntime = (
   const providerConnections = () => [
       {
         id: "openai",
-        configured: openai.isConfigured(),
+        configured: hasStoredApiKey("openai"),
         capabilities: ["vision", "image", "image_edit", "video"],
       },
-      { id: "flux", configured: flux.isConfigured(), capabilities: ["image"] },
-      { id: "fal", configured: fal.isConfigured(), capabilities: ["image", "image_edit"] },
-      { id: "gemini", configured: gemini.isConfigured(), capabilities: ["image", "image_edit"] },
+      { id: "flux", configured: hasStoredApiKey("flux"), capabilities: ["image"] },
+      { id: "fal", configured: hasStoredApiKey("fal"), capabilities: ["image", "image_edit"] },
+      { id: "gemini", configured: hasStoredApiKey("gemini"), capabilities: ["image", "image_edit"] },
       {
         id: "deepseek",
-        configured: deepseek.isConfigured(),
+        configured: hasStoredApiKey("deepseek"),
         capabilities: ["text"],
       },
     ] satisfies ProviderStatus["providers"];

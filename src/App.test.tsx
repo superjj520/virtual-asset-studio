@@ -227,6 +227,13 @@ it('项目概览把建议下一步变成可直接执行的入口', async () => {
     masterAssets: [],
     recentGenerations: [],
     recentTasks: [],
+    pipeline: [
+      { key: 'creation', label: '创作', status: 'complete', summary: '简报已完成', nextAction: '继续创作', target: 'creation', primaryCount: 1 },
+      { key: 'assets', label: '资产', status: 'not_started', summary: '尚无素材', nextAction: '导入第一批素材', target: 'assets', primaryCount: 0 },
+      { key: 'production', label: '生产', status: 'not_started', summary: '尚未生成', nextAction: '建立候选', target: 'shot', primaryCount: 0 },
+      { key: 'templates', label: '模板', status: 'not_started', summary: '尚无配方', nextAction: '沉淀配方', target: 'recipes', primaryCount: 0 },
+    ],
+    blockers: [],
     recommendedNextAction: '先导入素材',
   } as never);
 
@@ -235,6 +242,7 @@ it('项目概览把建议下一步变成可直接执行的入口', async () => {
   expect(await screen.findByRole('button', { name: '导入第一批素材' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: '导入第一批素材' }));
   expect(await screen.findByRole('heading', { name: '让每一张参考图都能成为可复用的创作资产' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '资产' })).toHaveAttribute('aria-current', 'page');
 });
 
 it('从角色档案入口导入人物资产包后自动打开角色与资产证据', async () => {
