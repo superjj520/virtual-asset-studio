@@ -624,6 +624,7 @@ export type ReversePrompt = {
 };
 
 export type ShotContract = {
+  deliveryType?: "image" | "video";
   subjectAnchor: string;
   referenceAssetIds: string[];
   startFrame: string;
@@ -646,6 +647,16 @@ export type ShotPlan = {
   shot: ShotContract;
   compiledPrompt: string;
   referenceAssetId?: string;
+  purpose: "image" | "video";
+  status: "draft" | "ready" | "review" | "approved" | "blocked";
+  creativeTaskId?: string;
+  characterProfileId?: string;
+  characterVersionId?: string;
+  characterStateId?: string;
+  sceneProfileId?: string;
+  sceneVersionId?: string;
+  sceneStateId?: string;
+  continuityNotes: string;
   createdAt: string;
   updatedAt: string;
 };

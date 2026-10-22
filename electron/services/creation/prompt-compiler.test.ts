@@ -33,3 +33,15 @@ it('将图生视频约束编译为单动作镜头合同', () => {
   expect(result).toContain('唯一动作：一阵微风吹动碎发');
   expect(result).toContain('身份漂移');
 });
+
+it('静态图片镜头合同不混入时长和帧率', () => {
+  const result = compileShotContract({
+    deliveryType: 'image', subjectAnchor: '同一成年角色', referenceAssetIds: [], startFrame: '人物位于画面右侧',
+    action: '回眸直视镜头', cameraMotion: '85mm 平视半身', durationSeconds: 4, frameRate: 24,
+    keep: ['脸与服装不变'], avoid: ['文字'], output: { aspectRatio: '2:3', resolution: '1080p' },
+  });
+  expect(result).toContain('画面构图：人物位于画面右侧');
+  expect(result).toContain('姿态与动作：回眸直视镜头');
+  expect(result).toContain('输出：2:3，高质量静态图片');
+  expect(result).not.toContain('时长与帧率');
+});

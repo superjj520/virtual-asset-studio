@@ -209,11 +209,12 @@ const CHARACTER_SHEET_TEMPLATE: CreativeCard = {
   referenceAssetIds: [],
 };
 const EMPTY_SHOT: ShotContract = {
+  deliveryType: "image",
   subjectAnchor: "",
   referenceAssetIds: [],
   startFrame: "",
   action: "",
-  cameraMotion: "缓慢推近",
+  cameraMotion: "85mm 平视中景",
   durationSeconds: 4,
   frameRate: 24,
   keep: ["脸部身份与发型连续", "服装与场景连续"],
@@ -345,6 +346,16 @@ export default function App() {
   const [shotBuild, setShotBuild] = useState("");
   const [shotName, setShotName] = useState("镜头 01");
   const [shotPlans, setShotPlans] = useState<ShotPlan[]>([]);
+  const [shotPurpose, setShotPurpose] = useState<ShotPlan["purpose"]>("image");
+  const [shotContinuityNotes, setShotContinuityNotes] = useState("");
+  const [shotCharacterId, setShotCharacterId] = useState("");
+  const [shotCharacterVersionId, setShotCharacterVersionId] = useState("");
+  const [shotCharacterStateId, setShotCharacterStateId] = useState("");
+  const [shotCharacterWorkspace, setShotCharacterWorkspace] = useState<CharacterWorkspaceSnapshot>();
+  const [shotSceneId, setShotSceneId] = useState("");
+  const [shotSceneVersionId, setShotSceneVersionId] = useState("");
+  const [shotSceneStateId, setShotSceneStateId] = useState("");
+  const [shotSceneWorkspace, setShotSceneWorkspace] = useState<SceneWorkspaceSnapshot>();
   const [learningInput, setLearningInput] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [promptSources, setPromptSources] = useState<PromptSource[]>([]);
@@ -513,6 +524,38 @@ export default function App() {
     else setShotPlans([]);
   }, [selectedProjectId]);
   useEffect(() => {
+    if (!shotCharacterId) {
+      setShotCharacterWorkspace(undefined);
+      setShotCharacterVersionId("");
+      setShotCharacterStateId("");
+      return;
+    }
+    let current = true;
+    window.studio.characterWorkspace.get(shotCharacterId).then((workspace) => {
+      if (!current) return;
+      setShotCharacterWorkspace(workspace);
+      setShotCharacterVersionId((value) => value || workspace.activeVersion?.id || "");
+      setShotCharacterStateId((value) => value || workspace.activeState?.id || "");
+    }).catch(() => { if (current) setShotCharacterWorkspace(undefined); });
+    return () => { current = false; };
+  }, [shotCharacterId]);
+  useEffect(() => {
+    if (!shotSceneId) {
+      setShotSceneWorkspace(undefined);
+      setShotSceneVersionId("");
+      setShotSceneStateId("");
+      return;
+    }
+    let current = true;
+    window.studio.sceneWorkspace.get(shotSceneId).then((workspace) => {
+      if (!current) return;
+      setShotSceneWorkspace(workspace);
+      setShotSceneVersionId((value) => value || workspace.activeVersion?.id || "");
+      setShotSceneStateId((value) => value || workspace.activeState?.id || "");
+    }).catch(() => { if (current) setShotSceneWorkspace(undefined); });
+    return () => { current = false; };
+  }, [shotSceneId]);
+  useEffect(() => {
     if (!selectedProjectId) {
       setProjectWorkspace(undefined);
       return;
@@ -560,6 +603,10 @@ export default function App() {
     selectCharacter(""); setGuideCharacterId("");
     setSelectedSceneId(""); setSelectedSceneWorkspace(undefined);
     setActiveCharacterContext(undefined); setActiveSceneContext(undefined);
+    setShotCharacterId(""); setShotCharacterWorkspace(undefined);
+    setShotSceneId(""); setShotSceneWorkspace(undefined);
+    setShotCharacterVersionId(""); setShotCharacterStateId("");
+    setShotSceneVersionId(""); setShotSceneStateId("");
     setSelectedAssetId(""); setSelectedCollectionId(""); setSelectedCollection(undefined);
     ++masterPickerRequestRef.current;
     ++characterRelationsRequestRef.current;
@@ -1929,6 +1976,66 @@ export default function App() {
       setNotice(error instanceof Error ? error.message : "保存创作任务失败。\n");
     }
   };
+  const compileCurrentShot = async () => {
+    if (!shotCharacterId && !shotSceneId) {
+      setNotice("请至少绑定一个角色或场景，再生成镜头合同。");
+      return;
+    }
+    try {
+      const nextShot = {
+        ...shot,
+        deliveryType: shotPurpose,
+        keep: [...new Set([...shot.keep, shotContinuityNotes.trim()].filter(Boolean))],
+      };
+      setShot(nextShot);
+      setShotBuild(await window.studio.creation.compileShot(nextShot));
+    } catch (error) { setNotice(error instanceof Error ? error.message : "生成镜头合同失败。"); }
+  };
+  const startShotImageCreation = async () => {
+    if (!selectedProjectId) { setNotice("请先选择镜头所属项目。"); return; }
+    if (!shotCharacterId && !shotSceneId) { setNotice("请至少绑定一个角色或场景。"); return; }
+    try {
+      const characterDetail = shotCharacterId ? await window.studio.characters.detail(shotCharacterId) : undefined;
+      const characterBase = characterDetail ? composeCharacterCard(characterDetail) : EMPTY_CARD;
+      const characterWorkspace = shotCharacterId ? await window.studio.characterWorkspace.get(shotCharacterId) : undefined;
+      const sceneWorkspace = shotSceneId ? await window.studio.sceneWorkspace.get(shotSceneId) : undefined;
+      const sceneState = sceneWorkspace?.states.find((item) => item.id === shotSceneStateId) ?? sceneWorkspace?.activeState;
+      const characterReferences = characterWorkspace?.media
+        .filter((item) => item.asset.confirmation === "confirmed" && ["authorized", "original"].includes(item.asset.rightsStatus) && ["reference", "master"].includes(item.role))
+        .map((item) => item.assetId) ?? [];
+      const sceneReferences = sceneWorkspace?.media
+        .filter((item) => item.asset.confirmation === "confirmed" && ["authorized", "original"].includes(item.asset.rightsStatus) && ["layout_reference", "lighting_reference", "material_reference", "master"].includes(item.role))
+        .map((item) => item.assetId) ?? [];
+      const sceneText = sceneWorkspace ? [sceneWorkspace.scene.anchor, sceneWorkspace.scene.layout, sceneWorkspace.scene.requiredElements,
+        sceneState?.timeOfDay, sceneState?.weather, sceneState?.season, sceneState?.atmosphere, sceneState?.setDressing].filter(Boolean).join("；") : "";
+      const nextCard = normalizeCreativeCard({
+        ...characterBase,
+        projectId: selectedProjectId,
+        intent: `${shotName}：${shot.action || shot.startFrame || "完成镜头画面"}`,
+        subject: characterBase.subject || (shotSceneId ? "场景主视觉" : shot.subjectAnchor),
+        identityAnchor: mergeText(characterBase.identityAnchor, shot.subjectAnchor),
+        expressionAndPose: mergeText(characterBase.expressionAndPose, shot.action),
+        scene: mergeText(characterBase.scene, sceneText || shot.startFrame),
+        lighting: mergeText(characterBase.lighting, sceneState?.lighting ?? ""),
+        camera: mergeText(characterBase.camera, shot.cameraMotion),
+        style: mergeText(characterBase.style, sceneWorkspace ? [sceneWorkspace.scene.materials, sceneWorkspace.scene.colorSystem].filter(Boolean).join("；") : ""),
+        mustKeep: mergeText(characterBase.mustKeep ?? "", [...shot.keep, shotContinuityNotes, sceneState?.continuityNotes ?? ""].filter(Boolean).join("；")),
+        avoid: mergeText(characterBase.avoid, [...shot.avoid, sceneWorkspace?.scene.forbiddenChanges ?? ""].filter(Boolean).join("；")),
+        aspectRatio: shot.output.aspectRatio,
+        referenceAssetIds: [...new Set([...characterBase.referenceAssetIds, ...shot.referenceAssetIds, ...characterReferences,
+          ...sceneReferences, ...(selectedAssetId ? [selectedAssetId] : [])])],
+      });
+      setCard(nextCard);
+      setActiveCharacterContext(shotCharacterId ? { profileId: shotCharacterId, versionId: shotCharacterVersionId || undefined, stateId: shotCharacterStateId || undefined } : undefined);
+      setActiveSceneContext(shotSceneId ? { profileId: shotSceneId, versionId: shotSceneVersionId || undefined, stateId: shotSceneStateId || undefined } : undefined);
+      if (characterWorkspace) { setSelectedCharacterId(characterWorkspace.character.id); setSelectedCharacterWorkspace(characterWorkspace); }
+      if (sceneWorkspace) { setSelectedSceneId(sceneWorkspace.scene.id); setSelectedSceneWorkspace(sceneWorkspace); }
+      setPromptBuild(await window.studio.creation.compilePrompt(nextCard));
+      setTranslation(undefined);
+      setActiveDomain("creation"); setScreen("creation");
+      setNotice(`已将「${shotName}」的角色、场景和连续性约束带入图片创作。`);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "镜头转图片创作失败。"); }
+  };
   const startVideo = async () => {
     if (!shotBuild) {
       setNotice("请先生成镜头合同。");
@@ -1959,13 +2066,27 @@ export default function App() {
       return;
     }
     try {
+      const nextShot = { ...shot, deliveryType: shotPurpose, keep: [...new Set([...shot.keep, shotContinuityNotes.trim()].filter(Boolean))] };
+      const compiledPrompt = await window.studio.creation.compileShot(nextShot);
       const plan = await window.studio.shots.create({
         projectId: selectedProjectId,
         name: shotName,
-        shot,
-        compiledPrompt: shotBuild,
+        shot: nextShot,
+        compiledPrompt,
         referenceAssetId: selectedAssetId || undefined,
+        purpose: shotPurpose,
+        status: "ready",
+        creativeTaskId: activeTaskId || undefined,
+        characterProfileId: shotCharacterId || undefined,
+        characterVersionId: shotCharacterVersionId || undefined,
+        characterStateId: shotCharacterStateId || undefined,
+        sceneProfileId: shotSceneId || undefined,
+        sceneVersionId: shotSceneVersionId || undefined,
+        sceneStateId: shotSceneStateId || undefined,
+        continuityNotes: shotContinuityNotes,
       });
+      setShot(nextShot);
+      setShotBuild(compiledPrompt);
       setShotPlans((current) => [...current, plan]);
       setNotice(`已保存「${plan.name}」，可继续添加下一个镜头。`);
     } catch (error) {
@@ -1977,6 +2098,14 @@ export default function App() {
     setShotName(plan.name);
     setShotBuild(plan.compiledPrompt);
     setSelectedAssetId(plan.referenceAssetId ?? "");
+    setShotPurpose(plan.purpose);
+    setShotContinuityNotes(plan.continuityNotes);
+    setShotCharacterId(plan.characterProfileId ?? "");
+    setShotCharacterVersionId(plan.characterVersionId ?? "");
+    setShotCharacterStateId(plan.characterStateId ?? "");
+    setShotSceneId(plan.sceneProfileId ?? "");
+    setShotSceneVersionId(plan.sceneVersionId ?? "");
+    setShotSceneStateId(plan.sceneStateId ?? "");
     setNotice(`已加载「${plan.name}」。`);
   };
   const exportSelectedProject = async () => {
@@ -2072,7 +2201,7 @@ export default function App() {
   const domainSections = {
     creation: [["workspace", "项目总览"], ["start", "新建创作单"], ["creation", "当前创作卡"]],
     assets: [["characters", "角色档案"], ["scenes", "场景档案"], ["collections", "资产包"], ["assets", "素材库"]],
-    production: [["production", "生产与审片"], ["shot", "镜头与视频"], ["jobs", "生成队列"]],
+    production: [["production", "生产与审片"], ["shot", "镜头工作室"], ["jobs", "生成队列"]],
     templates: [["recipes", "方法卡"], ["paradigms", "画面范式"], ["learning", "学习收件箱"]],
   } as const;
   const workspaceNextAction = (() => {
@@ -3556,10 +3685,37 @@ export default function App() {
         <section className="workspace">
           <header className="workspace-header">
             <div>
-              <p className="eyebrow">镜头与视频 / 图生视频合同</p>
-              <h2>一张图先锁住，再只让一个动作发生</h2>
+              <p className="eyebrow">生产 / 镜头工作室</p>
+              <h2>把角色、场景与本镜动作锁进同一条生产记录</h2>
             </div>
           </header>
+          <section className="form-panel shot-binding-panel" aria-label="镜头资产绑定">
+            <div className="inspector-heading"><div><p className="eyebrow">资产绑定</p><h3>本镜使用什么角色与场景</h3></div><span className="pattern-status">{shotPurpose === "image" ? "静态图片" : "动态视频"}</span></div>
+            <div className="form-grid">
+              <label>交付类型<select value={shotPurpose} onChange={(event) => {
+                const purpose = event.target.value as ShotPlan["purpose"];
+                setShotPurpose(purpose);
+                setShot((current) => ({
+                  ...current,
+                  deliveryType: purpose,
+                  cameraMotion: ["85mm 平视中景", "缓慢推近"].includes(current.cameraMotion)
+                    ? purpose === "image" ? "85mm 平视中景" : "缓慢推近"
+                    : current.cameraMotion,
+                }));
+              }}><option value="image">静态图片</option><option value="video">动态视频</option></select></label>
+              <label>角色<select aria-label="镜头角色" value={shotCharacterId} onChange={(event) => { setShotCharacterId(event.target.value); setShotCharacterVersionId(""); setShotCharacterStateId(""); }}><option value="">不使用角色</option>{characters.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}</select></label>
+              {shotCharacterWorkspace && <>
+                <label>角色版本<select value={shotCharacterVersionId} onChange={(event) => { const versionId = event.target.value; setShotCharacterVersionId(versionId); const state = shotCharacterWorkspace.states.find((item) => item.id === shotCharacterStateId); if (state?.versionId && versionId && state.versionId !== versionId) setShotCharacterStateId(""); }}><option value="">当前档案</option>{shotCharacterWorkspace.versions.map((version) => <option value={version.id} key={version.id}>V{version.versionNumber} · {version.label}</option>)}</select></label>
+                <label>角色状态<select value={shotCharacterStateId} onChange={(event) => setShotCharacterStateId(event.target.value)}><option value="">基础状态</option>{shotCharacterWorkspace.states.filter((state) => !shotCharacterVersionId || !state.versionId || state.versionId === shotCharacterVersionId).map((state) => <option value={state.id} key={state.id}>{state.name}</option>)}</select></label>
+              </>}
+              <label>场景<select aria-label="镜头场景" value={shotSceneId} onChange={(event) => { setShotSceneId(event.target.value); setShotSceneVersionId(""); setShotSceneStateId(""); }}><option value="">不使用场景档案</option>{scenes.map((scene) => <option key={scene.id} value={scene.id}>{scene.name}</option>)}</select></label>
+              {shotSceneWorkspace && <>
+                <label>场景版本<select value={shotSceneVersionId} onChange={(event) => { const versionId = event.target.value; setShotSceneVersionId(versionId); const state = shotSceneWorkspace.states.find((item) => item.id === shotSceneStateId); if (state?.versionId && versionId && state.versionId !== versionId) setShotSceneStateId(""); }}><option value="">当前空间</option>{shotSceneWorkspace.versions.map((version) => <option value={version.id} key={version.id}>V{version.versionNumber} · {version.label}</option>)}</select></label>
+                <label>环境状态<select value={shotSceneStateId} onChange={(event) => setShotSceneStateId(event.target.value)}><option value="">基础环境</option>{shotSceneWorkspace.states.filter((state) => !shotSceneVersionId || !state.versionId || state.versionId === shotSceneVersionId).map((state) => <option value={state.id} key={state.id}>{state.name}</option>)}</select></label>
+              </>}
+              <label>跨镜连续性<textarea value={shotContinuityNotes} onChange={(event) => setShotContinuityNotes(event.target.value)} placeholder="例如：脸、服装、发型与空间中轴不变" /></label>
+            </div>
+          </section>
           <section className="form-panel">
             <div className="form-grid">
               <label>
@@ -3571,12 +3727,12 @@ export default function App() {
                 />
               </label>
               <label>
-                起始帧图片
+                {shotPurpose === "image" ? "参考图片" : "起始帧图片"}
                 <select
                   value={selectedAssetId}
                   onChange={(event) => setSelectedAssetId(event.target.value)}
                 >
-                  <option value="">不使用起始帧（文字生视频）</option>
+                  <option value="">{shotPurpose === "image" ? "不使用参考图（文字生图）" : "不使用起始帧（文字生视频）"}</option>
                   {selectableImages.map((asset) => (
                     <option key={asset.id} value={asset.id}>
                       {asset.name}
@@ -3598,7 +3754,7 @@ export default function App() {
                 />
               </label>
               <label>
-                起始画面
+                {shotPurpose === "image" ? "画面构图" : "起始画面"}
                 <textarea
                   value={shot.startFrame}
                   onChange={(event) =>
@@ -3607,11 +3763,11 @@ export default function App() {
                       startFrame: event.target.value,
                     }))
                   }
-                  placeholder="视频第一帧应该是什么样"
+                  placeholder={shotPurpose === "image" ? "主体位置、景别和画面关系" : "视频第一帧应该是什么样"}
                 />
               </label>
               <label>
-                唯一动作
+                {shotPurpose === "image" ? "姿态与动作" : "唯一动作"}
                 <textarea
                   value={shot.action}
                   onChange={(event) =>
@@ -3624,7 +3780,7 @@ export default function App() {
                 />
               </label>
               <label>
-                镜头运动
+                {shotPurpose === "image" ? "镜头与机位" : "镜头运动"}
                 <textarea
                   value={shot.cameraMotion}
                   onChange={(event) =>
@@ -3637,7 +3793,7 @@ export default function App() {
               </label>
             </div>
             <div className="form-actions">
-              <label>
+              {shotPurpose === "video" && <label>
                 时长
                 <select
                   value={shot.durationSeconds}
@@ -3652,8 +3808,8 @@ export default function App() {
                   <option value="8">8 秒</option>
                   <option value="12">12 秒</option>
                 </select>
-              </label>
-              <label>
+              </label>}
+              {shotPurpose === "video" && <label>
                 输出
                 <select
                   value={shot.output.resolution}
@@ -3670,12 +3826,16 @@ export default function App() {
                   <option value="720p">720p</option>
                   <option value="1080p">1080p</option>
                 </select>
+              </label>}
+              <label>
+                画幅
+                <select value={shot.output.aspectRatio} onChange={(event) => setShot((current) => ({ ...current, output: { ...current.output, aspectRatio: normalizeCreativeAspectRatio(event.target.value) } }))}>
+                  {CREATIVE_ASPECT_RATIOS.map((ratio) => <option value={ratio} key={ratio}>{ratio}</option>)}
+                </select>
               </label>
               <button
                 className="primary-button"
-                onClick={() =>
-                  window.studio.creation.compileShot(shot).then(setShotBuild)
-                }
+                onClick={() => void compileCurrentShot()}
               >
                 生成镜头合同
               </button>
@@ -3692,13 +3852,15 @@ export default function App() {
                 <button onClick={() => void saveShotPlan()}>
                   保存到项目镜头清单
                 </button>
-                <button
-                  className="primary-button"
+                <button className="primary-button" onClick={() => void startShotImageCreation()}>
+                  带入图片创作
+                </button>
+                {shotPurpose === "video" && <button
                   disabled={!canUse("video")}
                   onClick={() => void startVideo()}
                 >
                   {canUse("video") ? "提交图生视频任务" : "请先配置视频模型"}
-                </button>
+                </button>}
               </div>
             </section>
           )}
@@ -3710,10 +3872,14 @@ export default function App() {
                   <div>
                     <h3>{plan.name}</h3>
                     <p>
-                      {plan.shot.action || "未填写动作"} ·{" "}
+                      {plan.purpose === "image" ? "静态图片" : "动态视频"} · {plan.shot.action || "未填写动作"} ·{" "}
                       {plan.shot.durationSeconds} 秒 ·{" "}
                       {plan.shot.output.resolution}
                     </p>
+                    <p className="batch-task-link">{[
+                      characters.find((item) => item.id === plan.characterProfileId)?.name,
+                      scenes.find((item) => item.id === plan.sceneProfileId)?.name,
+                    ].filter(Boolean).join(" × ") || "未绑定角色或场景"}</p>
                     <div className="pattern-actions">
                       <button onClick={() => loadShotPlan(plan)}>
                         加载这个镜头

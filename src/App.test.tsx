@@ -106,6 +106,50 @@ it('场景档案可从资产域进入工作室，并把锁定场景带入创作�
   expect(screen.getByText('狭长中轴温室；中央石板路；拱形门；深夜；小雨；玻璃水汽')).toBeInTheDocument();
 });
 
+it('镜头工作室锁定角色与场景上下文，并可带入图片创作', async () => {
+  const project = { id: 'project-shot', name: '人物海报', medium: 'image', brief: { goal: '', audience: '', visualWorld: '', delivery: '', acceptance: '' } };
+  const character = { ...characterFixture('char-shot', '蝶灵'), projectId: project.id };
+  const characterVersion = { id: 'char-version', profileId: character.id, versionNumber: 1, label: '定妆 V1', status: 'locked', changeSummary: '', snapshot: {}, createdAt: '' };
+  const characterState = { id: 'char-state', profileId: character.id, versionId: characterVersion.id, name: '回眸', kind: 'performance', status: 'active', wardrobe: '', hair: '', expression: '', pose: '', scene: '', emotion: '', continuityNotes: '', createdAt: '', updatedAt: '' };
+  const characterWorkspace = { character, versions: [characterVersion], states: [characterState], sessions: [], media: [], activeVersion: characterVersion, activeState: characterState };
+  const scene = { id: 'scene-shot', projectId: project.id, name: '雨夜温室', kind: 'interior', lifecycle: 'confirmed', anchor: '玻璃温室中轴', layout: '中央石板路', materials: '潮湿玻璃', colorSystem: '冷蓝', requiredElements: '拱形门', forbiddenChanges: '不改变中轴', createdAt: '', updatedAt: '' };
+  const sceneVersion = { id: 'scene-version', profileId: scene.id, versionNumber: 1, label: '空间 V1', status: 'locked', changeSummary: '', snapshot: scene, createdAt: '' };
+  const sceneState = { id: 'scene-state', profileId: scene.id, versionId: sceneVersion.id, name: '雨夜', status: 'active', timeOfDay: '深夜', weather: '小雨', season: '', lighting: '冷月光', atmosphere: '水汽', setDressing: '', continuityNotes: '地面潮湿', createdAt: '', updatedAt: '' };
+  const sceneWorkspace = { scene, versions: [sceneVersion], states: [sceneState], sessions: [], media: [], activeVersion: sceneVersion, activeState: sceneState };
+  vi.mocked(window.studio.projects.list).mockResolvedValue([project] as never);
+  vi.mocked(window.studio.projects.workspace).mockResolvedValue({ project, masterAssets: [], recentGenerations: [], recentTasks: [], health: {} } as never);
+  vi.mocked(window.studio.characters.list).mockResolvedValue([character] as never);
+  vi.mocked(window.studio.characters.detail).mockResolvedValue({ ...character, facts: [], variants: [], evidenceAssets: [] } as never);
+  vi.mocked(window.studio.characterWorkspace.get).mockResolvedValue(characterWorkspace as never);
+  vi.mocked(window.studio.sceneWorkspace.list).mockResolvedValue([scene] as never);
+  vi.mocked(window.studio.sceneWorkspace.get).mockResolvedValue(sceneWorkspace as never);
+  vi.mocked(window.studio.creation.compileShot).mockResolvedValue('主体锚点：蝶灵\n场景：雨夜温室');
+  vi.mocked(window.studio.creation.compilePrompt).mockResolvedValue({ positive: '蝶灵在雨夜温室回眸', negative: '', modules: [] });
+  vi.mocked(window.studio.shots.create).mockImplementation(async (input) => ({ id: 'shot-1', createdAt: '', updatedAt: '', ...input, purpose: input.purpose ?? 'image', status: input.status ?? 'ready', continuityNotes: input.continuityNotes ?? '' }) as never);
+
+  render(<App />);
+  fireEvent.change(await screen.findByRole('combobox', { name: '当前项目' }), { target: { value: project.id } });
+  fireEvent.click(screen.getByRole('button', { name: '生产' }));
+  fireEvent.click(await screen.findByRole('button', { name: '镜头工作室' }));
+  fireEvent.change(screen.getByRole('combobox', { name: '镜头角色' }), { target: { value: character.id } });
+  fireEvent.change(screen.getByRole('combobox', { name: '镜头场景' }), { target: { value: scene.id } });
+  await screen.findByRole('option', { name: /定妆 V1/ });
+  await screen.findByRole('option', { name: '雨夜' });
+  fireEvent.change(screen.getByRole('textbox', { name: '跨镜连续性' }), { target: { value: '脸、服装和空间中轴不变' } });
+  fireEvent.click(screen.getByRole('button', { name: '生成镜头合同' }));
+  expect(await screen.findByText(/主体锚点：蝶灵/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '保存到项目镜头清单' }));
+  await waitFor(() => expect(window.studio.shots.create).toHaveBeenCalledWith(expect.objectContaining({
+    projectId: project.id, characterProfileId: character.id, characterVersionId: characterVersion.id,
+    characterStateId: characterState.id, sceneProfileId: scene.id, sceneVersionId: sceneVersion.id,
+    sceneStateId: sceneState.id, purpose: 'image', continuityNotes: '脸、服装和空间中轴不变',
+  })));
+  fireEvent.click(screen.getByRole('button', { name: '带入图片创作' }));
+  expect(await screen.findByText('本轮锁定场景')).toBeInTheDocument();
+  expect(screen.getByText('本轮锁定角色')).toBeInTheDocument();
+  expect(window.studio.creation.compilePrompt).toHaveBeenCalledWith(expect.objectContaining({ scene: expect.stringContaining('玻璃温室中轴') }));
+});
+
 it('重启中断的图片任务可在队列确认重试，并在新任务关联后隐藏重复入口', async () => {
   const interrupted = {
     id: 'job-interrupted', projectId: 'asset-library', kind: 'image_generation', providerId: 'gemini',

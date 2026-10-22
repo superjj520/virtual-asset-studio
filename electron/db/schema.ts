@@ -367,6 +367,19 @@ export const applySchema = (database: Database.Database) => {
       created_at TEXT NOT NULL,
       UNIQUE(session_id, asset_id, role)
     );
+    CREATE TABLE IF NOT EXISTS shot_plan_contexts (
+      shot_plan_id TEXT PRIMARY KEY REFERENCES shot_plans(id) ON DELETE CASCADE,
+      creative_task_id TEXT REFERENCES creative_tasks(id) ON DELETE SET NULL,
+      character_profile_id TEXT REFERENCES character_profiles(id) ON DELETE SET NULL,
+      character_version_id TEXT REFERENCES character_versions(id) ON DELETE SET NULL,
+      character_state_id TEXT REFERENCES character_states(id) ON DELETE SET NULL,
+      scene_profile_id TEXT REFERENCES scene_profiles(id) ON DELETE SET NULL,
+      scene_version_id TEXT REFERENCES scene_versions(id) ON DELETE SET NULL,
+      scene_state_id TEXT REFERENCES scene_states(id) ON DELETE SET NULL,
+      purpose TEXT NOT NULL CHECK(purpose IN ('image', 'video')),
+      status TEXT NOT NULL CHECK(status IN ('draft', 'ready', 'review', 'approved', 'blocked')),
+      continuity_notes TEXT NOT NULL DEFAULT ''
+    );
     CREATE TABLE IF NOT EXISTS character_media_links (
       id TEXT PRIMARY KEY,
       profile_id TEXT NOT NULL REFERENCES character_profiles(id) ON DELETE CASCADE,
@@ -387,6 +400,8 @@ export const applySchema = (database: Database.Database) => {
     CREATE INDEX IF NOT EXISTS scene_versions_profile_idx ON scene_versions(profile_id, version_number DESC);
     CREATE INDEX IF NOT EXISTS scene_states_profile_idx ON scene_states(profile_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS scene_media_profile_idx ON scene_media_links(profile_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS shot_plan_context_character_idx ON shot_plan_contexts(character_profile_id);
+    CREATE INDEX IF NOT EXISTS shot_plan_context_scene_idx ON shot_plan_contexts(scene_profile_id);
     CREATE TABLE IF NOT EXISTS asset_collections (
       id TEXT PRIMARY KEY,
       project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,

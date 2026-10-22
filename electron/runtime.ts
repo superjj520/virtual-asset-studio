@@ -35,7 +35,7 @@ import { JobRepository } from "./services/jobs/repository";
 import { hashBuffer } from "./services/files/hash";
 import { exportProject } from "./services/export/project-exporter";
 import { RelationshipRepository } from "./services/relationships/repository";
-import { ShotPlanRepository } from "./services/shots/repository";
+import { ShotPlanRepository, type CreateShotPlanInput } from "./services/shots/repository";
 import { CharacterProfileRepository } from "./services/characters/repository";
 import { CharacterWorkspaceRepository } from "./services/characters/workspace-repository";
 import { SceneWorkspaceRepository } from "./services/scenes/workspace-repository";
@@ -789,16 +789,7 @@ export const createStudioRuntime = (
       );
       ipcMain.handle(
         "shots:create",
-        (
-          _event,
-          input: {
-            projectId: string;
-            name: string;
-            shot: ShotContract;
-            compiledPrompt: string;
-            referenceAssetId?: string;
-          },
-        ) => {
+        (_event, input: CreateShotPlanInput) => {
           if (
             !projects.list().some((project) => project.id === input.projectId)
           )

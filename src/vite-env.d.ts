@@ -222,6 +222,16 @@ interface Window {
         shot: import("./shared/types").ShotContract;
         compiledPrompt: string;
         referenceAssetId?: string;
+        purpose?: import("./shared/types").ShotPlan["purpose"];
+        status?: import("./shared/types").ShotPlan["status"];
+        creativeTaskId?: string;
+        characterProfileId?: string;
+        characterVersionId?: string;
+        characterStateId?: string;
+        sceneProfileId?: string;
+        sceneVersionId?: string;
+        sceneStateId?: string;
+        continuityNotes?: string;
       }) => Promise<import("./shared/types").ShotPlan>;
       list: (projectId: string) => Promise<import("./shared/types").ShotPlan[]>;
     };

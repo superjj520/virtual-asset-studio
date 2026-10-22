@@ -36,19 +36,20 @@ export const compilePrompt = (card: CreativeCard): PromptBuild => {
 };
 
 export const compileShotContract = (input: ShotContract): string => {
+  const isImage = input.deliveryType === "image";
   const safetyAvoids = ["身份漂移", "肢体畸形", "画面闪烁", "镜头跳变"];
   const avoids = [
     ...new Set([...input.avoid.map(clean).filter(Boolean), ...safetyAvoids]),
   ];
   const lines = [
     `主体锚点：${clean(input.subjectAnchor)}`,
-    `起始画面：${clean(input.startFrame)}`,
-    `唯一动作：${clean(input.action)}`,
-    `镜头运动：${clean(input.cameraMotion)}`,
-    `时长与帧率：${input.durationSeconds} 秒，${input.frameRate}fps`,
+    `${isImage ? "画面构图" : "起始画面"}：${clean(input.startFrame)}`,
+    `${isImage ? "姿态与动作" : "唯一动作"}：${clean(input.action)}`,
+    `${isImage ? "镜头与机位" : "镜头运动"}：${clean(input.cameraMotion)}`,
+    ...(isImage ? [] : [`时长与帧率：${input.durationSeconds} 秒，${input.frameRate}fps`]),
     `必须保持：${input.keep.map(clean).filter(Boolean).join("；") || "人物身份、服装、场景连续性"}`,
     `避免：${avoids.join("；")}`,
-    `输出：${input.output.aspectRatio}，${input.output.resolution}`,
+    `输出：${input.output.aspectRatio}${isImage ? "，高质量静态图片" : `，${input.output.resolution}`}`,
   ];
   return lines.join("\n");
 };
