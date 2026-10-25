@@ -20,10 +20,12 @@ DeepSeek Harness 是本项目的辅助开发执行环境，不是新的产品仓
 
 ```bash
 cd /Users/superjj/virtual-asset-studio-dsh
-npx @deepseek-ai/dsh web
+npx --yes @deepseek-ai/dsh --profile web --host 127.0.0.1 --port 3080
 ```
 
 默认本地地址为 `http://127.0.0.1:3080`。在 Web UI 的模型设置中填写 DeepSeek API Key，不得把 Key 写入仓库文件。
+
+当前 `0.1.0-rc.7` 使用 `--profile web` 启动网页模式，不支持旧写法中的 `web` 子命令或 `--no-open` 参数。凭据文件位于 `~/.dsh/.credentials.yaml`，新版格式只能包含“凭据名 → 非空字符串”，文件权限必须保持为 `0600`。
 
 ## 模型分工
 
