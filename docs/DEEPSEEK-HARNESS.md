@@ -43,9 +43,9 @@ npx @deepseek-ai/dsh web
 每个验收项使用独立分支，例如：
 
 ```text
-deepseek/C1-single-image-choice-flow
-deepseek/C2-series-shot-workbench
-deepseek/R1-restart-recovery
+codex/deepseek-c1-single-image-choice-flow
+codex/deepseek-c2-series-shot-workbench
+codex/deepseek-r1-restart-recovery
 ```
 
 每个分支只解决一个验收编号。通过审查后再合入 `codex/dynamic-character-workspace`，九项全部验收后才考虑合入 `main`。
