@@ -16,6 +16,12 @@ import type { CharacterUseCase } from "../shared/character-slots";
 import { CharacterTrackerEditor } from "../character/CharacterTrackerEditor";
 import type { CreationLaunchKind } from "./CreationLaunchpad";
 import { getCreationFlowContract, type CreationQuickStage } from "./creation-flow";
+import { SingleImageContractStrip } from "./SingleImageContractStrip";
+import {
+  buildSingleImageChoices,
+  buildSingleImageReview,
+  summarizeSingleImageChoices,
+} from "./single-image-flow";
 import orientalMoonArtwork from "../assets/character-creator/oriental-moon-v2.webp";
 import cityCoutureArtwork from "../assets/character-creator/city-couture-v2.webp";
 import rainNoirArtwork from "../assets/character-creator/rain-noir-v2.webp";
@@ -272,6 +278,13 @@ const EXPRESSION_CHOICE_ICONS: Record<GuidedExpression, ReactNode> = {
   surprised: <SmileyNervous size={30} weight="duotone" />,
   emotional: <Sparkle size={30} weight="duotone" />,
 };
+
+/** 人物来源是三步流水线的第一步，用视觉卡表达“这个人从哪来”。 */
+const SOURCE_OPTIONS: Array<{ id: SourceMode; label: string; hint: string; icon: ReactNode }> = [
+  { id: "new", label: "原创角色", hint: "从样片开始", icon: <Sparkle size={16} weight="duotone" /> },
+  { id: "saved", label: "角色资产", hint: "沿用已确认角色", icon: <PersonSimple size={16} weight="duotone" /> },
+  { id: "reference", label: "参考图", hint: "按参考图锁定人物", icon: <Eye size={16} weight="duotone" /> },
+];
 
 function PresetArtwork({ preset, className = "" }: { preset: CreationPreset; className?: string }) {
   return <span className={`preset-artwork ${className}`} aria-hidden="true">
@@ -649,10 +662,18 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
   const renderDirection = () => <>
     <div className="creator-source-block">
       <div className="visual-choice-heading"><strong>{flow.sourceHeading}</strong><span>{flow.sourceHint}</span></div>
-      <div className="creator-source-switch" role="group" aria-label={flow.sourceGroupLabel}>
-        {([['new', '原创角色'], ['saved', '角色资产'], ['reference', '参考图']] as const).map(([id, label]) => (
-          <button type="button" key={id} aria-pressed={props.sourceMode === id} className={props.sourceMode === id ? "selected" : ""} onClick={() => props.onSourceModeChange(id)}>{label}</button>
-        ))}
+      <div className="creator-source-cards" role="group" aria-label={flow.sourceGroupLabel}>
+        {SOURCE_OPTIONS.map((option) => <button
+          type="button"
+          key={option.id}
+          aria-label={option.label}
+          aria-pressed={props.sourceMode === option.id}
+          className={props.sourceMode === option.id ? "creator-source-card selected" : "creator-source-card"}
+          onClick={() => props.onSourceModeChange(option.id)}
+        >
+          <i aria-hidden="true">{option.icon}</i>
+          <span><strong>{option.label}</strong><small>{option.hint}</small></span>
+        </button>)}
       </div>
     </div>
     {props.sourceMode === "new" && <>
@@ -902,6 +923,10 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
   const renderQuickStoryStage = () => <section className="creator-quick-adjustments compact-stage" aria-label={quickStages[2].short}>
       <header><strong>{flow.storyHeading}</strong><span>{flow.storyHint}</span></header>
       <VisualChoiceGrid label="场景世界" options={GUIDED_SCENES.filter((item) => item.id !== "custom")} value={props.scene} onChange={props.onSceneChange} artworkById={SCENE_ARTWORKS} />
+      <div className="compact-visual-grid creator-custom-scene">
+        <button type="button" aria-pressed={props.scene === "custom"} className={props.scene === "custom" ? "selected" : ""} onClick={() => props.onSceneChange("custom")}>自定义场景</button>
+      </div>
+      {props.scene === "custom" && <input aria-label="自定义场景" value={props.customScene} onChange={(event) => props.onCustomSceneChange(event.target.value)} placeholder="只有自定义时才需要补充一句场景" />}
       {creationKind === "scene" && <>
         <section className="creator-character-core creator-story-core" aria-label="剧情骨架">
           <header><div><span>剧情骨架</span><strong>关系、事件与节拍</strong></div><b>自动写入场景方案</b></header>
@@ -1030,6 +1055,57 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
       <small>{flow.readyHint}</small>
     </div>
   </section>;
+
+  const renderImageConfirmation = () => {
+    const progress = summarizeSingleImageChoices(imageContractChoices);
+    return <section className="creator-confirm-board" aria-label="生成前确认">
+      <header>
+        <div><span>生成前确认</span><strong>核对已选条件，确认后建立单张画面方案</strong></div>
+        <b>{progress.locked} / {progress.total} 项已选</b>
+      </header>
+      {imageReview.map((group) => <div className="creator-confirm-group" key={group.title}>
+        <div className="visual-choice-heading"><strong>{group.title}</strong><span>确认后可继续修改</span></div>
+        <div className="creator-confirm-grid">
+          {group.items.map((item) => <div className="creator-confirm-tile" key={item.id}>
+            <small>{item.label}</small><strong>{item.value}</strong>
+          </div>)}
+        </div>
+      </div>)}
+      <div className="visual-choice-heading"><strong>必须保持</strong><span>可多选，规则写进方案</span></div>
+      <div className="constraint-choice-grid" role="group" aria-label="确认生成约束">
+        {GUIDED_CONSTRAINTS.map((option) => <button type="button" key={option.id} aria-pressed={props.constraints.includes(option.id)} className={props.constraints.includes(option.id) ? "selected" : ""} onClick={() => props.onConstraintToggle(option.id)}><span aria-hidden="true">{props.constraints.includes(option.id) ? "✓" : "+"}</span>{option.label}</button>)}
+      </div>
+      {renderShotAndStyle()}
+      <div>
+        <div className="visual-choice-heading"><strong>画面比例</strong><span>写入最终交付方案</span></div>
+        <div className="compact-visual-grid" role="group" aria-label="确认画面比例">
+          {CREATIVE_ASPECT_RATIOS.map((ratio) => <button type="button" key={ratio} aria-pressed={(props.aspectRatio ?? "2:3") === ratio} className={(props.aspectRatio ?? "2:3") === ratio ? "selected" : ""} onClick={() => props.onAspectRatioChange?.(ratio)}>{ratio}</button>)}
+        </div>
+      </div>
+      <details className="creator-advanced">
+        <summary>高级交付 · 质量与候选数量（可跳过）</summary>
+        <div className="creator-output-controls quick-output-controls">
+          <div>
+            <div className="visual-choice-heading"><strong>生成质量</strong><span>越高越重视细节</span></div>
+            <div className="compact-visual-grid" role="group" aria-label="快速生成质量">
+              {([['draft', '快速'], ['standard', '标准'], ['premium', '高质']] as const).map(([id, label]) => <button type="button" key={id} aria-pressed={props.qualityTier === id} className={props.qualityTier === id ? "selected" : ""} onClick={() => props.onQualityTierChange(id)}>{label}</button>)}
+            </div>
+          </div>
+          <div>
+            <div className="visual-choice-heading"><strong>候选数量</strong><span>生成后并排挑选</span></div>
+            <div className="compact-visual-grid" role="group" aria-label="快速候选数量">
+              {([1, 2, 4] as const).map((count) => <button type="button" key={count} aria-pressed={props.candidateCount === count} className={props.candidateCount === count ? "selected" : ""} onClick={() => props.onCandidateCountChange(count)}>{count} 张</button>)}
+            </div>
+          </div>
+        </div>
+      </details>
+      <div className="creator-ready-card ready">
+        <span>{flow.readyLabel}</span>
+        <strong>{flow.readyTitle}</strong>
+        <small>{flow.readyHint}</small>
+      </div>
+    </section>;
+  };
 
   const renderCharacterCore = () => <>
     <nav className="character-core-tabs" aria-label="角色内核分类">
@@ -1182,7 +1258,7 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
       {quickStage === "direction" && renderDirection()}
       {quickStage === "character" && renderQuickCharacterStage()}
       {quickStage === "story" && renderQuickStoryStage()}
-      {quickStage === "output" && renderQuickOutputStage()}
+      {quickStage === "output" && (creationKind === "image" ? renderImageConfirmation() : renderQuickOutputStage())}
     </div>
   </>;
 
@@ -1193,6 +1269,29 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
       ? referenceAssetLabel(selectedReference, Math.max(0, selectedReferenceIndex))
       : selectedPreset.label;
   const sceneLabel = selectedScene?.name ?? GUIDED_SCENES.find((item) => item.id === props.scene)?.label;
+  const sceneIsCustom = !selectedScene && props.scene === "custom";
+  const imageChoiceInput = {
+    sourceMode: props.sourceMode,
+    sourceName: sourceLabel,
+    presetLabel: selectedPreset.label,
+    roleLabel: GUIDED_ROLES.find((item) => item.id === props.appearance.role)?.label,
+    wardrobeLabel: GUIDED_WARDROBES.find((item) => item.id === props.appearance.wardrobe)?.label,
+    poseLabel: GUIDED_POSES.find((item) => item.id === props.appearance.pose)?.label,
+    expressionLabel: GUIDED_EXPRESSIONS.find((item) => item.id === props.appearance.expression)?.label,
+    sceneLabel: sceneIsCustom ? undefined : sceneLabel,
+    sceneIsCustom,
+    sceneText: props.customScene,
+    moodLabel: GUIDED_MOODS.find((item) => item.id === props.mood)?.label,
+    shotLabel: GUIDED_SHOTS.find((item) => item.id === props.shot)?.label,
+    styleLabel: GUIDED_VISUAL_STYLES.find((item) => item.id === props.visualStyle)?.label,
+    aspectRatio: props.aspectRatio ?? "2:3",
+    constraintLabels: props.constraints
+      .map((id) => GUIDED_CONSTRAINTS.find((item) => item.id === id)?.label)
+      .filter((label): label is string => Boolean(label)),
+  };
+  // 单张画面的「已选约束」与「生成前确认」共用同一份派生数据，避免两处文案漂移。
+  const imageContractChoices = buildSingleImageChoices(imageChoiceInput);
+  const imageReview = buildSingleImageReview(imageChoiceInput);
   const currentSection = SECTIONS[sectionIndex];
   const goNext = () => setSection(SECTIONS[Math.min(sectionIndex + 1, SECTIONS.length - 1)].id);
   const goBack = () => setSection(SECTIONS[Math.max(sectionIndex - 1, 0)].id);
@@ -1371,42 +1470,49 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
           </div>
         </aside>
       </div>
-      <footer className="creator-action-bar">
-        <div className="creator-current-selection">
-          <span>当前方案</span>
-          <strong>{sourceLabel || "等待选择"}</strong>
-          <small>{summary} · {sceneLabel}</small>
-        </div>
-        <div className="creator-primary-actions">
-          {mode === "quick" ? <>
-            {quickStageIndex > 0 && <button type="button" className="subtle-button" onClick={() => setQuickStage(quickStages[quickStageIndex - 1].id)}>上一步</button>}
-            {quickStageIndex < quickStages.length - 1 ?
-              <button type="button" className="primary-button creator-next" onClick={() => setQuickStage(quickStages[quickStageIndex + 1].id)}>下一步 · {quickStages[quickStageIndex + 1].label}</button>
-              : <>
-              {creationKind === "character" && <button type="button" className="subtle-button" onClick={() => setMode("fine")}>精细调整</button>}
-              <button
-                type="button"
-                className="primary-button creator-generate"
-                disabled={props.preparing}
-                onClick={creationKind === "character" && props.onSaveCharacter ? props.onSaveCharacter : props.onCreate}
-              >{props.preparing ? "正在保存…" : creationKind === "character" && props.sourceMode === "saved" ? "进入角色中枢" : flow.finalAction}</button>
-            </>}
-          </> : <>
-            {sectionIndex > 0 && <button type="button" className="subtle-button" onClick={goBack}>上一步</button>}
-            {section !== "output" ? <>
-              <button type="button" className="primary-button creator-next" onClick={goNext}>下一步 · {SECTIONS[sectionIndex + 1].label}</button>
+      <div className="creator-footer-stack">
+        {creationKind === "image" && <SingleImageContractStrip
+          choices={imageContractChoices}
+          activeStage={quickStage}
+          onJump={(stage) => setQuickStage(stage)}
+        />}
+        <footer className="creator-action-bar">
+          <div className="creator-current-selection">
+            <span>当前方案</span>
+            <strong>{sourceLabel || "等待选择"}</strong>
+            <small>{summary} · {sceneLabel}</small>
+          </div>
+          <div className="creator-primary-actions">
+            {mode === "quick" ? <>
+              {quickStageIndex > 0 && <button type="button" className="subtle-button" onClick={() => setQuickStage(quickStages[quickStageIndex - 1].id)}>上一步</button>}
+              {quickStageIndex < quickStages.length - 1 ?
+                <button type="button" className="primary-button creator-next" onClick={() => setQuickStage(quickStages[quickStageIndex + 1].id)}>下一步 · {quickStages[quickStageIndex + 1].label}</button>
+                : <>
+                {creationKind === "character" && <button type="button" className="subtle-button" onClick={() => setMode("fine")}>精细调整</button>}
+                <button
+                  type="button"
+                  className="primary-button creator-generate"
+                  disabled={props.preparing}
+                  onClick={creationKind === "character" && props.onSaveCharacter ? props.onSaveCharacter : props.onCreate}
+                >{props.preparing ? "正在保存…" : creationKind === "character" && props.sourceMode === "saved" ? "进入角色中枢" : flow.finalAction}</button>
+              </>}
             </> : <>
-              <button type="button" className="subtle-button" disabled={props.preparing} onClick={props.onSave}>保存方案</button>
-              <button
-                type="button"
-                className="primary-button creator-generate"
-                disabled={props.preparing}
-                onClick={creationKind === "character" && props.onSaveCharacter ? props.onSaveCharacter : props.onCreate}
-              >{props.preparing ? "正在保存…" : creationKind === "character" ? (props.sourceMode === "saved" ? "进入角色中枢" : "保存为角色资产") : "进入创作台"}</button>
+              {sectionIndex > 0 && <button type="button" className="subtle-button" onClick={goBack}>上一步</button>}
+              {section !== "output" ? <>
+                <button type="button" className="primary-button creator-next" onClick={goNext}>下一步 · {SECTIONS[sectionIndex + 1].label}</button>
+              </> : <>
+                <button type="button" className="subtle-button" disabled={props.preparing} onClick={props.onSave}>保存方案</button>
+                <button
+                  type="button"
+                  className="primary-button creator-generate"
+                  disabled={props.preparing}
+                  onClick={creationKind === "character" && props.onSaveCharacter ? props.onSaveCharacter : props.onCreate}
+                >{props.preparing ? "正在保存…" : creationKind === "character" ? (props.sourceMode === "saved" ? "进入角色中枢" : "保存为角色资产") : "进入创作台"}</button>
+              </>}
             </>}
-          </>}
-        </div>
-      </footer>
+          </div>
+        </footer>
+      </div>
       {props.notice && <div className="notice creator-notice" role="status"><span>{props.notice}</span>{props.onNoticeDismiss && <button type="button" aria-label="关闭提示" onClick={props.onNoticeDismiss}>×</button>}</div>}
     </section>
   );

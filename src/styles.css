@@ -2105,9 +2105,9 @@ button:active { transform: translateY(1px); }
 .image-choice-grid .visual-choice-artwork { width: 100%; aspect-ratio: 4 / 5; display: block; object-fit: cover; }
 .image-choice-grid .visual-choice-copy { padding: 8px 9px 9px; }
 .creator-custom-scene { margin-top: 9px; }
-.compact-visual-grid, .creator-source-switch { display: flex; flex-wrap: wrap; gap: 7px; }
-.compact-visual-grid button, .creator-source-switch button { min-height: 34px; padding: 7px 10px; color: var(--ink-muted); border: 1px solid #dfe3ea; border-radius: 8px; background: #f7f8fa; font-size: 10px; }
-.compact-visual-grid button.selected, .creator-source-switch button.selected { color: #2443a1; border-color: #6e88eb; background: #eef2ff; font-weight: 700; }
+.compact-visual-grid { display: flex; flex-wrap: wrap; gap: 7px; }
+.compact-visual-grid button { min-height: 34px; padding: 7px 10px; color: var(--ink-muted); border: 1px solid #dfe3ea; border-radius: 8px; background: #f7f8fa; font-size: 10px; }
+.compact-visual-grid button.selected { color: #2443a1; border-color: #6e88eb; background: #eef2ff; font-weight: 700; }
 .creator-select-label { display: grid; gap: 6px; margin-top: 12px; color: var(--ink-muted); font-size: 10px; }
 .creator-select-label select, .creator-option-scroll input { min-height: 38px; width: 100%; }
 .creator-direction-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -2302,9 +2302,15 @@ button:active { transform: translateY(1px); }
 .creator-option-scroll { padding: 16px 18px 28px; }
 .creator-source-block { margin-bottom: 18px; padding: 12px; border: 1px solid #e3e5ea; border-radius: 12px; background: #fff; }
 .creator-source-block .visual-choice-heading { margin-top: 0; }
-.creator-source-switch { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; padding: 4px; border-radius: 10px; background: #eff1f5; }
-.creator-source-switch button { min-height: 34px; border: 0; background: transparent; }
-.creator-source-switch button.selected { color: #202437; border: 0; background: #fff; box-shadow: 0 2px 8px rgba(28,35,50,.1); }
+.creator-source-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.creator-source-card { min-width: 0; min-height: 62px; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; padding: 8px 9px; text-align: left; color: var(--ink-muted); border: 1px solid #e3e6ec; border-radius: 11px; background: #fff; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease; }
+.creator-source-card > i { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; color: #5d6575; background: #f0f2f7; }
+.creator-source-card > span { min-width: 0; display: grid; gap: 1px; }
+.creator-source-card strong { color: var(--ink); font-size: 10px; }
+.creator-source-card small { overflow: hidden; color: var(--ink-faint); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.creator-source-card:hover { border-color: #b9bff0; background: #f8f9ff; }
+.creator-source-card.selected { color: var(--creator-accent); border-color: var(--creator-accent); background: #eef0ff; box-shadow: 0 0 0 2px rgba(91,92,226,.12); }
+.creator-source-card.selected > i { color: var(--creator-accent); background: #e2e5ff; }
 .creation-preset-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .creation-preset { overflow: hidden; padding: 0; text-align: left; border: 1px solid #e0e3e9; border-radius: 12px; background: #fff; transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease; }
 .creation-preset:hover { transform: translateY(-2px); border-color: #aaaee9; box-shadow: 0 8px 22px rgba(30,37,56,.1); }
@@ -3161,4 +3167,131 @@ button:active { transform: translateY(1px); }
 
 .provider-verification-detail.error {
   color: #b42318;
+}
+
+/* C1 单张画面：已选约束即时预览与生成前确认 */
+.creator-footer-stack { min-width: 0; display: grid; gap: 8px; }
+.creator-contract-strip { min-width: 0; display: grid; gap: 7px; padding: 10px 12px; border: 1px solid #dfe3ea; border-radius: 14px; background: #fff; box-shadow: 0 10px 30px rgba(20,30,48,.05); }
+.creator-contract-strip-heading { min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.creator-contract-strip-heading > span { color: var(--ink); font-size: 10px; font-weight: 700; }
+.creator-contract-strip-heading > small { color: var(--ink-faint); font-size: 9px; }
+.creator-contract-strip-items { min-width: 0; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.creator-contract-strip-items::-webkit-scrollbar { display: none; }
+.creator-contract-chip { flex: 0 0 auto; max-width: 216px; display: grid; gap: 1px; padding: 7px 10px; text-align: left; color: var(--ink); border: 1px solid #e3e6ec; border-radius: 10px; background: var(--surface-muted); transition: border-color .15s ease, background .15s ease; }
+.creator-contract-chip > small { color: var(--ink-muted); font-size: 8px; }
+.creator-contract-chip > strong { overflow: hidden; color: var(--ink); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.creator-contract-chip:hover { border-color: #b9bff0; background: #f4f5ff; }
+.creator-contract-chip.active { border-color: var(--creator-accent); background: #eef0ff; box-shadow: 0 0 0 2px rgba(91,92,226,.1); }
+.creator-contract-chip:focus-visible { outline: 3px solid rgba(65,89,217,.35); outline-offset: 2px; }
+
+.creator-confirm-board { display: grid; gap: 14px; }
+.creator-confirm-board > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 14px; color: #fff; border-radius: 12px; background: var(--creator-dark); }
+.creator-confirm-board > header > div { min-width: 0; display: grid; gap: 2px; }
+.creator-confirm-board > header span { color: rgba(255,255,255,.6); font-size: 8px; font-weight: 700; }
+.creator-confirm-board > header strong { color: #fff; font-size: 12px; }
+.creator-confirm-board > header b { flex: 0 0 auto; color: #fff; font-size: 10px; }
+.creator-confirm-group { display: grid; gap: 7px; }
+.creator-confirm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.creator-confirm-tile { min-width: 0; display: grid; gap: 2px; padding: 9px 10px; border: 1px solid #e3e6ec; border-radius: 10px; background: #fff; }
+.creator-confirm-tile > small { color: var(--ink-muted); font-size: 8px; }
+.creator-confirm-tile > strong { overflow-wrap: anywhere; color: var(--ink); font-size: 10px; }
+.creator-advanced { border: 1px solid #e3e6ec; border-radius: 11px; background: #fff; }
+.creator-advanced > summary { padding: 10px 12px; color: var(--ink-muted); font-size: 10px; font-weight: 650; cursor: pointer; }
+.creator-advanced > summary:focus-visible { outline: 3px solid rgba(65,89,217,.35); outline-offset: -3px; }
+.creator-advanced[open] > summary { border-bottom: 1px solid #eef0f4; }
+.creator-advanced .creator-output-controls { margin-top: 0; padding: 12px; }
+
+@media (max-width: 1180px) {
+  .creator-contract-chip { max-width: 180px; }
+}
+@media (max-width: 1024px) {
+  /* 单列布局下按内容排布并交给页面滚动，避免中间行被压成 1fr 后内容溢出 */
+  .visual-creator { height: auto; min-height: 0; }
+  .visual-creator.quick-mode { height: auto; min-height: 0; grid-template-rows: auto auto auto; }
+  /* 约束摘要与主行动回到正常流，绝不浮在选项上方 */
+  .creator-footer-stack { position: static; }
+  .creator-footer-stack .creator-action-bar { position: static; }
+  /* 选项面板按内容展开，交给页面滚动；否则 overflow:hidden 会把卡片裁掉且无法滚到 */
+  .creator-option-panel { overflow: visible; grid-template-rows: auto auto; }
+  .creator-option-scroll { max-height: none; }
+  .creator-contract-strip { padding: 8px 10px; }
+  .creator-contract-chip { min-height: 44px; }
+}
+@media (max-width: 767px) {
+  /* 沉浸式创作没有底部四域导航，移除为它预留的 64px，避免整页多出一段可滚动空白 */
+  .creator-focus-shell .app-main,
+  .creator-focus-shell #main-content { min-height: 0; padding-bottom: 0; }
+  /* 移动端把创作器锁在一屏内：中间内容独立滚动，底部只保留单行摘要与唯一主行动，二者各占一行、不叠压内容 */
+  .visual-creator.quick-mode {
+    height: 100dvh;
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    overflow: hidden;
+  }
+  .visual-creator.quick-mode .visual-creator-layout {
+    display: block;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* 步骤条跟随中间滚动区吸顶，不再向上偏移导致首行被裁切 */
+  .visual-creator.quick-mode .creator-quick-steps { top: 0; }
+  .creator-contract-strip { padding: 4px 8px; }
+  .creator-contract-strip-heading { display: none; }
+  .creator-contract-strip-items { flex-wrap: nowrap; overflow-x: auto; }
+  .creator-contract-chip {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    flex: 0 0 auto;
+    max-width: 72vw;
+    min-height: 44px;
+    padding: 4px 9px;
+  }
+  .creator-contract-chip > small { font-size: 8px; line-height: 1.25; }
+  .creator-contract-chip > strong { font-size: 10px; line-height: 1.25; }
+  .creator-footer-stack { gap: 6px; }
+  .creator-footer-stack .creator-action-bar {
+    padding: 4px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .creator-footer-stack .creator-current-selection { display: none; }
+  .creator-footer-stack .creator-primary-actions { width: 100%; }
+  .creator-footer-stack .creator-primary-actions button { flex: 1; min-height: 48px; }
+  /* 只保留一个主行动；返回由顶部步骤导航承担 */
+  .creator-footer-stack .creator-primary-actions .subtle-button { display: none; }
+}
+@media (max-width: 560px) {
+  .creator-footer-stack { gap: 6px; }
+  .creator-footer-stack .creator-action-bar { flex-direction: column; align-items: stretch; }
+  .creator-contract-strip { gap: 0; padding: 6px 10px; }
+  .creator-contract-strip-heading { display: none; }
+  .creator-contract-strip-items { flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x proximity; }
+  .creator-contract-chip { flex: 0 0 auto; max-width: 62vw; align-content: center; padding: 6px 10px; scroll-snap-align: start; }
+  .creator-quick-steps button { min-height: 44px; }
+  .creator-confirm-board button,
+  .creator-custom-scene button,
+  .creator-primary-actions button { min-height: 44px; }
+  .creator-source-cards { grid-template-columns: 1fr; }
+  .creator-source-card { min-height: 44px; }
+  .creator-confirm-grid { grid-template-columns: 1fr; }
+  .creator-confirm-board > header { flex-direction: column; align-items: flex-start; }
+  /* 已选约束条已经承担“当前方案”，窄屏不再重复同一段摘要 */
+  .creator-footer-stack .creator-current-selection { display: none; }
+  /* 底部只留一个主行动；返回由顶部步骤导航承担 */
+  .creator-footer-stack .creator-primary-actions .subtle-button { display: none; }
+}
+/* 矮视口（手机横屏）：约束条与动作条不能吃掉大半个屏幕 */
+@media (max-height: 560px) {
+  .creator-contract-strip { gap: 4px; padding: 5px 10px; }
+  .creator-contract-strip-heading { display: none; }
+  .creator-contract-strip-items { flex-wrap: nowrap; overflow-x: auto; }
+  .creator-contract-chip { flex: 0 0 auto; max-width: 46vw; min-height: 34px; align-content: center; padding: 3px 8px; }
+  .creator-contract-chip > strong { white-space: nowrap; }
+  .creator-footer-stack .creator-current-selection { display: none; }
+  .creator-footer-stack .creator-action-bar { flex-direction: row; align-items: center; }
 }
