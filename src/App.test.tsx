@@ -186,8 +186,8 @@ it('单张画面用独立选择流程建立方案并保留用户画幅', async (
 
   expect(screen.getByRole('region', { name: '单张画面工作台' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: '精细塑造' })).not.toBeInTheDocument();
-  fireEvent.click(within(screen.getByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /输出/ }));
-  fireEvent.click(within(screen.getByRole('group', { name: '快速画面比例' })).getByRole('button', { name: '16:9' }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /确认/ }));
+  fireEvent.click(within(screen.getByRole('group', { name: '确认画面比例' })).getByRole('button', { name: '16:9' }));
   fireEvent.click(screen.getByRole('button', { name: '建立单张画面方案' }));
 
   await waitFor(() => expect(window.studio.tasks.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -494,7 +494,7 @@ it('没有图片模型时也能沿创作进度进入局部调整并保存本地�
   render(<App />);
   fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
   fireEvent.click(screen.getByRole('button', { name: '单张画面' }));
-  fireEvent.click(within(screen.getByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /输出/ }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /确认/ }));
   fireEvent.click(screen.getByRole('button', { name: '建立单张画面方案' }));
   await screen.findByRole('heading', { name: '单张创作台' });
 
@@ -523,7 +523,7 @@ it('没有图片模型时可完成方向比较、局部调整和方案资产保�
   render(<App />);
   fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
   fireEvent.click(screen.getByRole('button', { name: '单张画面' }));
-  fireEvent.click(within(screen.getByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /输出/ }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /确认/ }));
   fireEvent.click(screen.getByRole('button', { name: '建立单张画面方案' }));
   await screen.findByRole('heading', { name: '单张创作台' });
   fireEvent.click(screen.getByRole('button', { name: '下一步 · 选择方向' }));

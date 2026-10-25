@@ -65,7 +65,7 @@ export const CREATION_FLOW_CONTRACTS: Record<CreationLaunchKind, CreationFlowCon
       { id: "direction", label: "主体", short: "主角来源与视觉方向" },
       { id: "character", label: "造型", short: "身份、服装、动作与表情" },
       { id: "story", label: "场景", short: "环境与画面气质" },
-      { id: "output", label: "输出", short: "镜头、画幅、质感与候选" },
+      { id: "output", label: "确认", short: "核对已选条件并建立方案" },
     ],
     characterHeading: "确定主体造型",
     characterHint: "选择人物在这张画面中的身份、服装与表演",

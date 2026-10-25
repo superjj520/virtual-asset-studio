@@ -259,23 +259,24 @@ describe("VisualCharacterCreator", () => {
     expect(view.container.querySelector(".character-flow-preview-copy p")).not.toHaveTextContent("镜头表现");
   });
 
-  it("单张画面使用独立的四步选择流程并保存画幅", () => {
-    const onAppearanceChange = vi.fn();
-    const onCreate = vi.fn();
+  it("单张画面用四步选择流水线完成，并即时预览已选约束", () => {
+    const onPresetChange = vi.fn();
+    const onSourceModeChange = vi.fn();
     const onAspectRatioChange = vi.fn();
+    const onCreate = vi.fn();
 
     render(<VisualCharacterCreator
       creationKind="image"
       presetId="oriental_moon"
-      onPresetChange={vi.fn()}
+      onPresetChange={onPresetChange}
       direction="portrait"
       onDirectionChange={vi.fn()}
       sourceMode="new"
-      onSourceModeChange={vi.fn()}
+      onSourceModeChange={onSourceModeChange}
       subject="adult_woman"
       onSubjectChange={vi.fn()}
       appearance={DEFAULT_GUIDED_APPEARANCE}
-      onAppearanceChange={onAppearanceChange}
+      onAppearanceChange={vi.fn()}
       scene="ancient_east"
       onSceneChange={vi.fn()}
       mood="cool"
@@ -315,30 +316,127 @@ describe("VisualCharacterCreator", () => {
       onOpenSettings={vi.fn()}
     />);
 
+    // 入口：一条选择流水线，没有第二套精细模式导航
     expect(screen.getByRole("region", { name: "单张画面工作台" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "选主体和画面，建立单张方案" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "单张画面预览" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "精细塑造" })).not.toBeInTheDocument();
+
+    // 第 1 步：人物来源是视觉卡，视觉方向是图片样片
+    const sourceCards = within(screen.getByRole("group", { name: "主角来源" }));
+    expect(sourceCards.getAllByRole("button")).toHaveLength(3);
+    fireEvent.click(sourceCards.getByRole("button", { name: /参考图/ }));
+    expect(onSourceModeChange).toHaveBeenCalledWith("reference");
     const directionSamples = Array.from(screen.getByRole("group", { name: "创作方向样片" }).querySelectorAll("img"));
     expect(directionSamples).toHaveLength(6);
     expect(new Set(directionSamples.map((image) => image.getAttribute("src"))).size).toBe(6);
     fireEvent.click(screen.getByRole("button", { name: /都市高定/ }));
-    fireEvent.click(within(screen.getByRole("navigation", { name: "快速创作步骤" })).getByRole("button", { name: /造型/ }));
+    expect(onPresetChange).toHaveBeenCalledWith("city_couture");
+
+    // 已选约束在任意步骤都可见，并且能直接跳回对应步骤
+    const contract = within(screen.getByRole("navigation", { name: "已选约束" }));
+    expect(contract.getByRole("button", { name: /已选人物来源：原创角色/ })).toBeInTheDocument();
+    expect(contract.getByRole("button", { name: /已选视觉方向：月下东方/ })).toBeInTheDocument();
+    expect(contract.getByRole("button", { name: /已选造型：东方主角 · 东方礼服/ })).toBeInTheDocument();
+    expect(contract.getByRole("button", { name: /已选场景：东方古风 · 清冷克制/ })).toBeInTheDocument();
+    expect(contract.getByRole("button", { name: /已选镜头：半身人像 · 真实摄影/ })).toBeInTheDocument();
+    expect(contract.getByRole("button", { name: /已选必须保持：锁定脸部 · 真实皮肤/ })).toBeInTheDocument();
+
+    fireEvent.click(contract.getByRole("button", { name: /已选造型/ }));
     expect(screen.getByRole("group", { name: "快速人物身份" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "造型方向" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "姿态动作" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "表情状态" })).toBeInTheDocument();
-    fireEvent.click(within(screen.getByRole("navigation", { name: "快速创作步骤" })).getByRole("button", { name: /场景/ }));
+
+    fireEvent.click(contract.getByRole("button", { name: /已选场景/ }));
     expect(screen.getByRole("group", { name: "场景世界" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "快速画面气质" })).toBeInTheDocument();
-    fireEvent.click(within(screen.getByRole("navigation", { name: "快速创作步骤" })).getByRole("button", { name: /输出/ }));
-    expect(screen.getByRole("group", { name: "快速镜头范围" })).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "快速视觉质感" })).toBeInTheDocument();
-    fireEvent.click(within(screen.getByRole("group", { name: "快速画面比例" })).getByRole("button", { name: "16:9" }));
-    expect(onAspectRatioChange).toHaveBeenCalledWith("16:9");
+    expect(screen.queryByLabelText("自定义场景")).not.toBeInTheDocument();
+
+    // 第 4 步是生成前确认：先复核已选条件，再执行唯一主操作
+    fireEvent.click(contract.getByRole("button", { name: /已选镜头/ }));
+    const confirm = within(screen.getByRole("region", { name: "生成前确认" }));
+    expect(confirm.getByText("核对已选条件，确认后建立单张画面方案")).toBeInTheDocument();
+    expect(confirm.getByText("人物来源")).toBeInTheDocument();
+    expect(confirm.getByText("动作表情")).toBeInTheDocument();
+    expect(confirm.getByText("场景气质")).toBeInTheDocument();
+    expect(confirm.getByText("镜头质感")).toBeInTheDocument();
+    expect(confirm.getByRole("group", { name: "确认生成约束" })).toBeInTheDocument();
+    expect(confirm.getByRole("group", { name: "快速镜头范围" })).toBeInTheDocument();
+    expect(confirm.getByRole("group", { name: "快速视觉质感" })).toBeInTheDocument();
     expect(screen.getByText("单张方案已就绪")).toBeInTheDocument();
+
+    // 高级交付默认折叠，不阻挡主流程
+    const advanced = screen.getByText("高级交付 · 质量与候选数量（可跳过）").closest("details");
+    expect(advanced).not.toHaveAttribute("open");
+    expect(within(advanced as HTMLElement).getByRole("group", { name: "快速生成质量" })).toBeInTheDocument();
+    expect(within(advanced as HTMLElement).getByRole("group", { name: "快速候选数量" })).toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByRole("group", { name: "确认画面比例" })).getByRole("button", { name: "16:9" }));
+    expect(onAspectRatioChange).toHaveBeenCalledWith("16:9");
+    expect(screen.getAllByRole("button", { name: "建立单张画面方案" })).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "建立单张画面方案" }));
     expect(onCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("单张画面只有在选择自定义场景后才出现文字输入", () => {
+    const onSceneChange = vi.fn();
+    const onCustomSceneChange = vi.fn();
+    const view = render(<VisualCharacterCreator
+      creationKind="image"
+      presetId="oriental_moon"
+      onPresetChange={vi.fn()}
+      direction="portrait"
+      onDirectionChange={vi.fn()}
+      sourceMode="new"
+      onSourceModeChange={vi.fn()}
+      subject="adult_woman"
+      onSubjectChange={vi.fn()}
+      appearance={DEFAULT_GUIDED_APPEARANCE}
+      onAppearanceChange={vi.fn()}
+      scene="custom"
+      onSceneChange={onSceneChange}
+      mood="cool"
+      onMoodChange={vi.fn()}
+      shot="half_body"
+      onShotChange={vi.fn()}
+      visualStyle="photoreal"
+      onVisualStyleChange={vi.fn()}
+      constraints={["identity"]}
+      onConstraintToggle={vi.fn()}
+      characters={[]}
+      characterId=""
+      onCharacterChange={vi.fn()}
+      purpose="portrait"
+      onPurposeChange={vi.fn()}
+      variantSelections={{}}
+      onVariantChange={vi.fn()}
+      referenceAssets={[]}
+      referenceAssetId=""
+      onReferenceAssetChange={vi.fn()}
+      scenes={[]}
+      sceneProfileId=""
+      onSceneProfileChange={vi.fn()}
+      customSubject=""
+      onCustomSubjectChange={vi.fn()}
+      customScene="雨夜天台"
+      onCustomSceneChange={onCustomSceneChange}
+      canGenerate
+      candidateCount={2}
+      onCandidateCountChange={vi.fn()}
+      qualityTier="premium"
+      onQualityTierChange={vi.fn()}
+      onCreate={vi.fn()}
+      onSave={vi.fn()}
+      onOpenSettings={vi.fn()}
+    />);
+
+    const creator = within(view.container);
+    fireEvent.click(within(creator.getByRole("navigation", { name: "已选约束" })).getByRole("button", { name: /已选场景/ }));
+    expect(creator.getByLabelText("自定义场景")).toHaveValue("雨夜天台");
+    const contract = within(creator.getByRole("navigation", { name: "已选约束" }));
+    expect(contract.getByRole("button", { name: /已选场景：雨夜天台 · 清冷克制/ })).toBeInTheDocument();
+    expect(creator.queryByRole("textbox", { name: /主体/ })).not.toBeInTheDocument();
   });
 
   it("精细模式只保留一套步骤导航，并提供退出创作入口", () => {
