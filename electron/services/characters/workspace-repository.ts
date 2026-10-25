@@ -4,6 +4,7 @@ import type {
   CharacterMediaLink,
   CharacterMediaRole,
   CharacterState,
+  CharacterStateTracker,
   CharacterStateKind,
   CharacterStateStatus,
   CharacterVersion,
@@ -43,6 +44,7 @@ type StateRow = {
   scene: string;
   emotion: string;
   continuity_notes: string;
+  trackers_json: string;
   created_at: string;
   updated_at: string;
 };
@@ -117,6 +119,34 @@ const SESSION_TRANSITIONS: Record<GenerationSessionStatus, GenerationSessionStat
 const CREATIVE_ASPECT_RATIOS: CreativeAspectRatio[] = ["1:1", "2:3", "3:2", "4:3", "16:9", "9:16"];
 const MEDIA_ROLES: CharacterMediaRole[] = ["reference", "candidate", "master", "start_frame", "output", "voice", "remix_source"];
 
+const normalizeTrackers = (trackers: CharacterStateTracker[] | undefined): CharacterStateTracker[] => {
+  if (!Array.isArray(trackers)) return [];
+  const seen = new Set<string>();
+  return trackers.flatMap((tracker) => {
+    const id = typeof tracker?.id === "string" ? tracker.id.trim() : "";
+    const label = typeof tracker?.label === "string" ? tracker.label.trim() : "";
+    if (!id || !label || seen.has(id)) return [];
+    seen.add(id);
+    const valueKind = ["scale", "choice", "text"].includes(tracker.valueKind) ? tracker.valueKind : "text";
+    const visibility = tracker.visibility === "internal" ? "internal" : "visible";
+    const min = Number.isFinite(tracker.min) ? tracker.min : undefined;
+    const max = Number.isFinite(tracker.max) ? tracker.max : undefined;
+    return [{
+      id,
+      label,
+      valueKind,
+      value: typeof tracker.value === "string" ? tracker.value.trim() : "",
+      ...(min !== undefined ? { min } : {}),
+      ...(max !== undefined ? { max } : {}),
+      options: Array.isArray(tracker.options)
+        ? [...new Set(tracker.options.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))]
+        : [],
+      visibility,
+      updateRule: typeof tracker.updateRule === "string" ? tracker.updateRule.trim() : "",
+    }];
+  });
+};
+
 const mapVersion = (row: VersionRow): CharacterVersion => ({
   id: row.id,
   profileId: row.profile_id,
@@ -149,6 +179,7 @@ const mapState = (row: StateRow): CharacterState => ({
   scene: row.scene,
   emotion: row.emotion,
   continuityNotes: row.continuity_notes,
+  trackers: normalizeTrackers(parseJson<CharacterStateTracker[]>(row.trackers_json, [])),
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -297,6 +328,7 @@ export class CharacterWorkspaceRepository {
     scene?: string;
     emotion?: string;
     continuityNotes?: string;
+    trackers?: CharacterStateTracker[];
   }): CharacterState {
     this.requireCharacter(profileId);
     this.requireVersion(profileId, input.versionId);
@@ -315,13 +347,13 @@ export class CharacterWorkspaceRepository {
           "UPDATE character_states SET status = 'draft', updated_at = ? WHERE profile_id = ? AND status = 'active'",
         ).run(now, profileId);
       this.db.database.prepare(`INSERT INTO character_states
-        (id, profile_id, version_id, name, kind, status, wardrobe, hair, expression, pose, scene, emotion, continuity_notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        (id, profile_id, version_id, name, kind, status, wardrobe, hair, expression, pose, scene, emotion, continuity_notes, trackers_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(
           id, profileId, input.versionId ?? null, name, input.kind, status,
           input.wardrobe?.trim() ?? "", input.hair?.trim() ?? "", input.expression?.trim() ?? "",
           input.pose?.trim() ?? "", input.scene?.trim() ?? "", input.emotion?.trim() ?? "",
-          input.continuityNotes?.trim() ?? "", now, now,
+          input.continuityNotes?.trim() ?? "", JSON.stringify(normalizeTrackers(input.trackers)), now, now,
         );
     });
     return this.getState(id)!;
@@ -341,7 +373,7 @@ export class CharacterWorkspaceRepository {
 
   updateState(id: string, patch: Partial<Pick<CharacterState,
     "name" | "kind" | "status" | "versionId" | "wardrobe" | "hair" | "expression" |
-    "pose" | "scene" | "emotion" | "continuityNotes"
+    "pose" | "scene" | "emotion" | "continuityNotes" | "trackers"
   >>): CharacterState {
     const current = this.getState(id);
     if (!current) throw new Error("角色状态不存在。");
@@ -359,10 +391,11 @@ export class CharacterWorkspaceRepository {
           "UPDATE character_states SET status = 'draft', updated_at = ? WHERE profile_id = ? AND status = 'active' AND id <> ?",
         ).run(now, current.profileId, id);
       this.db.database.prepare(`UPDATE character_states SET version_id = ?, name = ?, kind = ?, status = ?,
-        wardrobe = ?, hair = ?, expression = ?, pose = ?, scene = ?, emotion = ?, continuity_notes = ?, updated_at = ? WHERE id = ?`)
+        wardrobe = ?, hair = ?, expression = ?, pose = ?, scene = ?, emotion = ?, continuity_notes = ?, trackers_json = ?, updated_at = ? WHERE id = ?`)
         .run(
           next.versionId ?? null, next.name.trim(), next.kind, next.status, next.wardrobe.trim(), next.hair.trim(),
-          next.expression.trim(), next.pose.trim(), next.scene.trim(), next.emotion.trim(), next.continuityNotes.trim(), now, id,
+          next.expression.trim(), next.pose.trim(), next.scene.trim(), next.emotion.trim(), next.continuityNotes.trim(),
+          JSON.stringify(normalizeTrackers(next.trackers)), now, id,
         );
     });
     return this.getState(id)!;

@@ -126,6 +126,8 @@ contextBridge.exposeInMainWorld("studio", {
   },
   settings: {
     providerStatus: () => ipcRenderer.invoke("settings:provider-status"),
+    verifyProvider: (providerId) =>
+      ipcRenderer.invoke("settings:verify-provider", providerId),
     budgetStatus: () => ipcRenderer.invoke("settings:budget-status"),
     saveMonthlyBudget: (value) =>
       ipcRenderer.invoke("settings:save-monthly-budget", value),

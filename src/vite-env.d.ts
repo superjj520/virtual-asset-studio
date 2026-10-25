@@ -164,13 +164,14 @@ interface Window {
           scene?: string;
           emotion?: string;
           continuityNotes?: string;
+          trackers?: import("./shared/types").CharacterStateTracker[];
         },
       ) => Promise<import("./shared/types").CharacterState>;
       updateState: (
         id: string,
         patch: Partial<Pick<import("./shared/types").CharacterState,
           "name" | "kind" | "status" | "versionId" | "wardrobe" | "hair" | "expression" |
-          "pose" | "scene" | "emotion" | "continuityNotes"
+          "pose" | "scene" | "emotion" | "continuityNotes" | "trackers"
         >>,
       ) => Promise<import("./shared/types").CharacterState>;
       createSession: (
@@ -218,7 +219,7 @@ interface Window {
     tasks: {
       create: (input: Pick<import("./shared/types").CreativeTask, "projectId" | "characterProfileId" | "name" | "objective" | "collectionIds" | "card">) => Promise<import("./shared/types").CreativeTask>;
       list: (projectId?: string) => Promise<import("./shared/types").CreativeTask[]>;
-      update: (id: string, patch: Partial<Pick<import("./shared/types").CreativeTask, "name" | "objective" | "status" | "collectionIds" | "card" | "resultAssetId">>) => Promise<import("./shared/types").CreativeTask>;
+      update: (id: string, patch: Partial<Pick<import("./shared/types").CreativeTask, "characterProfileId" | "name" | "objective" | "status" | "collectionIds" | "card" | "resultAssetId">>) => Promise<import("./shared/types").CreativeTask>;
     };
     batches: {
       create: (input: {
@@ -295,6 +296,7 @@ interface Window {
     };
     settings: {
       providerStatus: () => Promise<import("./shared/types").ProviderStatus>;
+      verifyProvider: (providerId: import("./shared/types").ProviderId) => Promise<import("./shared/types").ProviderVerificationResult>;
       budgetStatus: () => Promise<import("./shared/types").BudgetStatus>;
       saveMonthlyBudget: (
         value: number,
@@ -326,6 +328,10 @@ interface Window {
         referenceAssetIds?: string[];
         referenceBindings?: import("./shared/types").ReferenceAssetBinding[];
         qualityTier?: import("./shared/types").GenerationQualityTier;
+        candidateLabel?: string;
+        candidateIndex?: number;
+        candidateCount?: number;
+        deliveryMode?: import("./shared/types").CreativeDeliveryMode;
       }) => Promise<import("./shared/types").StudioJob>;
       refineImage: (input: {
         assetId: string;

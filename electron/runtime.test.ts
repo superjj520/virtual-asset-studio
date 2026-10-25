@@ -124,6 +124,25 @@ it('首次配置 Gemini 后图片与修图路由自动切到已配置的 Gemini'
   expect(status.routes.vision).toBe('openai');
 });
 
+it('Gemini 连接验证只读取模型列表，不触发生图请求', async () => {
+  await harness.handlers.get('settings:save-provider-key')!({}, 'gemini', 'gemini-test-key-12345678901234567890');
+  const fetchMock = vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ models: [{ name: 'models/gemini-image' }] }),
+  }));
+  vi.stubGlobal('fetch', fetchMock);
+
+  const result = await harness.invoke('settings:verify-provider', 'gemini');
+
+  expect(result).toMatchObject({ providerId: 'gemini', ok: true });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(fetchMock).toHaveBeenCalledWith(
+    'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1',
+    expect.objectContaining({ method: 'GET' }),
+  );
+});
+
 it('视觉理解不能把权利未明的参考图外传', async () => {
   const reference = addAsset({ rightsStatus: 'unknown' });
   await expect(harness.invoke('vision:analyze', reference.id)).rejects.toThrow(/使用权|授权/);
@@ -341,8 +360,8 @@ it('图片生成保留避免项和原任务关联，重试信息不会丢失', a
   harness.handlers.get('settings:save-provider-key')!({}, 'openai', 'openai-test-key-placeholder-123456');
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ data: [{ b64_json: Buffer.from('retry-image').toString('base64') }] }) })));
   const task = await harness.invoke('tasks:create', { name: '重试关联任务', objective: '验证关联', card: { intent: '', subject: '成年女性', identityAnchor: '', bodyAndWardrobe: '', expressionAndPose: '', scene: '', lighting: '', camera: '', style: '', avoid: '文字、水印', aspectRatio: '16:9', referenceAssetIds: [] }, collectionIds: [] });
-  const job = await harness.invoke('generation:image', { ...imageInput([]), creativeTaskId: task.id, aspectRatio: '16:9', negative: '文字、水印' });
-  expect(job.request).toMatchObject({ creativeTaskId: task.id, negative: '文字、水印', requestedAspectRatio: '16:9', actualAspectRatio: '3:2', size: '1536x1024' });
+  const job = await harness.invoke('generation:image', { ...imageInput([]), creativeTaskId: task.id, aspectRatio: '16:9', negative: '文字、水印', candidateLabel: '构图备选', candidateIndex: 2, candidateCount: 4, deliveryMode: 'series_pack' });
+  expect(job.request).toMatchObject({ creativeTaskId: task.id, negative: '文字、水印', requestedAspectRatio: '16:9', actualAspectRatio: '3:2', size: '1536x1024', candidateLabel: '构图备选', candidateIndex: 2, candidateCount: 4, deliveryMode: 'series_pack' });
 });
 
 it('生成内容撞上已有资产时不把旧资产冒充新的待复核结果', async () => {

@@ -24,6 +24,7 @@ import type {
   ProviderCapability,
   ProviderId,
   ProviderStatus,
+  ProviderVerificationResult,
   ShotContract,
 } from "../src/shared/types";
 import { SettingsRepository } from "./services/settings/repository";
@@ -900,6 +901,20 @@ export const createStudioRuntime = (
         },
       );
       ipcMain.handle("settings:provider-status", () => providerStatus());
+      ipcMain.handle(
+        "settings:verify-provider",
+        async (_event, providerId: ProviderId): Promise<ProviderVerificationResult> => {
+          if (providerId !== "gemini")
+            throw new Error("当前仅支持 Gemini 的无生成连接验证；其他模型会在首次请求时验证。");
+          await gemini.verifyConnection();
+          return {
+            providerId,
+            ok: true,
+            checkedAt: new Date().toISOString(),
+            message: "Gemini 密钥、网络与模型列表访问均正常。",
+          };
+        },
+      );
       ipcMain.handle("settings:budget-status", () => budgetStatus());
       ipcMain.handle(
         "settings:save-monthly-budget",
@@ -999,6 +1014,10 @@ export const createStudioRuntime = (
             referenceAssetIds?: string[];
             referenceBindings?: ReferenceAssetBinding[];
             qualityTier?: "draft" | "standard" | "premium";
+            candidateLabel?: string;
+            candidateIndex?: number;
+            candidateCount?: number;
+            deliveryMode?: import("../src/shared/types").CreativeDeliveryMode;
           },
         ) => {
           const size = imageSizeForAspectRatio(input.aspectRatio);
@@ -1040,6 +1059,10 @@ export const createStudioRuntime = (
               creativeTaskId: input.creativeTaskId,
               generationSessionId: session?.id,
               retryOfJobId: input.retryOfJobId,
+              candidateLabel: input.candidateLabel,
+              candidateIndex: input.candidateIndex,
+              candidateCount: input.candidateCount,
+              deliveryMode: input.deliveryMode,
             },
           });
           if (session) characterWorkspace.updateSessionStatus(session.id, "running");

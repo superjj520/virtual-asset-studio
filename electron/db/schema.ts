@@ -314,6 +314,7 @@ export const applySchema = (database: Database.Database) => {
       scene TEXT NOT NULL DEFAULT '',
       emotion TEXT NOT NULL DEFAULT '',
       continuity_notes TEXT NOT NULL DEFAULT '',
+      trackers_json TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -621,5 +622,8 @@ export const applySchema = (database: Database.Database) => {
   if (!memberColumns.some((column) => column.name === "module_key")) database.exec("ALTER TABLE asset_collection_members ADD COLUMN module_key TEXT NOT NULL DEFAULT ''");
   if (!memberColumns.some((column) => column.name === "notes")) database.exec("ALTER TABLE asset_collection_members ADD COLUMN notes TEXT NOT NULL DEFAULT ''");
   if (!memberColumns.some((column) => column.name === "sort_order")) database.exec("ALTER TABLE asset_collection_members ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0");
+  const characterStateColumns = database.prepare("PRAGMA table_info(character_states)").all() as Array<{ name: string }>;
+  if (!characterStateColumns.some((column) => column.name === "trackers_json"))
+    database.exec("ALTER TABLE character_states ADD COLUMN trackers_json TEXT NOT NULL DEFAULT '[]'");
   })();
 };

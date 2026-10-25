@@ -2,12 +2,91 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AdaptiveDomainNavigation } from "./ui-adapters/AdaptiveDomainNavigation";
 import { CharacterInspector } from "./character/CharacterInspector";
 import { CharacterWorkspacePanel } from "./character/CharacterWorkspacePanel";
+import { buildCharacterExtensionCard, CHARACTER_EXTENSION_OPTIONS } from "./character/character-extensions";
+import { buildCharacterFactSeeds } from "./character/character-fact-seeds";
 import { SceneWorkspacePanel } from "./scene/SceneWorkspacePanel";
 import { ReviewWorkspacePanel } from "./review/ReviewWorkspacePanel";
 import { ProjectPipelinePanel } from "./project/ProjectPipelinePanel";
 import { ReferenceBindingsPanel } from "./creation/ReferenceBindingsPanel";
+import { CreationCandidateGallery } from "./creation/CreationCandidateGallery";
+import { LocalDirectionCandidateGallery } from "./creation/LocalDirectionCandidateGallery";
+import { CreationStudioJourney, type CreationStudioStage } from "./creation/CreationStudioJourney";
+import { CreationLaunchpad, type CreationLaunchKind } from "./creation/CreationLaunchpad";
+import { CREATION_PRESET_ARTWORKS, SCENE_ARTWORKS, VisualCharacterCreator } from "./creation/VisualCharacterCreator";
+import {
+  buildCharacterStateTrackers,
+  DEFAULT_CHARACTER_TRACKER_IDS,
+  type CharacterTrackerPresetId,
+} from "./creation/character-tracker-presets";
+import {
+  clearCharacterCreationDraft,
+  loadCharacterCreationDraft,
+  saveCharacterCreationDraft,
+  type CharacterCreationDraft,
+} from "./creation/character-creation-draft";
+import {
+  buildCreativePlan,
+  composeGuidedCreation,
+  CREATION_PRESETS,
+  DEFAULT_GUIDED_APPEARANCE,
+  DEFAULT_GUIDED_STORY_PLAN,
+  CREATION_DIRECTIONS,
+  GUIDED_ARCHETYPES,
+  GUIDED_CONFLICTS,
+  GUIDED_CONSTRAINTS,
+  GUIDED_DRIVES,
+  GUIDED_EXPRESSIONS,
+  GUIDED_HAIR,
+  GUIDED_INTERESTS,
+  GUIDED_MOODS,
+  GUIDED_OPENINGS,
+  GUIDED_PERFORMANCES,
+  GUIDED_POSES,
+  GUIDED_RELATIONSHIPS,
+  GUIDED_ROLES,
+  GUIDED_SCENES,
+  GUIDED_SHOTS,
+  GUIDED_STORY_ATMOSPHERES,
+  GUIDED_STORY_MOMENTS,
+  GUIDED_STORY_PACING,
+  GUIDED_STORY_RELATIONSHIPS,
+  GUIDED_VISUAL_STYLES,
+  GUIDED_SUBJECTS,
+  GUIDED_VOICES,
+  GUIDED_WARDROBES,
+  type CreationDirection,
+  type CreationPresetId,
+  type GuidedAppearance,
+  type GuidedConstraint,
+  type GuidedMood,
+  type GuidedScene,
+  type GuidedShot,
+  type GuidedStoryPlan,
+  type GuidedSubject,
+  type GuidedVisualStyle,
+} from "./creation/creative-plan";
+import {
+  applyCreationRefinement,
+  getCreationRefinements,
+  type CreationRefinementId,
+} from "./creation/refinement-presets";
+import { buildLocalSceneAssetDraft } from "./creation/local-scene-asset";
+import {
+  buildCandidateVariations,
+  createDefaultSeriesPlan,
+  type CandidateVariation,
+} from "./creation/candidate-variations";
+import {
+  hasAcceptance,
+  isCustomBriefValue,
+  PROJECT_ACCEPTANCE_OPTIONS,
+  PROJECT_BRIEF_OPTIONS,
+  toggleAcceptance,
+  type ProjectBriefSingleKey,
+} from "./project/project-brief-options";
 import { GenerationQueuePanel } from "./production/GenerationQueuePanel";
 import { CandidateComparePanel } from "./production/CandidateComparePanel";
+import { jobAspectSummary, jobReferenceSummary } from "./production/job-presentation";
 import { CollectionAssetFilterBar, filterCollectionAssets, type CollectionAssetFilters } from "./assets/CollectionAssetFilterBar";
 import { composeCharacterCard, evaluateCharacterCoverage, type CharacterUseCase, type CharacterVariantSelection } from "./shared/character-slots";
 import { collectUsableReferenceAssetIds, getAssetCollectionBlueprint } from "./shared/asset-collection-blueprints";
@@ -23,12 +102,16 @@ import type {
   AssetType,
   BudgetStatus,
   CharacterProfile,
+  CharacterStateTracker,
   CharacterDetail,
+  CharacterExtensionKind,
   CharacterWorkspaceSnapshot,
   CharacterFactInput,
   CharacterVariantKind,
   CharacterGroup,
+  CreativeAspectRatio,
   CreativeCard,
+  CreativeDeliveryMode,
   CreativeTask,
   CreativeRecipe,
   GenerationBatch,
@@ -51,6 +134,7 @@ import type {
   ProviderCapability,
   ProviderId,
   ProviderStatus,
+  ProviderVerificationResult,
   RightsStatus,
   ShotContract,
   ShotPlan,
@@ -149,6 +233,27 @@ function AssetVisual({ asset }: { asset: Asset }) {
   );
 }
 
+function CharacterProfileVisual({ profile }: { profile: CharacterProfile }) {
+  const [preview, setPreview] = useState<string>();
+  useEffect(() => {
+    let active = true;
+    if (!profile.masterAssetId) {
+      setPreview(undefined);
+      return;
+    }
+    const request = window.studio.assets.preview?.(profile.masterAssetId);
+    if (!request || typeof request.then !== "function") return;
+    request
+      .then((source) => { if (active) setPreview(source); })
+      .catch(() => { if (active) setPreview(undefined); });
+    return () => { active = false; };
+  }, [profile.masterAssetId]);
+  return <span className="character-profile-visual">
+    {preview ? <img src={preview} alt={`${profile.name}主参考图`} /> : <span className="character-profile-monogram" aria-hidden="true">{profile.name.trim().slice(0, 1) || "角"}</span>}
+    <small>{profile.masterAssetId ? "主参考" : "待绑定主参考"}</small>
+  </span>;
+}
+
 function AssetRightsEditor({ asset, onSaved }: { asset: Asset; onSaved: () => Promise<void> }) {
   const [status, setStatus] = useState<RightsStatus>(asset.rightsStatus);
   const [reason, setReason] = useState(typeof asset.metadata.rightsReviewNote === "string" ? asset.metadata.rightsReviewNote : "");
@@ -207,6 +312,13 @@ const normalizeCreativeCard = (card: CreativeCard): CreativeCard => {
     aspectRatio: normalizeCreativeAspectRatio(card.aspectRatio),
     ...references,
   };
+};
+
+const resolveCreationKind = (card: CreativeCard): CreationLaunchKind => {
+  if (card.deliveryMode === "story_scene") return "scene";
+  if (card.deliveryMode === "series_pack") return "series";
+  if (card.deliveryMode === "character_sheet" || card.appearanceProfile) return "character";
+  return "image";
 };
 
 /**
@@ -268,6 +380,7 @@ export default function App() {
   const [isImportingCharacterPack, setIsImportingCharacterPack] = useState(false);
   const [screen, setScreen] = useState<
     | "start"
+    | "launch"
     | "assets"
     | "characters"
     | "scenes"
@@ -311,6 +424,7 @@ export default function App() {
   const [selectedCharacterId, setSelectedCharacterId] = useState("");
   const [selectedCharacterDetail, setSelectedCharacterDetail] = useState<CharacterDetail>();
   const [selectedCharacterWorkspace, setSelectedCharacterWorkspace] = useState<CharacterWorkspaceSnapshot>();
+  const [characterCenterView, setCharacterCenterView] = useState<"workspace" | "details">("workspace");
   const [activeCharacterContext, setActiveCharacterContext] = useState<{
     profileId: string;
     versionId?: string;
@@ -335,12 +449,15 @@ export default function App() {
   const masterPickerRequestRef = useRef(0);
   const characterRelationsRequestRef = useRef(0);
   const collectionDetailRequestRef = useRef(0);
+  const creativeTaskOpenRequestRef = useRef(0);
   const selectedCharacterIdRef = useRef("");
   const selectCharacter = (id: string) => {
+    if (selectedCharacterIdRef.current === id) return;
     selectedCharacterIdRef.current = id;
     setSelectedCharacterDetail(undefined);
     setSelectedCharacterWorkspace(undefined);
     setSelectedCharacterId(id);
+    setCharacterCenterView("workspace");
   };
   const [characterVariantSelections, setCharacterVariantSelections] = useState<Record<string, CharacterVariantSelection>>({});
   const [guideCharacterDetail, setGuideCharacterDetail] = useState<CharacterDetail>();
@@ -362,13 +479,44 @@ export default function App() {
   const [creativeTasks, setCreativeTasks] = useState<CreativeTask[]>([]);
   const [activeTaskId, setActiveTaskId] = useState("");
   const [guideMode, setGuideMode] = useState<"new" | "saved" | "reference">("new");
+  const [creationLaunchKind, setCreationLaunchKind] = useState<CreationLaunchKind>("character");
+  const [guidePresetId, setGuidePresetId] = useState<CreationPresetId>("oriental_moon");
+  const [activeCreationPresetId, setActiveCreationPresetId] = useState<CreationPresetId>();
+  const [activeCreationReferencePreview, setActiveCreationReferencePreview] = useState<string>();
+  const [guidedDraftTaskId, setGuidedDraftTaskId] = useState("");
+  const [guideDirection, setGuideDirection] = useState<CreationDirection>("portrait");
   const [guideCharacterId, setGuideCharacterId] = useState("");
-  const [guideGoal, setGuideGoal] = useState("");
+  const [guideSubjectChoice, setGuideSubjectChoice] = useState<GuidedSubject>("adult_woman");
+  const [guideSceneChoice, setGuideSceneChoice] = useState<GuidedScene>("ancient_east");
+  const [guideMoodChoice, setGuideMoodChoice] = useState<GuidedMood>("cool");
+  const [guideStoryPlan, setGuideStoryPlan] = useState<GuidedStoryPlan>(() => ({ ...DEFAULT_GUIDED_STORY_PLAN }));
+  const [guideShotChoice, setGuideShotChoice] = useState<GuidedShot>("half_body");
+  const [guideVisualStyle, setGuideVisualStyle] = useState<GuidedVisualStyle>("photoreal");
+  const [guideAspectRatio, setGuideAspectRatio] = useState<CreativeAspectRatio>("2:3");
+  const [guideAppearance, setGuideAppearance] = useState<GuidedAppearance>(DEFAULT_GUIDED_APPEARANCE);
+  const [guideSceneProfileId, setGuideSceneProfileId] = useState("");
+  const [guideConstraints, setGuideConstraints] = useState<GuidedConstraint[]>(["identity", "skin", "no_text"]);
+  const [guideTrackerIds, setGuideTrackerIds] = useState<CharacterTrackerPresetId[]>(DEFAULT_CHARACTER_TRACKER_IDS);
+  const [guideCustomTrackers, setGuideCustomTrackers] = useState<CharacterStateTracker[]>([]);
+  const [restoredCharacterDraftAt, setRestoredCharacterDraftAt] = useState("");
   const [guideSubject, setGuideSubject] = useState("");
   const [guideScene, setGuideScene] = useState("");
-  const [guideMustKeep, setGuideMustKeep] = useState("");
   const [guideReferenceAssetId, setGuideReferenceAssetId] = useState("");
   const [guideCollectionIds, setGuideCollectionIds] = useState<string[]>([]);
+  const [showGuideOptions, setShowGuideOptions] = useState(false);
+  const [showAdvancedCreation, setShowAdvancedCreation] = useState(false);
+  const [showPromptDetails, setShowPromptDetails] = useState(false);
+  const [showReuseTools, setShowReuseTools] = useState(false);
+  const [isPreparingCreation, setIsPreparingCreation] = useState(false);
+  const [creationCandidateCount, setCreationCandidateCount] = useState<1 | 2 | 4>(2);
+  const [seriesCandidatePlan, setSeriesCandidatePlan] = useState<CandidateVariation[]>(createDefaultSeriesPlan);
+  const [isGeneratingCandidates, setIsGeneratingCandidates] = useState(false);
+  const [selectedCreationCandidateId, setSelectedCreationCandidateId] = useState("");
+  const [selectedLocalDirectionId, setSelectedLocalDirectionId] = useState("");
+  const [confirmedLocalDirectionId, setConfirmedLocalDirectionId] = useState("");
+  const [localRefinementApplied, setLocalRefinementApplied] = useState(false);
+  const [creationRefinementId, setCreationRefinementId] = useState<CreationRefinementId>("expression");
+  const [creationStudioStage, setCreationStudioStage] = useState<CreationStudioStage>("plan");
   const [shot, setShot] = useState<ShotContract>(EMPTY_SHOT);
   const [promptBuild, setPromptBuild] = useState<PromptBuild>();
   const [shotBuild, setShotBuild] = useState("");
@@ -407,6 +555,8 @@ export default function App() {
     useState<GenerationQualityTier>("premium");
   const [translation, setTranslation] = useState<PromptTranslation>();
   const [provider, setProvider] = useState<ProviderStatus>();
+  const [providerVerifications, setProviderVerifications] = useState<Partial<Record<ProviderId, ProviderVerificationResult>>>({});
+  const [verifyingProviderId, setVerifyingProviderId] = useState<ProviderId>();
   const [providerKeys, setProviderKeys] = useState<Record<ProviderId, string>>({
     openai: "",
     flux: "",
@@ -527,6 +677,24 @@ export default function App() {
       .catch(() => undefined);
   }, []);
   useEffect(() => {
+    let current = true;
+    const previewAssetId = card.referenceAssetIds[0]
+      ?? selectedCharacterWorkspace?.character.masterAssetId;
+    if (!previewAssetId) {
+      setActiveCreationReferencePreview(undefined);
+      return () => { current = false; };
+    }
+    const request = window.studio.assets.preview?.(previewAssetId);
+    if (!request || typeof request.then !== "function") {
+      setActiveCreationReferencePreview(undefined);
+      return () => { current = false; };
+    }
+    request
+      .then((source) => { if (current) setActiveCreationReferencePreview(source); })
+      .catch(() => { if (current) setActiveCreationReferencePreview(undefined); });
+    return () => { current = false; };
+  }, [card.referenceAssetIds, selectedCharacterWorkspace?.character.masterAssetId]);
+  useEffect(() => {
     window.studio.settings
       .budgetStatus()
       .then((value) => {
@@ -607,6 +775,13 @@ export default function App() {
     return () => { current = false; };
   }, [selectedProjectId]);
   useEffect(() => {
+    if (screen !== "characters" || isCreatingCharacter || selectedCharacterId || characters.length === 0) return;
+    const first = selectedProjectId
+      ? characters.find((profile) => profile.projectId === selectedProjectId)
+      : characters.find((profile) => !profile.projectId) ?? characters[0];
+    if (first) selectCharacter(first.id);
+  }, [characters, isCreatingCharacter, screen, selectedCharacterId, selectedProjectId]);
+  useEffect(() => {
     let current = true;
     window.studio.sceneWorkspace.list(selectedProjectId || undefined)
       .then((profiles) => { if (current) setScenes(profiles); })
@@ -630,6 +805,7 @@ export default function App() {
     setShotCharacterVersionId(""); setShotCharacterStateId("");
     setShotSceneVersionId(""); setShotSceneStateId("");
     setSelectedAssetId(""); setSelectedCollectionId(""); setSelectedCollection(undefined);
+    setGuideSceneProfileId(""); setSelectedCreationCandidateId("");
     setReviewWorkspace(undefined); setRecipeReviewSelections({});
     ++masterPickerRequestRef.current;
     ++characterRelationsRequestRef.current;
@@ -665,6 +841,54 @@ export default function App() {
       .catch(() => { if (current) setGuideCharacterDetail(undefined); });
     return () => { current = false; };
   }, [guideMode, guideCharacterId]);
+  useEffect(() => {
+    if (screen !== "start" || creationLaunchKind !== "character") return;
+    saveCharacterCreationDraft({
+      sourceMode: guideMode,
+      presetId: guidePresetId,
+      direction: guideDirection,
+      characterId: guideCharacterId,
+      referenceAssetId: guideReferenceAssetId,
+      sceneProfileId: guideSceneProfileId,
+      subject: guideSubjectChoice,
+      customSubject: guideSubject,
+      appearance: guideAppearance,
+      scene: guideSceneChoice,
+      customScene: guideScene,
+      mood: guideMoodChoice,
+      shot: guideShotChoice,
+      visualStyle: guideVisualStyle,
+      aspectRatio: guideAspectRatio,
+      constraints: guideConstraints,
+      trackerIds: guideTrackerIds,
+      customTrackers: guideCustomTrackers,
+      purpose: guidePurpose,
+      qualityTier,
+    });
+  }, [
+    creationLaunchKind,
+    guideAppearance,
+    guideAspectRatio,
+    guideCharacterId,
+    guideConstraints,
+    guideCustomTrackers,
+    guideDirection,
+    guideMode,
+    guideMoodChoice,
+    guidePresetId,
+    guidePurpose,
+    guideReferenceAssetId,
+    guideScene,
+    guideSceneChoice,
+    guideSceneProfileId,
+    guideShotChoice,
+    guideSubject,
+    guideSubjectChoice,
+    guideTrackerIds,
+    guideVisualStyle,
+    qualityTier,
+    screen,
+  ]);
   useEffect(() => {
     let current = true;
     window.studio.collections
@@ -865,7 +1089,7 @@ export default function App() {
     }
   }, [refreshJobs, retryingJobIds]);
   useEffect(() => {
-    if (screen !== "jobs" && screen !== "production" && screen !== "review") return;
+    if (screen !== "jobs" && screen !== "production" && screen !== "review" && screen !== "creation") return;
     void refreshJobs();
     if (screen !== "jobs") return;
     const timer = window.setInterval(() => void refreshJobs(), 8_000);
@@ -874,7 +1098,7 @@ export default function App() {
   useEffect(() => {
     const domainForScreen: Partial<Record<typeof screen, typeof activeDomain>> = {
       workspace: "creation", start: "creation", creation: "creation",
-      assets: "assets", characters: "assets", collections: "assets",
+      assets: "assets", characters: "assets", scenes: "assets", collections: "assets",
       production: "production", review: "production", shot: "production", jobs: "production",
       recipes: "templates", paradigms: "templates", learning: "templates",
     };
@@ -1141,6 +1365,52 @@ export default function App() {
       ).filter((item): item is { asset: Asset; label: string; prompt: string; job: StudioJob | undefined } => Boolean(item.asset)),
     [assets, batches, compareAssetIds, jobs],
   );
+  const activeTaskCandidates = useMemo(() => {
+    if (!activeTaskId) return [];
+    const ids = [
+      ...jobs
+        .filter((job) => job.request.creativeTaskId === activeTaskId && job.status === "completed")
+        .map((job) => String(job.result?.assetId ?? "")),
+      ...batches
+        .filter((batch) => batch.creativeTaskId === activeTaskId)
+        .flatMap((batch) => batch.variants.map((variant) => variant.assetId ?? "")),
+      creativeTasks.find((task) => task.id === activeTaskId)?.resultAssetId ?? "",
+    ].filter(Boolean);
+    return [...new Set(ids)]
+      .map((id) => assets.find((asset) => asset.id === id))
+      .filter((asset): asset is Asset => Boolean(asset?.mediaType.startsWith("image/")))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }, [activeTaskId, assets, batches, creativeTasks, jobs]);
+  const selectedCreationCandidate = activeTaskCandidates.find((asset) => asset.id === selectedCreationCandidateId)
+    ?? activeTaskCandidates.at(-1);
+  const activeTaskCandidateItems = useMemo(() => activeTaskCandidates.map((asset) => {
+    const batchMatch = batches.flatMap((batch) => batch.variants.map((variant) => ({ batch, variant })))
+      .find(({ variant }) => variant.assetId === asset.id);
+    const job = (batchMatch?.variant.jobId ? jobs.find((item) => item.id === batchMatch.variant.jobId) : undefined)
+      ?? jobs.find((item) => item.result?.assetId === asset.id);
+    return {
+      asset,
+      label: batchMatch?.variant.label ?? (typeof job?.request.candidateLabel === "string" ? job.request.candidateLabel : asset.name),
+      prompt: batchMatch?.variant.prompt ?? (typeof job?.request.prompt === "string" ? job.request.prompt : "生成指令未记录"),
+      job,
+    };
+  }), [activeTaskCandidates, batches, jobs]);
+  const activeTaskCandidateDetails = useMemo(() => Object.fromEntries(activeTaskCandidateItems.map(({ asset, label, job }) => [asset.id, {
+    variationLabel: label,
+    providerLabel: job ? providerLabel(job.providerId as ProviderId) : undefined,
+    aspectLabel: job ? `画幅 ${jobAspectSummary(job)}` : undefined,
+    referenceLabel: job ? jobReferenceSummary(job) : undefined,
+    versionLabel: job ? `版本 ${job.id.slice(0, 8)}` : undefined,
+  }])), [activeTaskCandidateItems]);
+  const activeTaskComparisonIds = compareAssetIds.filter((assetId) => activeTaskCandidates.some((asset) => asset.id === assetId));
+  useEffect(() => {
+    if (!activeTaskCandidates.length) {
+      setSelectedCreationCandidateId("");
+      return;
+    }
+    if (!activeTaskCandidates.some((asset) => asset.id === selectedCreationCandidateId))
+      setSelectedCreationCandidateId(activeTaskCandidates.at(-1)?.id ?? "");
+  }, [activeTaskCandidates, selectedCreationCandidateId]);
   const toggleCandidateComparison = (assetId: string) => {
     setCompareAssetIds((current) =>
       current.includes(assetId)
@@ -1173,7 +1443,6 @@ export default function App() {
   };
   const currentImageCapability: ProviderCapability = card.referenceAssetIds.length ? "image_edit" : "image";
   const canGenerateCurrentImage = canUse(currentImageCapability);
-  const currentImageProvider = provider?.routes[currentImageCapability];
   const saveProviderKey = async (providerId: ProviderId) => {
     try {
       const key = providerKeys[providerId];
@@ -1181,11 +1450,31 @@ export default function App() {
         await window.studio.settings.saveProviderKey(providerId, key),
       );
       setProviderKeys((current) => ({ ...current, [providerId]: "" }));
+      setProviderVerifications((current) => ({ ...current, [providerId]: undefined }));
       setNotice(
         `${providerId === "flux" ? "FLUX" : providerId === "fal" ? "fal" : providerId === "deepseek" ? "DeepSeek" : providerId === "gemini" ? "Gemini" : "OpenAI"} 已连接；密钥已使用本机系统加密保存。`,
       );
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "保存连接配置失败。");
+    }
+  };
+  const verifyProviderConnection = async (providerId: ProviderId) => {
+    setVerifyingProviderId(providerId);
+    try {
+      const result = await window.studio.settings.verifyProvider(providerId);
+      setProviderVerifications((current) => ({ ...current, [providerId]: result }));
+      setNotice(result.message);
+    } catch (error) {
+      const result: ProviderVerificationResult = {
+        providerId,
+        ok: false,
+        checkedAt: new Date().toISOString(),
+        message: error instanceof Error ? error.message : "模型连接验证失败。",
+      };
+      setProviderVerifications((current) => ({ ...current, [providerId]: result }));
+      setNotice(result.message);
+    } finally {
+      setVerifyingProviderId(undefined);
     }
   };
   const saveRoute = async (
@@ -1319,9 +1608,9 @@ export default function App() {
     setScreen("creation");
     setNotice("已把反推提示词设为本轮创作基线；建议下一步只改变一个维度。\n");
   };
-  const startCharacterImageCreation = (
+  const startCharacterExtensionCreation = async (
     workspace: CharacterWorkspaceSnapshot,
-    context: { versionId?: string; stateId?: string },
+    context: { kind: CharacterExtensionKind; versionId?: string; stateId?: string },
   ) => {
     const state = context.stateId
       ? workspace.states.find((item) => item.id === context.stateId)
@@ -1330,23 +1619,56 @@ export default function App() {
       workspace.character,
       characterVariantSelections[workspace.character.id],
     );
-    const nextCard = normalizeCreativeCard({
-      ...base,
-      projectId: selectedProjectId || workspace.character.projectId,
-      bodyAndWardrobe: mergeText(base.bodyAndWardrobe, [state?.wardrobe, state?.hair].filter(Boolean).join("；")),
-      expressionAndPose: mergeText(base.expressionAndPose, [state?.expression, state?.pose, state?.emotion].filter(Boolean).join("；")),
-      scene: mergeText(base.scene, state?.scene ?? ""),
-      mustKeep: mergeText(base.mustKeep ?? "", state?.continuityNotes ?? ""),
-    });
-    setCard(nextCard);
-    setCharacterName(workspace.character.name);
-    setActiveCharacterContext({ profileId: workspace.character.id, ...context });
-    setPromptBuild(undefined);
-    setTranslation(undefined);
-    if (nextCard.referenceAssetIds[0]) setSelectedAssetId(nextCard.referenceAssetIds[0]);
-    setActiveDomain("creation");
-    setScreen("creation");
-    setNotice(`已带入「${workspace.character.name}」${state ? `的“${state.name}”状态` : "的基础设定"}；补充本次目标后生成提示词。`);
+    const option = CHARACTER_EXTENSION_OPTIONS.find((item) => item.id === context.kind)!;
+    const nextCard = normalizeCreativeCard(buildCharacterExtensionCard({
+      base: { ...base, projectId: selectedProjectId || workspace.character.projectId },
+      characterId: workspace.character.id,
+      versionId: context.versionId,
+      stateId: context.stateId,
+      kind: context.kind,
+      state,
+    }));
+    const collectionIds = collections
+      .filter((collection) => collection.characterProfileId === workspace.character.id)
+      .map((collection) => collection.id);
+    setIsPreparingCreation(true);
+    try {
+      const task = await window.studio.tasks.create({
+        projectId: selectedProjectId || workspace.character.projectId,
+        characterProfileId: workspace.character.id,
+        name: `${workspace.character.name} · ${option.label}`,
+        objective: `${option.label}：${option.result}`,
+        collectionIds,
+        card: nextCard,
+      });
+      setCard(nextCard);
+      setCreativeTasks((current) => [task, ...current]);
+      setActiveTaskId(task.id);
+      setGuidedDraftTaskId(task.id);
+      setCharacterName(workspace.character.name);
+      setGuideMode("saved");
+      setGuideCharacterId(workspace.character.id);
+      setGuideDirection(option.deliveryMode);
+      setCreationLaunchKind(["pose_set", "wardrobe_set", "series_pack", "dynamic_keyframe"].includes(context.kind) ? "series" : context.kind === "story_scene" || context.kind === "dialogue_scene" ? "scene" : "image");
+      setCreationCandidateCount(nextCard.candidatePlan?.length ? 4 : 2);
+      setGuideShotChoice(context.kind === "expression_set" ? "closeup" : ["pose_set", "wardrobe_set", "dynamic_keyframe"].includes(context.kind) ? "full_body" : "half_body");
+      setActiveCreationPresetId(
+        CREATION_PRESETS.some((preset) => preset.id === nextCard.visualPresetId)
+          ? nextCard.visualPresetId as CreationPresetId
+          : undefined,
+      );
+      setActiveCharacterContext({ profileId: workspace.character.id, versionId: context.versionId, stateId: context.stateId });
+      setPromptBuild(await window.studio.creation.compilePrompt(nextCard));
+      setTranslation(undefined);
+      if (nextCard.referenceAssetIds[0]) setSelectedAssetId(nextCard.referenceAssetIds[0]);
+      setActiveDomain("creation");
+      setScreen("creation");
+      setNotice(`已建立「${option.label}」任务，角色、版本、状态和参考素材已锁定。`);
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : "建立角色衍生任务失败。");
+    } finally {
+      setIsPreparingCreation(false);
+    }
   };
   const createSceneProfile = async () => {
     try {
@@ -1398,8 +1720,21 @@ export default function App() {
     setActiveDomain("creation"); setScreen("creation");
     setNotice(`已带入场景「${workspace.scene.name}」${state ? `的“${state.name}”状态` : "的空间基线"}。`);
   };
-  const generateImage = async () => {
-    if (!promptBuild) {
+  const generateImage = async (prepared?: {
+    build: PromptBuild;
+    translated?: PromptTranslation;
+    card?: CreativeCard;
+    taskId?: string;
+    characterProfileId?: string;
+    sceneProfileId?: string;
+    candidateLabel?: string;
+    candidateIndex?: number;
+    candidateCount?: number;
+  }): Promise<string | undefined> => {
+    const activeBuild = prepared?.build ?? promptBuild;
+    const activeTranslation = prepared?.translated ?? translation;
+    const effectiveTaskId = prepared?.taskId ?? activeTaskId;
+    if (!activeBuild) {
       setNotice("请先生成结构化提示词。");
       return;
     }
@@ -1408,19 +1743,20 @@ export default function App() {
       return;
     }
     try {
-      const normalizedCard = normalizeCreativeCard(card);
+      const normalizedCard = normalizeCreativeCard(prepared?.card ?? card);
       setCard(normalizedCard);
-      if (activeTaskId) {
-        const updated = await window.studio.tasks.update(activeTaskId, { status: "producing", card: normalizedCard });
+      if (effectiveTaskId) {
+        const updated = await window.studio.tasks.update(effectiveTaskId, { status: "producing", card: normalizedCard });
         setCreativeTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
       }
-      const prompt = translation?.positive ?? promptBuild.positive;
-      const characterId = activeCharacterContext?.profileId ?? activeTask?.characterProfileId;
+      const prompt = activeTranslation?.positive ?? activeBuild.positive;
+      const characterId = prepared?.characterProfileId ?? activeCharacterContext?.profileId ?? activeTask?.characterProfileId;
       const characterWorkspace = characterId
         ? await window.studio.characterWorkspace.get(characterId)
         : undefined;
-      const sceneWorkspace = activeSceneContext?.profileId
-        ? await window.studio.sceneWorkspace.get(activeSceneContext.profileId)
+      const sceneProfileId = prepared?.sceneProfileId ?? activeSceneContext?.profileId;
+      const sceneWorkspace = sceneProfileId
+        ? await window.studio.sceneWorkspace.get(sceneProfileId)
         : undefined;
       const session = characterId || sceneWorkspace ? await window.studio.characterWorkspace.createSession({
         projectId: selectedProjectId || characterWorkspace?.character.projectId || sceneWorkspace?.scene.projectId,
@@ -1430,48 +1766,275 @@ export default function App() {
         sceneProfileId: sceneWorkspace?.scene.id,
         sceneVersionId: activeSceneContext?.versionId ?? sceneWorkspace?.activeVersion?.id,
         sceneStateId: activeSceneContext?.stateId ?? sceneWorkspace?.activeState?.id,
-        creativeTaskId: activeTaskId || undefined,
-        title: `${characterWorkspace?.character.name ?? sceneWorkspace?.scene.name ?? "图片创作"} · ${normalizedCard.scene || normalizedCard.intent || "候选"}`.slice(0, 80),
+        creativeTaskId: effectiveTaskId || undefined,
+        title: `${characterWorkspace?.character.name ?? sceneWorkspace?.scene.name ?? "图片创作"} · ${prepared?.candidateLabel ?? (normalizedCard.scene || normalizedCard.intent || "候选")}`.slice(0, 80),
         mode: normalizedCard.referenceAssetIds.length ? "image_edit" : "text_to_image",
         prompt,
-        negativePrompt: translation?.negative ?? promptBuild.negative,
-        providerId: card.referenceAssetIds.length ? provider?.routes.image_edit : provider?.routes.image,
+        negativePrompt: activeTranslation?.negative ?? activeBuild.negative,
+        providerId: normalizedCard.referenceAssetIds.length ? provider?.routes.image_edit : provider?.routes.image,
         aspectRatio: normalizedCard.aspectRatio,
         referenceAssetIds: normalizedCard.referenceAssetIds,
-        settings: { qualityTier, referenceBindings: normalizedCard.referenceBindings },
+        settings: { qualityTier, referenceBindings: normalizedCard.referenceBindings, deliveryMode: normalizedCard.deliveryMode, candidateLabel: prepared?.candidateLabel, candidateIndex: prepared?.candidateIndex, candidateCount: prepared?.candidateCount },
       }) : undefined;
       const job = await window.studio.generation.image({
         prompt,
-        negative: translation?.negative ?? promptBuild.negative,
+        negative: activeTranslation?.negative ?? activeBuild.negative,
         projectId: selectedProjectId || characterWorkspace?.character.projectId || sceneWorkspace?.scene.projectId,
-        creativeTaskId: activeTaskId || undefined,
+        creativeTaskId: effectiveTaskId || undefined,
         generationSessionId: session?.id,
         aspectRatio: normalizedCard.aspectRatio,
         referenceAssetIds: normalizedCard.referenceAssetIds,
         referenceBindings: normalizedCard.referenceBindings,
         qualityTier,
+        candidateLabel: prepared?.candidateLabel,
+        candidateIndex: prepared?.candidateIndex,
+        candidateCount: prepared?.candidateCount,
+        deliveryMode: normalizedCard.deliveryMode,
       });
+      setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]);
       const assetId = String(job.result?.assetId ?? "");
-      if (activeTaskId && assetId) {
-        const updated = await window.studio.tasks.update(activeTaskId, { status: "review", resultAssetId: assetId });
+      if (effectiveTaskId && assetId) {
+        const updated = await window.studio.tasks.update(effectiveTaskId, { status: "review", resultAssetId: assetId });
         setCreativeTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
       }
-      setNotice(`成图已归档为新资产${assetId ? `：${assetId}` : ""}；任务已进入候选审片。`);
+      if (assetId) {
+        setSelectedCreationCandidateId(assetId);
+        setSelectedAssetId(assetId);
+      }
       await refresh();
+      if (assetId) {
+        const projectAssets = await window.studio.assets.list({
+          projectId: selectedProjectId || characterWorkspace?.character.projectId || sceneWorkspace?.scene.projectId,
+        });
+        setAssets(projectAssets);
+        setSelectedType("all");
+      }
       if (characterId && selectedCharacterIdRef.current === characterId)
         setSelectedCharacterWorkspace(await window.studio.characterWorkspace.get(characterId));
       if (sceneWorkspace && selectedSceneId === sceneWorkspace.scene.id)
         setSelectedSceneWorkspace(await window.studio.sceneWorkspace.get(sceneWorkspace.scene.id));
+      return assetId || undefined;
     } catch (error) {
-      if (activeTaskId) {
+      if (effectiveTaskId) {
         try {
-          const updated = await window.studio.tasks.update(activeTaskId, { status: "blocked", card: normalizeCreativeCard(card) });
+          const updated = await window.studio.tasks.update(effectiveTaskId, { status: "blocked", card: normalizeCreativeCard(prepared?.card ?? card) });
           setCreativeTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
         } catch {
           // 生成错误本身已经需要保留；任务状态更新失败不覆盖原始错误。
         }
       }
       setNotice(`${error instanceof Error ? error.message : "成图任务失败。"} 任务已标记为生成阻塞，可从生成队列按原请求重试。`);
+      return undefined;
+    }
+  };
+  const generatePreparedCandidateSet = async ({
+    targetCard,
+    taskId = activeTaskId,
+    characterProfileId,
+    sceneProfileId,
+  }: {
+    targetCard: CreativeCard;
+    taskId?: string;
+    characterProfileId?: string;
+    sceneProfileId?: string;
+  }) => {
+    if (characterReferenceIssues) {
+      setNotice(characterReferenceIssues);
+      return;
+    }
+    if (isGeneratingCandidates) return;
+    setIsGeneratingCandidates(true);
+    try {
+      const normalizedCard = normalizeCreativeCard(targetCard);
+      setCard(normalizedCard);
+      setNotice("正在整理方案并适配绘图模型…");
+      const build = await window.studio.creation.compilePrompt(normalizedCard);
+      setPromptBuild(build);
+      let translated: PromptTranslation | undefined;
+      const imageProvider = normalizedCard.referenceAssetIds.length
+        ? provider?.routes.image_edit
+        : provider?.routes.image;
+      if (canUse("text") && (imageProvider === "openai" || imageProvider === "flux" || imageProvider === "fal" || imageProvider === "gemini")) {
+        try {
+          translated = await window.studio.creation.translatePrompt({
+            prompt: build.positive,
+            negative: build.negative,
+            providerId: imageProvider,
+            qualityTier,
+          });
+          setTranslation(translated);
+        } catch {
+          // 模型适配失败时仍可使用结构化提示词完成生成。
+        }
+      }
+      const generatedIds: string[] = [];
+      const candidateVariations = buildCandidateVariations(
+        creationCandidateCount,
+        normalizedCard.deliveryMode ?? guideDirection,
+        normalizedCard.candidatePlan,
+      );
+      for (let index = 0; index < candidateVariations.length; index += 1) {
+        const variation = candidateVariations[index];
+        setNotice(`正在生成候选 ${index + 1}/${creationCandidateCount}…`);
+        const candidateBuild = { ...build, positive: `${build.positive}\n候选策略：${variation.directive}` };
+        const candidateTranslation = translated ? { ...translated, positive: `${translated.positive}\nCandidate variation: ${variation.directive}` } : undefined;
+        const assetId = await generateImage({
+          build: candidateBuild,
+          translated: candidateTranslation,
+          card: normalizedCard,
+          taskId,
+          characterProfileId,
+          sceneProfileId,
+          candidateLabel: variation.label,
+          candidateIndex: index + 1,
+          candidateCount: candidateVariations.length,
+        });
+        if (assetId) generatedIds.push(assetId);
+      }
+      if (taskId && generatedIds.length) {
+        const updated = await window.studio.tasks.update(taskId, {
+          status: "review",
+          resultAssetId: generatedIds.at(-1),
+        });
+        setCreativeTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
+      }
+      setNotice(generatedIds.length
+        ? `已生成 ${generatedIds.length} 张候选，直接在当前页面选择最佳版本。`
+        : "本轮没有生成可用候选，请检查模型连接或到生成队列重试。");
+      if (generatedIds.length) setCreationStudioStage("candidates");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "准备首版成图失败。");
+    } finally {
+      setIsGeneratingCandidates(false);
+    }
+  };
+  const generateFirstVersion = async () => generatePreparedCandidateSet({ targetCard: card });
+  const applyRefinementToPlan = async () => {
+    const preset = getCreationRefinements(card.deliveryMode).find((item) => item.id === creationRefinementId);
+    const nextCard = normalizeCreativeCard(applyCreationRefinement(card, creationRefinementId));
+    setCard(nextCard);
+    setPromptBuild(await window.studio.creation.compilePrompt(nextCard));
+    setTranslation(undefined);
+    if (activeTaskId) {
+      const updated = await window.studio.tasks.update(activeTaskId, { card: nextCard });
+      setCreativeTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
+    }
+    setLocalRefinementApplied(true);
+    setNotice(`已把“${preset?.label ?? "局部调整"}”写入当前方案；没有调用任何模型。`);
+  };
+  const confirmLocalDirectionCandidate = async () => {
+    const variation = localDirectionCandidates.find((item) => item.id === selectedLocalDirectionId)
+      ?? localDirectionCandidates[0];
+    if (!variation) return;
+    const directionNote = `画面重点：${variation.label}（${variation.directive}）`;
+    const intentParts = card.intent.split("；").map((item) => item.trim()).filter(Boolean);
+    const nextCard = normalizeCreativeCard({
+      ...card,
+      intent: [...new Set([...intentParts.filter((item) => !item.startsWith("画面重点：")), directionNote])].join("；"),
+    });
+    setCard(nextCard);
+    setPromptBuild(await window.studio.creation.compilePrompt(nextCard));
+    setTranslation(undefined);
+    setConfirmedLocalDirectionId(variation.id);
+    setLocalRefinementApplied(false);
+    if (activeTaskId) {
+      const updated = await window.studio.tasks.update(activeTaskId, { card: nextCard });
+      setCreativeTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
+    }
+    setCreationStudioStage("refine");
+    setNotice(`已选择“${variation.label}”并写入本地方案；没有调用任何模型。`);
+  };
+  const selectCharacterExtensionScene = async (sceneId: GuidedScene) => {
+    const option = GUIDED_SCENES.find((item) => item.id === sceneId);
+    if (!option || sceneId === "custom") return;
+    const nextCard = normalizeCreativeCard({
+      ...card,
+      sceneDirectionId: sceneId,
+      scene: option.prompt,
+    });
+    setGuideSceneChoice(sceneId);
+    setCard(nextCard);
+    setPromptBuild(await window.studio.creation.compilePrompt(nextCard));
+    setTranslation(undefined);
+    if (activeTaskId) {
+      const updated = await window.studio.tasks.update(activeTaskId, { card: nextCard });
+      setCreativeTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
+    }
+    setNotice(`已选择“${option.label}”作为本轮场景；角色身份与造型继续锁定。`);
+  };
+  const saveCurrentPlanAsSceneAsset = async () => {
+    if (card.sceneProfileId) {
+      setSelectedSceneId(card.sceneProfileId);
+      setActiveDomain("assets");
+      setScreen("scenes");
+      return;
+    }
+    const direction = localDirectionCandidates.find((item) => item.id === confirmedLocalDirectionId)
+      ?? selectedLocalDirection;
+    const characterLabel = selectedCharacterWorkspace?.character.name
+      ?? characters.find((item) => item.id === activeTask?.characterProfileId)?.name
+      ?? "角色剧情";
+    const draft = buildLocalSceneAssetDraft({
+      card,
+      characterName: characterLabel,
+      directionLabel: direction?.label,
+      directionDirective: direction?.directive,
+    });
+    const sameNameCount = scenes.filter((item) => item.name === draft.nameBase || item.name.startsWith(`${draft.nameBase} `)).length;
+    const name = sameNameCount ? `${draft.nameBase} ${sameNameCount + 1}` : draft.nameBase;
+    try {
+      const sceneProfile = await window.studio.sceneWorkspace.create({
+        projectId: selectedProjectId || card.projectId,
+        name,
+        ...draft.profile,
+      });
+      const sceneState = await window.studio.sceneWorkspace.createState(sceneProfile.id, draft.state);
+      const workspace = await window.studio.sceneWorkspace.get(sceneProfile.id);
+      const nextCard = normalizeCreativeCard({ ...card, sceneProfileId: sceneProfile.id });
+      setCard(nextCard);
+      setScenes((current) => [sceneProfile, ...current.filter((item) => item.id !== sceneProfile.id)]);
+      setSelectedSceneId(sceneProfile.id);
+      setSelectedSceneWorkspace(workspace);
+      setActiveSceneContext({ profileId: sceneProfile.id, stateId: sceneState.id });
+      if (activeTaskId) {
+        const updated = await window.studio.tasks.update(activeTaskId, { card: nextCard });
+        setCreativeTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
+      }
+      setNotice(`已保存场景资产“${sceneProfile.name}”，剧情方向、空间锚点与状态可以继续复用。`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "保存场景资产失败。");
+    }
+  };
+  const generateSelectedRefinement = async () => {
+    if (isGeneratingCandidates) return;
+    const nextCard = normalizeCreativeCard(applyCreationRefinement(card, creationRefinementId));
+    setCard(nextCard);
+    setPromptBuild(undefined);
+    setTranslation(undefined);
+    setIsGeneratingCandidates(true);
+    try {
+      setNotice("正在按所选变化生成新候选…");
+      const build = await window.studio.creation.compilePrompt(nextCard);
+      setPromptBuild(build);
+      let translated: PromptTranslation | undefined;
+      const imageProvider = nextCard.referenceAssetIds.length ? provider?.routes.image_edit : provider?.routes.image;
+      if (canUse("text") && (imageProvider === "openai" || imageProvider === "flux" || imageProvider === "fal" || imageProvider === "gemini")) {
+        try {
+          translated = await window.studio.creation.translatePrompt({
+            prompt: build.positive,
+            negative: build.negative,
+            providerId: imageProvider,
+            qualityTier,
+          });
+          setTranslation(translated);
+        } catch {
+          // 模型适配失败时继续使用结构化提示词。
+        }
+      }
+      const assetId = await generateImage({ build, translated, card: nextCard });
+      setNotice(assetId ? "新候选已加入当前画布，原候选仍保留可比较。" : "变化候选生成失败，请检查模型连接或生成队列。");
+    } finally {
+      setIsGeneratingCandidates(false);
     }
   };
   const saveRecipe = async () => {
@@ -1614,11 +2177,11 @@ export default function App() {
       setNotice(error instanceof Error ? error.message : "批量任务执行失败。");
     }
   };
-  const reviewAsset = async (confirmation: "confirmed" | "rejected") => {
-    if (!selectedAssetId) return;
+  const reviewAsset = async (confirmation: "confirmed" | "rejected", assetId = selectedAssetId) => {
+    if (!assetId) return;
     try {
       await window.studio.assets.updateConfirmation(
-        selectedAssetId,
+        assetId,
         confirmation,
       );
       if (confirmation === "confirmed") {
@@ -1626,7 +2189,7 @@ export default function App() {
         if (taskId) {
           const task = await window.studio.tasks.update(taskId, {
             status: "review",
-            resultAssetId: selectedAssetId,
+            resultAssetId: assetId,
           });
           setCreativeTasks((current) =>
             current.map((item) => (item.id === task.id ? task : item)),
@@ -1663,6 +2226,14 @@ export default function App() {
     setScreen("characters");
     setIsCreatingCharacter(true);
   };
+  const syncCharacterFactsFromCard = async (characterId: string, sourceCard: CreativeCard) => {
+    const seeds = buildCharacterFactSeeds(sourceCard);
+    const results = await Promise.allSettled(seeds.map((input) => window.studio.characters.upsertFact(characterId, input)));
+    return {
+      total: seeds.length,
+      failed: results.filter((result) => result.status === "rejected").length,
+    };
+  };
   const saveCharacter = async (draftCard: CreativeCard = card) => {
     const name = characterName.trim();
     if (!name) {
@@ -1682,6 +2253,7 @@ export default function App() {
         group: characterGroup,
         lifecycle: "draft",
       });
+      const factSync = await syncCharacterFactsFromCard(profile.id, draftCard);
       setCharacters((current) => [profile, ...current]);
       const collection = await window.studio.collections.create({
         projectId: selectedProjectId || undefined,
@@ -1699,7 +2271,9 @@ export default function App() {
       setActiveDomain("assets");
       setScreen("characters");
       setNotice(
-        `已保存角色档案「${profile.name}」${profile.masterAssetId ? "，并绑定了已确认主参考图" : ""}。后续可直接加载后更换场景和镜头。`,
+        factSync.failed
+          ? `已保存角色档案「${profile.name}」，但有 ${factSync.failed} 个人物细项同步失败，可在角色档案中继续补充。`
+          : `已保存角色档案「${profile.name}」${profile.masterAssetId ? "，并绑定了已确认主参考图" : ""}；${factSync.total} 个创作选择已进入人物细项。`,
       );
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "保存角色档案失败。");
@@ -1839,76 +2413,395 @@ export default function App() {
       setNotice(error instanceof Error ? error.message : "建立角色设定板任务失败。");
     }
   };
-  const beginGuidedCreation = async () => {
-    const savedCharacter = characters.find(
-      (profile) => profile.id === guideCharacterId,
-    );
-    if (!guideGoal.trim()) {
-      setNotice("先用一句话说清这次要做什么。\n");
+  const beginGuidedCreation = async (generateCandidates = true, stayInCreator = false, saveAsCharacter = false) => {
+    const savedCharacter = characters.find((profile) => profile.id === guideCharacterId);
+    const savedScene = scenes.find((profile) => profile.id === guideSceneProfileId);
+    const referenceAsset = selectableImages.find((asset) => asset.id === guideReferenceAssetId);
+    if (guideMode === "new" && guideSubjectChoice === "custom" && !guideSubject.trim()) {
+      setNotice("请补充自定义主体，或选择一个现成选项。");
+      return;
+    }
+    if (!savedScene && guideSceneChoice === "custom" && !guideScene.trim()) {
+      setNotice("请补充自定义场景，或选择一个现成选项。");
+      return;
+    }
+    if (guideSceneProfileId && !savedScene) {
+      setNotice("所选场景档案已经失效，请重新选择。");
       return;
     }
     if (guideMode === "saved" && !savedCharacter) {
-      setNotice("请选择一个已经保存的角色。\n");
+      setNotice("请选择一个已经保存的角色。");
       return;
     }
-    if (
-      !savedCharacter &&
-      !guideSubject.trim() &&
-      !guideReferenceAssetId
-    ) {
-      setNotice("请填写人物主体，或选择一张参考图。\n");
+    if (guideMode === "reference" && !guideReferenceAssetId) {
+      setNotice("请选择一张已经通过审片和使用权核实的参考图。");
       return;
     }
-    if (!guideMustKeep.trim()) {
-      setNotice("请写下最希望保持的 1—3 件事，这是保证贴合度的关键。\n");
-      return;
-    }
-    const detail = savedCharacter ? await window.studio.characters.detail(savedCharacter.id) : undefined;
-    const selection = savedCharacter ? characterVariantSelections[savedCharacter.id] : undefined;
-    if (detail && selection && Object.entries(selection).some(([kind, id]) => id && !detail.variants.some((variant) => variant.id === id && variant.kind === kind))) {
-      setNotice("所选角色变体已失效，请重新选择造型、表情或动作。"); return;
-    }
-    if (guideReferenceAssetId && !selectableImages.some((asset) => asset.id === guideReferenceAssetId)) {
-      setNotice("参考图还未完成审片和使用权核实，请先到资产库处理。"); return;
-    }
-    const base = detail ? composeCharacterCard(detail, selection) : savedCharacter?.card ?? EMPTY_CARD;
-    const referenceAssetIds = [
-      ...base.referenceAssetIds,
-      ...(guideReferenceAssetId ? [guideReferenceAssetId] : []),
-    ].filter((value, index, values) => values.indexOf(value) === index);
-    const characterCollectionIds = savedCharacter
-      ? collections.filter((collection) => collection.characterProfileId === savedCharacter.id).map((collection) => collection.id)
-      : [];
-    const inheritedCollectionDetails = await Promise.all([...new Set([...characterCollectionIds, ...guideCollectionIds])]
-      .map((id) => window.studio.collections.detail(id)));
-    const nextCard: CreativeCard = {
-      ...base,
-      projectId: selectedProjectId || savedCharacter?.projectId,
-      intent: guideGoal.trim(),
-      subject: guideSubject.trim() || base.subject,
-      scene: guideScene.trim() || base.scene,
-      mustKeep: mergeText(base.mustKeep ?? "", guideMustKeep),
-      referenceAssetIds: [...new Set([...referenceAssetIds, ...collectUsableReferenceAssetIds(inheritedCollectionDetails)])],
-    };
-    setCard(normalizeCreativeCard(nextCard));
-    const task = await window.studio.tasks.create({
-      projectId: selectedProjectId || savedCharacter?.projectId,
-      characterProfileId: savedCharacter?.id,
-      name: guideGoal.trim().slice(0, 48),
-      objective: guideGoal.trim(),
-      collectionIds: [...new Set([...characterCollectionIds, ...guideCollectionIds])],
-      card: nextCard,
+    const guidedPlan = composeGuidedCreation({
+      direction: guideDirection,
+      subject: guideSubjectChoice,
+      scene: guideSceneChoice,
+      mood: guideMoodChoice,
+      shot: guideShotChoice,
+      visualStyle: guideVisualStyle,
+      // 已有角色和参考图已经承担身份基线，不能再用入口默认脸型、肤色或发型覆盖它们。
+      appearance: guideMode === "new" ? guideAppearance : undefined,
+      constraints: guideConstraints,
+      customSubject: guideSubject,
+      customScene: savedScene?.name ?? guideScene,
+      sourceLabel: guideMode === "saved"
+        ? `沿用角色「${savedCharacter?.name ?? ""}」`
+        : guideMode === "reference"
+          ? `按参考图「${referenceAsset?.name ?? ""}」锁定人物`
+          : undefined,
+      storyPlan: creationLaunchKind === "scene" ? guideStoryPlan : undefined,
     });
-    setCreativeTasks((current) => [task, ...current]);
-    setActiveTaskId(task.id);
-    setPromptBuild(await window.studio.creation.compilePrompt(nextCard));
-    setTranslation(undefined);
-    if (referenceAssetIds[0]) setSelectedAssetId(referenceAssetIds[0]);
-    setScreen("creation");
-    const missing = detail ? evaluateCharacterCoverage(detail, guidePurpose, selection).missingRequiredKeys.length : 0;
-    setNotice(
-      missing ? `已建立创作任务并继承已确认细项；当前用途仍缺 ${missing} 项，出图前建议到角色档案补齐，避免身份漂移。` : "已建立创作任务并继承已确认细项；下一步检查结果并出第一版。",
-    );
+    setIsPreparingCreation(true);
+    try {
+      const detail = savedCharacter ? await window.studio.characters.detail(savedCharacter.id) : undefined;
+      let sceneWorkspace = savedScene ? await window.studio.sceneWorkspace.get(savedScene.id) : undefined;
+      const selection = savedCharacter ? characterVariantSelections[savedCharacter.id] : undefined;
+      if (detail && selection && Object.entries(selection).some(([kind, id]) => id && !detail.variants.some((variant) => variant.id === id && variant.kind === kind))) {
+        setNotice("所选角色变体已失效，请重新选择造型、表情或动作。"); return;
+      }
+      if (guideReferenceAssetId && !selectableImages.some((asset) => asset.id === guideReferenceAssetId)) {
+        setNotice("参考图还未完成审片和使用权核实，请先到资产库处理。"); return;
+      }
+      const base = detail ? composeCharacterCard(detail, selection) : savedCharacter?.card ?? EMPTY_CARD;
+      const normalizedBaseReferences = normalizeReferenceBindings(base.referenceAssetIds, base.referenceBindings);
+      const sceneReferenceIds = sceneWorkspace?.media
+        .filter((item) => item.asset.confirmation === "confirmed" && ["authorized", "original"].includes(item.asset.rightsStatus))
+        .map((item) => item.assetId) ?? [];
+      const characterCollectionIds = savedCharacter
+        ? collections.filter((collection) => collection.characterProfileId === savedCharacter.id).map((collection) => collection.id)
+        : [];
+      const inheritedCollectionDetails = await Promise.all([...new Set([...characterCollectionIds, ...guideCollectionIds])]
+        .map((id) => window.studio.collections.detail(id)));
+      const inheritedReferences = collectUsableReferenceAssetIds(inheritedCollectionDetails);
+      const referenceAssetIds = [...new Set([
+        ...normalizedBaseReferences.referenceAssetIds,
+        ...(guideReferenceAssetId ? [guideReferenceAssetId] : []),
+        ...sceneReferenceIds,
+        ...inheritedReferences,
+      ])];
+      const baseBindingsByAssetId = new Map(normalizedBaseReferences.referenceBindings.map((binding) => [binding.assetId, binding]));
+      const preferredPrimaryId = guideReferenceAssetId
+        || normalizedBaseReferences.referenceBindings.find((binding) => binding.priority === "primary")?.assetId
+        || referenceAssetIds[0];
+      const referenceBindings = referenceAssetIds.map((assetId) => ({
+        assetId,
+        role: guideReferenceAssetId === assetId
+          ? "identity" as const
+          : sceneReferenceIds.includes(assetId)
+            ? "scene" as const
+            : baseBindingsByAssetId.get(assetId)?.role ?? (characterCollectionIds.length ? "identity" as const : "material" as const),
+        priority: assetId === preferredPrimaryId ? "primary" as const : "support" as const,
+      }));
+      const projectContext = [
+        projectBrief.goal && `项目目标：${projectBrief.goal}`,
+        projectBrief.audience && `使用方向：${projectBrief.audience}`,
+        projectBrief.delivery && `交付结果：${projectBrief.delivery}`,
+      ].filter(Boolean).join("；");
+      let nextCard = buildCreativePlan({
+        base: {
+          ...base,
+          projectId: selectedProjectId || savedCharacter?.projectId,
+          referenceAssetIds,
+          referenceBindings,
+        },
+        brief: mergeText(guidedPlan.objective, projectContext),
+        direction: guideDirection,
+        subject: guideMode === "saved" && base.subject ? base.subject : guidedPlan.subject,
+        scene: mergeText(
+          [
+            savedScene?.anchor,
+            savedScene?.layout,
+            savedScene?.requiredElements,
+            sceneWorkspace?.activeState?.timeOfDay,
+            sceneWorkspace?.activeState?.weather,
+            sceneWorkspace?.activeState?.atmosphere,
+          ].filter(Boolean).join("；") || guidedPlan.scene,
+          projectBrief.visualWorld,
+        ),
+        visualStyle: guidedPlan.visualStyle,
+        mustKeep: mergeText(
+          mergeText(
+            guidedPlan.mustKeep,
+            guideMode === "saved"
+              ? `沿用角色「${savedCharacter?.name ?? ""}」的身份结构，不重新设计脸部、年龄感、种族／物种、发型与身体比例`
+              : guideMode === "reference"
+                ? `以参考图「${referenceAsset?.name ?? ""}」作为身份主参考，不重新设计脸部、年龄感、发型与身体比例`
+                : "",
+          ),
+          projectBrief.acceptance,
+        ),
+      });
+      if (creationLaunchKind !== "character") nextCard = { ...nextCard, aspectRatio: guideAspectRatio };
+      if (creationLaunchKind === "character" && guideMode === "new") {
+        nextCard = {
+          ...nextCard,
+          visualPresetId: guidePresetId,
+          sceneDirectionId: guideSceneChoice === "custom" ? undefined : guideSceneChoice,
+          appearanceProfile: {
+            subjectId: guideSubjectChoice,
+            ageId: guideAppearance.age,
+            roleId: guideAppearance.role,
+            ethnicityId: guideAppearance.ethnicity,
+            skinToneId: guideAppearance.skinTone,
+            faceId: guideAppearance.face,
+            eyesId: guideAppearance.eyes,
+            eyeColorId: guideAppearance.eyeColor,
+            hairId: guideAppearance.hair,
+            hairColorId: guideAppearance.hairColor,
+            bodyId: guideAppearance.body,
+            heightId: guideAppearance.height,
+            proportionId: guideAppearance.proportion,
+            upperVolumeId: guideAppearance.upperVolume,
+            lowerShapeId: guideAppearance.lowerShape,
+            wardrobeId: guideAppearance.wardrobe,
+            poseId: guideAppearance.pose,
+            expressionId: guideAppearance.expression,
+          },
+          characterCore: {
+            roleId: guideAppearance.role,
+            personalityId: guideMoodChoice,
+            voiceId: guideAppearance.voice,
+            relationshipId: guideAppearance.relationship,
+            interestId: guideAppearance.interest,
+            performanceId: guideAppearance.performance,
+            archetypeId: guideAppearance.archetype,
+            driveId: guideAppearance.drive,
+            conflictId: guideAppearance.conflict,
+            openingId: guideAppearance.opening,
+          },
+        };
+      }
+      if (creationLaunchKind === "scene") {
+        nextCard = {
+          ...nextCard,
+          sceneProfileId: savedScene?.id,
+          storyPlan: {
+            relationshipId: guideStoryPlan.relationship,
+            momentId: guideStoryPlan.moment,
+            pacingId: guideStoryPlan.pacing,
+            atmosphereId: guideStoryPlan.atmosphere,
+          },
+        };
+      } else {
+        nextCard = { ...nextCard, storyPlan: undefined };
+      }
+      if (guideDirection === "series_pack" || creationLaunchKind === "series") {
+        nextCard = { ...nextCard, candidatePlan: seriesCandidatePlan.map((item) => ({ ...item })) };
+      } else {
+        nextCard = { ...nextCard, candidatePlan: undefined };
+      }
+      // 选择式入口必须即时可用，不能等待外部文本模型。需要时可在创作画布中手动智能补全。
+      if (creationLaunchKind === "scene" && !savedScene) {
+        const sceneLabel = GUIDED_SCENES.find((item) => item.id === guideSceneChoice)?.label ?? "剧情场景";
+        const momentLabel = GUIDED_STORY_MOMENTS.find((item) => item.id === guideStoryPlan.moment)?.label ?? "剧情瞬间";
+        const atmosphereLabel = GUIDED_STORY_ATMOSPHERES.find((item) => item.id === guideStoryPlan.atmosphere)?.label ?? "场景状态";
+        const baseName = `${sceneLabel} · ${momentLabel}`;
+        const sameNameCount = scenes.filter((item) => item.name === baseName || item.name.startsWith(`${baseName} `)).length;
+        const sceneName = sameNameCount ? `${baseName} ${sameNameCount + 1}` : baseName;
+        const sceneKind: SceneKind = guideSceneChoice === "fantasy"
+          ? "fantasy"
+          : guideSceneChoice === "studio"
+            ? "studio"
+            : "environment";
+        const sceneProfile = await window.studio.sceneWorkspace.create({
+          projectId: selectedProjectId || undefined,
+          name: sceneName,
+          kind: sceneKind,
+          lifecycle: "draft",
+          anchor: nextCard.scene || guidedPlan.scene,
+          layout: nextCard.camera,
+          materials: nextCard.style,
+          colorSystem: nextCard.lighting,
+          requiredElements: [
+            GUIDED_STORY_RELATIONSHIPS.find((item) => item.id === guideStoryPlan.relationship)?.label,
+            momentLabel,
+          ].filter(Boolean).join("；"),
+          forbiddenChanges: mergeText(nextCard.mustKeep ?? "", nextCard.avoid),
+        });
+        const sceneState = await window.studio.sceneWorkspace.createState(sceneProfile.id, {
+          name: `${momentLabel} · ${atmosphereLabel}`,
+          status: "active",
+          lighting: nextCard.lighting,
+          atmosphere: atmosphereLabel,
+          setDressing: nextCard.scene,
+          continuityNotes: nextCard.mustKeep ?? "",
+        });
+        sceneWorkspace = await window.studio.sceneWorkspace.get(sceneProfile.id);
+        setScenes((current) => [sceneProfile, ...current.filter((item) => item.id !== sceneProfile.id)]);
+        setGuideSceneProfileId(sceneProfile.id);
+        setSelectedSceneId(sceneProfile.id);
+        if (sceneWorkspace) setSelectedSceneWorkspace(sceneWorkspace);
+        setActiveSceneContext({ profileId: sceneProfile.id, stateId: sceneState.id });
+        nextCard = { ...nextCard, sceneProfileId: sceneProfile.id };
+      }
+      const normalizedCard = normalizeCreativeCard(nextCard);
+      if (saveAsCharacter) {
+        const roleName = GUIDED_ROLES.find((item) => item.id === guideAppearance.role)?.label ?? "原创角色";
+        const presetName = CREATION_PRESETS.find((item) => item.id === guidePresetId)?.label ?? "角色方案";
+        const baseName = `${roleName} · ${presetName}`;
+        const sameNameCount = characters.filter((item) => item.name === baseName || item.name.startsWith(`${baseName} `)).length;
+        const name = sameNameCount ? `${baseName} ${sameNameCount + 1}` : baseName;
+        const masterAssetId = guideMode === "reference" && referenceAsset ? referenceAsset.id : undefined;
+        const profile = await window.studio.characters.create({
+          name,
+          card: normalizedCard,
+          projectId: selectedProjectId || undefined,
+          masterAssetId,
+          group: "lead",
+          lifecycle: "draft",
+        });
+        const factSync = await syncCharacterFactsFromCard(profile.id, normalizedCard);
+        const baselineState = await window.studio.characterWorkspace.createState(profile.id, {
+          name: "基础状态",
+          kind: "baseline",
+          status: "active",
+          wardrobe: GUIDED_WARDROBES.find((item) => item.id === guideAppearance.wardrobe)?.label ?? "",
+          hair: GUIDED_HAIR.find((item) => item.id === guideAppearance.hair)?.label ?? "",
+          expression: GUIDED_EXPRESSIONS.find((item) => item.id === guideAppearance.expression)?.label ?? "",
+          pose: GUIDED_POSES.find((item) => item.id === guideAppearance.pose)?.label ?? "",
+          scene: GUIDED_SCENES.find((item) => item.id === guideSceneChoice)?.label ?? "",
+          emotion: GUIDED_MOODS.find((item) => item.id === guideMoodChoice)?.label ?? "",
+          continuityNotes: "沿用角色身份、脸部、发型与身体比例",
+          trackers: [
+            ...buildCharacterStateTrackers(guideTrackerIds, {
+              mood: guideMoodChoice,
+              scene: guideSceneChoice,
+              wardrobe: guideAppearance.wardrobe,
+            }),
+            ...guideCustomTrackers.map((tracker) => ({ ...tracker, options: [...tracker.options] })),
+          ],
+        });
+        const collection = await window.studio.collections.create({
+          projectId: selectedProjectId || undefined,
+          characterProfileId: profile.id,
+          kind: "character",
+          name: `${profile.name} · 角色资产包`,
+          description: "角色创建器自动建立；用于归档定妆、服装、表情、动作、场景与后续母版。",
+          status: "draft",
+        });
+        if (masterAssetId) await window.studio.collections.attachAsset(collection.id, masterAssetId, "身份主参考");
+        setCard(normalizedCard);
+        setCharacters((current) => [profile, ...current.filter((item) => item.id !== profile.id)]);
+        setCollections((current) => [collection, ...current.filter((item) => item.id !== collection.id)]);
+        setCharacterName(profile.name);
+        setCharacterGroup(profile.group);
+        setGuideCharacterId(profile.id);
+        selectCharacter(profile.id);
+        const workspace = await window.studio.characterWorkspace.get(profile.id);
+        setSelectedCharacterWorkspace(workspace);
+        setActiveCharacterContext({ profileId: profile.id, stateId: baselineState.id });
+        clearCharacterCreationDraft();
+        setRestoredCharacterDraftAt("");
+        setActiveDomain("assets");
+        setScreen("characters");
+        setNotice(factSync.failed
+          ? `角色资产「${profile.name}」已建立，但有 ${factSync.failed} 个人物细项同步失败，可继续补充。`
+          : `角色资产「${profile.name}」已建立，${factSync.total} 个创作选择与 ${baselineState.trackers?.length ?? 0} 个持续状态已归档。`);
+        return;
+      }
+      const taskInput = {
+        projectId: selectedProjectId || savedCharacter?.projectId,
+        characterProfileId: savedCharacter?.id,
+        name: guidedPlan.taskName,
+        objective: guidedPlan.objective,
+        collectionIds: [...new Set([...characterCollectionIds, ...guideCollectionIds])],
+        card: normalizedCard,
+      };
+      const savedDraft = guidedDraftTaskId
+        ? creativeTasks.find((item) => item.id === guidedDraftTaskId)
+        : undefined;
+      const task = savedDraft
+        ? await window.studio.tasks.update(savedDraft.id, taskInput)
+        : await window.studio.tasks.create(taskInput);
+      setCard(normalizedCard);
+      setCreativeTasks((current) => [task, ...current.filter((item) => item.id !== task.id)]);
+      setActiveTaskId(task.id);
+      setGuidedDraftTaskId(task.id);
+      setActiveCreationPresetId(guidePresetId);
+      if (!savedCharacter) {
+        const presetName = CREATION_PRESETS.find((item) => item.id === guidePresetId)?.label ?? "新角色";
+        setCharacterName(`${presetName}角色`);
+      }
+      setPromptBuild(await window.studio.creation.compilePrompt(normalizedCard));
+      setTranslation(undefined);
+      setShowAdvancedCreation(false);
+      setShowPromptDetails(false);
+      setShowReuseTools(false);
+      setCreationStudioStage("plan");
+      setSelectedLocalDirectionId("");
+      setConfirmedLocalDirectionId("");
+      setLocalRefinementApplied(false);
+      if (savedCharacter) {
+        selectCharacter(savedCharacter.id);
+        try {
+          const workspace = await window.studio.characterWorkspace.get(savedCharacter.id);
+          if (workspace) {
+            setSelectedCharacterWorkspace(workspace);
+            setActiveCharacterContext({
+              profileId: savedCharacter.id,
+              versionId: workspace.activeVersion?.id,
+              stateId: workspace.activeState?.id,
+            });
+          }
+        } catch {
+          setActiveCharacterContext({ profileId: savedCharacter.id });
+        }
+      } else setActiveCharacterContext(undefined);
+      if (sceneWorkspace) {
+        setSelectedSceneId(sceneWorkspace.scene.id);
+        setSelectedSceneWorkspace(sceneWorkspace);
+        setActiveSceneContext({
+          profileId: sceneWorkspace.scene.id,
+          versionId: sceneWorkspace.activeVersion?.id,
+          stateId: sceneWorkspace.activeState?.id,
+        });
+      } else if (normalizedCard.sceneProfileId) {
+        setActiveSceneContext({ profileId: normalizedCard.sceneProfileId });
+      } else setActiveSceneContext(undefined);
+      if (normalizedCard.referenceAssetIds[0]) setSelectedAssetId(normalizedCard.referenceAssetIds[0]);
+      if (!stayInCreator) setScreen("creation");
+      const missing = detail ? evaluateCharacterCoverage(detail, guidePurpose, selection).missingRequiredKeys.length : 0;
+      if (stayInCreator) {
+        setNotice("方案已保存，可继续调整；点击“进入创作台”后再创建候选。");
+      } else if (missing) {
+        setNotice(`角色仍缺 ${missing} 项必要证据，请补齐后再生成。`);
+      } else if (canGenerateCurrentImage && generateCandidates) {
+        await generatePreparedCandidateSet({
+          targetCard: normalizedCard,
+          taskId: task.id,
+          characterProfileId: savedCharacter?.id,
+          sceneProfileId: sceneWorkspace?.scene.id ?? normalizedCard.sceneProfileId,
+        });
+      } else {
+        setNotice(creationLaunchKind === "series"
+          ? "镜头计划已保存"
+          : creationLaunchKind === "scene"
+            ? "剧情场景与场景资产已建立"
+            : "创作方案已建立；可继续编辑或在生产区创建候选。");
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "建立创作方案失败。");
+    } finally {
+      setIsPreparingCreation(false);
+    }
+  };
+  const completeGuidedCharacter = () => {
+    const savedCharacter = characters.find((item) => item.id === guideCharacterId);
+    if (guideMode === "saved" && savedCharacter) {
+      clearCharacterCreationDraft();
+      setRestoredCharacterDraftAt("");
+      selectCharacter(savedCharacter.id);
+      setActiveDomain("assets");
+      setScreen("characters");
+      setNotice(`已进入「${savedCharacter.name}」角色中枢，可继续扩展造型、表情、动作与剧情。`);
+      return;
+    }
+    void beginGuidedCreation(false, false, true);
   };
   const saveCharacterFact = async (characterId: string, input: CharacterFactInput) => {
     const detail = await window.studio.characters.upsertFact(characterId, input);
@@ -2038,6 +2931,73 @@ export default function App() {
       setNotice("当前创作任务已保存；生成、候选和母版将继续关联到它。\n");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "保存创作任务失败。\n");
+    }
+  };
+  const openCreativeTask = async (task: CreativeTask) => {
+    const requestId = ++creativeTaskOpenRequestRef.current;
+    const nextCard = normalizeCreativeCard(task.card);
+    const nextKind = resolveCreationKind(nextCard);
+    setActiveTaskId(task.id);
+    setCard(nextCard);
+    setActiveCreationPresetId(
+      CREATION_PRESETS.some((preset) => preset.id === nextCard.visualPresetId)
+        ? nextCard.visualPresetId as CreationPresetId
+        : undefined,
+    );
+    setCreationLaunchKind(nextKind);
+    setPromptBuild(undefined);
+    setTranslation(undefined);
+    setSelectedCreationCandidateId(task.resultAssetId ?? "");
+    setSelectedLocalDirectionId("");
+    setConfirmedLocalDirectionId("");
+    setLocalRefinementApplied(false);
+    setCreationStudioStage(task.resultAssetId ? "asset" : "plan");
+    setActiveDomain("creation");
+    setScreen("creation");
+
+    if (task.characterProfileId) {
+      selectCharacter(task.characterProfileId);
+      try {
+        const workspace = await window.studio.characterWorkspace.get(task.characterProfileId);
+        if (requestId !== creativeTaskOpenRequestRef.current) return;
+        if (workspace) {
+          setSelectedCharacterWorkspace(workspace);
+          setActiveCharacterContext({
+            profileId: task.characterProfileId,
+            versionId: workspace.activeVersion?.id,
+            stateId: workspace.activeState?.id,
+          });
+        } else setActiveCharacterContext({ profileId: task.characterProfileId });
+      } catch {
+        if (requestId === creativeTaskOpenRequestRef.current)
+          setActiveCharacterContext({ profileId: task.characterProfileId });
+      }
+    } else {
+      selectCharacter("");
+      setActiveCharacterContext(undefined);
+    }
+
+    if (nextCard.sceneProfileId) {
+      setSelectedSceneId(nextCard.sceneProfileId);
+      try {
+        const workspace = await window.studio.sceneWorkspace.get(nextCard.sceneProfileId);
+        if (requestId !== creativeTaskOpenRequestRef.current) return;
+        setSelectedSceneWorkspace(workspace);
+        setActiveSceneContext({
+          profileId: nextCard.sceneProfileId,
+          versionId: workspace.activeVersion?.id,
+          stateId: workspace.activeState?.id,
+        });
+      } catch {
+        if (requestId === creativeTaskOpenRequestRef.current) {
+          setSelectedSceneWorkspace(undefined);
+          setActiveSceneContext({ profileId: nextCard.sceneProfileId });
+        }
+      }
+    } else {
+      setSelectedSceneId("");
+      setSelectedSceneWorkspace(undefined);
+      setActiveSceneContext(undefined);
     }
   };
   const compileCurrentShot = async () => {
@@ -2226,15 +3186,15 @@ export default function App() {
       setNotice(error instanceof Error ? error.message : "保存项目简报失败。");
     }
   };
-  const setSelectedAssetAsMaster = async () => {
-    if (!selectedAsset) return;
+  const setSelectedAssetAsMaster = async (targetAsset: Asset | undefined = selectedAsset) => {
+    if (!targetAsset) return;
     try {
-      await window.studio.assets.setMaster(selectedAsset.id, true, selectedProjectId || undefined);
+      await window.studio.assets.setMaster(targetAsset.id, true, selectedProjectId || undefined);
       const taskId = batchForSelectedAsset?.creativeTaskId || activeTaskId;
       if (taskId) {
         const task = await window.studio.tasks.update(taskId, {
           status: "completed",
-          resultAssetId: selectedAsset.id,
+          resultAssetId: targetAsset.id,
         });
         setCreativeTasks((current) =>
           current.map((item) => (item.id === task.id ? task : item)),
@@ -2245,6 +3205,71 @@ export default function App() {
       setNotice("已锁定为项目母版；它会成为后续场景、镜头和视频的优先参考。");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "锁定母版失败。");
+    }
+  };
+  const saveCandidateAsCharacter = async (targetAsset: Asset | undefined = selectedAsset) => {
+    if (!targetAsset) return;
+    if (targetAsset.confirmation !== "confirmed" || !["authorized", "original"].includes(targetAsset.rightsStatus)) {
+      setNotice("候选需先完成审片并确认使用权，才能沉淀为角色资产。");
+      return;
+    }
+    if (activeTask?.characterProfileId) {
+      setNotice("当前创作任务已经关联角色资产，无需重复建立。");
+      return;
+    }
+    try {
+      const sourceCard = activeTask?.card ?? card;
+      const referenceBindings = [
+        { assetId: targetAsset.id, role: "identity" as const, priority: "primary" as const },
+        ...(sourceCard.referenceBindings ?? [])
+          .filter((binding) => binding.assetId !== targetAsset.id)
+          .map((binding) => binding.role === "identity" && binding.priority === "primary"
+            ? { ...binding, priority: "support" as const }
+            : binding),
+      ];
+      const characterCard: CreativeCard = {
+        ...sourceCard,
+        projectId: selectedProjectId || sourceCard.projectId,
+        referenceAssetIds: [...new Set([targetAsset.id, ...sourceCard.referenceAssetIds])],
+        referenceBindings,
+        mustKeep: mergeText(sourceCard.mustKeep ?? "", "此候选已成为角色主参考；后续创作必须保持脸部结构、发型、成年体态与核心造型识别。"),
+      };
+      await window.studio.assets.setMaster(targetAsset.id, true, selectedProjectId || undefined);
+      const baseName = (activeTask?.name || sourceCard.intent || "原创角色").trim().slice(0, 28);
+      const profile = await window.studio.characters.create({
+        name: baseName.endsWith("角色") ? baseName : `${baseName} · 角色`,
+        card: characterCard,
+        projectId: selectedProjectId || undefined,
+        masterAssetId: targetAsset.id,
+        group: "lead",
+        lifecycle: "draft",
+      });
+      const collection = await window.studio.collections.create({
+        projectId: selectedProjectId || undefined,
+        characterProfileId: profile.id,
+        kind: "character",
+        name: `${profile.name} · 角色资产包`,
+        description: "由创作候选沉淀；继续补充多角度、表情、造型、动作与场景延展。",
+        status: "draft",
+      });
+      await window.studio.collections.attachAsset(collection.id, targetAsset.id, "角色主参考");
+      setCharacters((current) => [profile, ...current.filter((item) => item.id !== profile.id)]);
+      setCollections((current) => [collection, ...current.filter((item) => item.id !== collection.id)]);
+      if (activeTask) {
+        const task = await window.studio.tasks.update(activeTask.id, {
+          characterProfileId: profile.id,
+          collectionIds: [...new Set([...activeTask.collectionIds, collection.id])],
+          card: characterCard,
+          resultAssetId: targetAsset.id,
+        });
+        setCreativeTasks((current) => current.map((item) => item.id === task.id ? task : item));
+      }
+      setCard(characterCard);
+      setGuideCharacterId(profile.id);
+      await refresh();
+      setNotice(`已建立角色资产「${profile.name}」，主参考、资产包与当前创作任务已联动。`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "建立角色资产失败。");
     }
   };
   const openDomain = (
@@ -2263,7 +3288,7 @@ export default function App() {
     );
   };
   const domainSections = {
-    creation: [["workspace", "项目总览"], ["start", "新建创作单"], ["creation", "当前创作卡"]],
+    creation: [["workspace", "项目总览"], ["creation", "当前创作卡"]],
     assets: [["characters", "角色档案"], ["scenes", "场景档案"], ["collections", "资产包"], ["assets", "素材库"]],
     production: [["production", "批量生产"], ["shot", "镜头工作室"], ["review", "审片与母版"], ["jobs", "生成队列"]],
     templates: [["recipes", "方法卡"], ["paradigms", "画面范式"], ["learning", "学习收件箱"]],
@@ -2290,16 +3315,256 @@ export default function App() {
     });
   };
 
+  const currentCreationPreset = activeCreationPresetId
+    ? CREATION_PRESETS.find((item) => item.id === activeCreationPresetId)
+    : undefined;
+  const cardVisualPresetId = CREATION_PRESETS.some((item) => item.id === card.visualPresetId)
+    ? card.visualPresetId as CreationPresetId
+    : undefined;
+  const localDirectionPreviewSrc = activeCreationReferencePreview
+    ?? (activeCreationPresetId ? CREATION_PRESET_ARTWORKS[activeCreationPresetId] : undefined)
+    ?? (cardVisualPresetId ? CREATION_PRESET_ARTWORKS[cardVisualPresetId] : undefined);
+  const currentCharacterExtension = card.characterExtension
+    ? CHARACTER_EXTENSION_OPTIONS.find((item) => item.id === card.characterExtension?.kind)
+    : undefined;
+  const currentExtensionState = card.characterExtension && selectedCharacterWorkspace?.character.id === card.characterExtension.sourceCharacterId
+    ? selectedCharacterWorkspace.states.find((item) => item.id === card.characterExtension?.sourceStateId)
+    : undefined;
+  const activeCharacterExtensionSceneId = card.sceneDirectionId
+    ?? GUIDED_SCENES.find((item) => item.id !== "custom" && (card.scene.includes(item.label) || card.scene.includes(item.prompt)))?.id;
+  const characterExtensionNeedsScene = Boolean(
+    card.characterExtension
+    && ["story_scene", "dialogue_scene"].includes(card.characterExtension.kind)
+    && !card.sceneProfileId
+    && !card.scene.trim(),
+  );
+  const isStoryExtensionPlan = Boolean(
+    card.characterExtension
+    && ["story_scene", "dialogue_scene"].includes(card.characterExtension.kind),
+  );
+  const currentCreationPlanItems = currentCharacterExtension && card.characterExtension ? [
+    { label: "人物", value: selectedCharacterWorkspace?.character.name ?? characterName ?? "已锁定角色" },
+    {
+      label: "造型",
+      value: card.characterExtension.kind === "wardrobe_set"
+        ? "4 套造型"
+        : currentExtensionState?.wardrobe || "沿用角色造型",
+    },
+    {
+      label: "场景",
+      value: ["story_scene", "series_pack", "dialogue_scene", "dynamic_keyframe"].includes(card.characterExtension.kind)
+        ? GUIDED_SCENES.find((item) => item.id === activeCharacterExtensionSceneId)?.label
+          || currentExtensionState?.scene
+          || (characterExtensionNeedsScene ? "请选择场景" : "沿用当前场景")
+        : "保持当前背景",
+    },
+    { label: "结果", value: currentCharacterExtension.result },
+  ] : card.storyPlan ? [
+    { label: "关系", value: GUIDED_STORY_RELATIONSHIPS.find((item) => item.id === card.storyPlan?.relationshipId)?.label ?? "人物关系" },
+    { label: "事件", value: GUIDED_STORY_MOMENTS.find((item) => item.id === card.storyPlan?.momentId)?.label ?? "剧情瞬间" },
+    { label: "节拍", value: GUIDED_STORY_PACING.find((item) => item.id === card.storyPlan?.pacingId)?.label ?? "叙事节拍" },
+    { label: "氛围", value: GUIDED_STORY_ATMOSPHERES.find((item) => item.id === card.storyPlan?.atmosphereId)?.label ?? "空间氛围" },
+  ] : [
+    {
+      label: "人物",
+      value: guideMode === "saved"
+        ? characters.find((item) => item.id === guideCharacterId)?.name ?? "已有角色"
+        : GUIDED_ROLES.find((item) => item.id === guideAppearance.role)?.label
+          ?? GUIDED_SUBJECTS.find((item) => item.id === guideSubjectChoice)?.label
+          ?? "原创角色",
+    },
+    { label: "造型", value: GUIDED_WARDROBES.find((item) => item.id === guideAppearance.wardrobe)?.label ?? "当前造型" },
+    { label: "场景", value: GUIDED_SCENES.find((item) => item.id === guideSceneChoice)?.label ?? "当前场景" },
+    { label: "画面", value: `${GUIDED_SHOTS.find((item) => item.id === guideShotChoice)?.label ?? "人物画面"} · ${GUIDED_VISUAL_STYLES.find((item) => item.id === guideVisualStyle)?.label ?? "默认风格"}` },
+  ];
+  const creationWorkspaceCopy = ({
+    portrait: { eyebrow: "单张画面", title: "单张创作台", emptyTitle: "画面方案已保存", emptyDescription: "确认人物与画面方向后，再生成候选。", pendingTitle: "先生成并选择画面" },
+    cover: { eyebrow: "封面画面", title: "封面创作台", emptyTitle: "封面方向已保存", emptyDescription: "确认主体和版式方向后，再生成候选。", pendingTitle: "先生成并选择封面" },
+    character_sheet: { eyebrow: "角色设定", title: "角色设定台", emptyTitle: "角色方案已保存", emptyDescription: "确认身份与结构后，再生成角色候选。", pendingTitle: "先生成并选择角色" },
+    story_scene: { eyebrow: "剧情场景", title: "场景创作台", emptyTitle: "剧情方案已保存", emptyDescription: "确认人物、动作与场景关系后，再生成候选。", pendingTitle: "先生成并选择场景" },
+    series_pack: { eyebrow: "系列镜头", title: "系列镜头台", emptyTitle: "镜头计划已保存", emptyDescription: "四个镜头会按当前顺序生成并保持角色连续。", pendingTitle: "先生成整组镜头" },
+    dynamic_keyframe: { eyebrow: "动态关键帧", title: "关键帧创作台", emptyTitle: "动作方案已保存", emptyDescription: "确认动作方向和运动空间后，再生成关键帧。", pendingTitle: "先生成并选择关键帧" },
+  } satisfies Record<CreativeDeliveryMode, { eyebrow: string; title: string; emptyTitle: string; emptyDescription: string; pendingTitle: string }>)[card.deliveryMode ?? "portrait"];
+  const creationStudioKind: CreationLaunchKind = resolveCreationKind(card);
+  const creationPlanStatus = ({
+    character: "角色方案已建立",
+    image: "单张画面方案已建立",
+    scene: card.sceneProfileId ? "剧情场景与场景资产已建立" : "剧情场景方案已建立",
+    series: "系列镜头计划已建立",
+  } satisfies Record<CreationLaunchKind, string>)[creationStudioKind];
+  const creationAssetCopy = ({
+    character: { title: "角色方案已经可以复用", description: "身份、造型和本轮调整已保存，可继续扩展角色资产。", status: "角色方案" },
+    image: { title: "单张画面方案已经归档", description: "人物、场景、构图和本轮调整已保存，可从同一方案继续创作。", status: "画面方案" },
+    scene: card.sceneProfileId
+      ? { title: "剧情与场景资产已经归档", description: "空间锚点、剧情骨架和场景状态已绑定，可继续扩展连续镜头。", status: "场景资产" }
+      : { title: "剧情方向已经确认", description: "把当前方向沉淀为场景资产后，可以继续管理空间、状态和连续镜头。", status: "待保存场景" },
+    series: { title: "系列镜头计划已经归档", description: "角色基线、镜头顺序和连续性约束已保存，可直接进入生产准备。", status: "镜头计划" },
+  } satisfies Record<CreationLaunchKind, { title: string; description: string; status: string }>)[creationStudioKind];
+  const localDirectionCandidates = buildCandidateVariations(
+    4,
+    card.deliveryMode ?? guideDirection,
+    card.candidatePlan,
+  );
+  const effectiveLocalDirectionId = localDirectionCandidates.some((item) => item.id === selectedLocalDirectionId)
+    ? selectedLocalDirectionId
+    : localDirectionCandidates[0]?.id ?? "";
+  const selectedLocalDirection = localDirectionCandidates.find((item) => item.id === effectiveLocalDirectionId);
+  const activeCreationRefinements = getCreationRefinements(card.deliveryMode);
+  const creationJourneyAvailable: CreationStudioStage[] = selectedCreationCandidate || confirmedLocalDirectionId
+    ? ["plan", "candidates", "refine", "asset"]
+    : ["plan", "candidates", "refine"];
+  const creationJourneyCompleted: CreationStudioStage[] = [
+    "plan",
+    ...(activeTaskCandidates.length || confirmedLocalDirectionId ? ["candidates" as const] : []),
+    ...(selectedCreationCandidate || localRefinementApplied ? ["refine" as const] : []),
+    ...(selectedCreationCandidate?.confirmation === "confirmed" || (creationStudioStage === "asset" && Boolean(confirmedLocalDirectionId)) ? ["asset" as const] : []),
+  ];
+
+  const openCreationLaunchpad = () => {
+    setNotice("");
+    setGuidedDraftTaskId("");
+    setActiveDomain("creation");
+    setCreationStudioStage("plan");
+    setSelectedLocalDirectionId("");
+    setConfirmedLocalDirectionId("");
+    setLocalRefinementApplied(false);
+    setScreen("launch");
+  };
+
+  const returnToCreationSetup = () => {
+    if (card.characterExtension) {
+      setActiveDomain("assets");
+      selectCharacter(card.characterExtension.sourceCharacterId);
+      setScreen("characters");
+      return;
+    }
+    if (card.deliveryMode === "series_pack" && card.candidatePlan?.length) {
+      setCreationLaunchKind("series");
+      setGuideDirection("series_pack");
+      setCreationCandidateCount(4);
+      setSeriesCandidatePlan(card.candidatePlan.map((item) => ({ ...item })));
+    }
+    if (card.deliveryMode === "story_scene" && card.storyPlan) {
+      setCreationLaunchKind("scene");
+      setGuideDirection("story_scene");
+      setGuideStoryPlan({
+        relationship: card.storyPlan.relationshipId as GuidedStoryPlan["relationship"],
+        moment: card.storyPlan.momentId as GuidedStoryPlan["moment"],
+        pacing: card.storyPlan.pacingId as GuidedStoryPlan["pacing"],
+        atmosphere: card.storyPlan.atmosphereId as GuidedStoryPlan["atmosphere"],
+      });
+    }
+    setScreen("start");
+  };
+
+  const applyCharacterCreationDraft = (draft: CharacterCreationDraft) => {
+    setCreationLaunchKind("character");
+    setGuideMode(draft.sourceMode);
+    setGuidePresetId(draft.presetId);
+    setGuideDirection(draft.direction);
+    setGuideCharacterId(draft.characterId);
+    setGuideReferenceAssetId(draft.referenceAssetId);
+    setGuideSceneProfileId(draft.sceneProfileId);
+    setGuideSubjectChoice(draft.subject);
+    setGuideSubject(draft.customSubject);
+    // 旧草稿缺少新字段时补齐默认值，避免升级后把用户已选内容判成无效。
+    setGuideAppearance({ ...DEFAULT_GUIDED_APPEARANCE, ...draft.appearance });
+    setGuideSceneChoice(draft.scene);
+    setGuideScene(draft.customScene);
+    setGuideMoodChoice(draft.mood);
+    setGuideShotChoice(draft.shot);
+    setGuideVisualStyle(draft.visualStyle);
+    setGuideAspectRatio(draft.aspectRatio);
+    setGuideConstraints([...draft.constraints]);
+    setGuideTrackerIds([...draft.trackerIds]);
+    setGuideCustomTrackers(draft.customTrackers.map((tracker) => ({ ...tracker, options: [...tracker.options] })));
+    setGuidePurpose(draft.purpose);
+    setQualityTier(draft.qualityTier);
+    setRestoredCharacterDraftAt(draft.updatedAt);
+    setScreen("start");
+    setNotice("");
+  };
+
+  const restartCharacterCreation = () => {
+    clearCharacterCreationDraft();
+    setCreationLaunchKind("character");
+    setGuideMode("new");
+    setGuidePresetId("oriental_moon");
+    setGuideDirection("character_sheet");
+    setGuideCharacterId("");
+    setGuideReferenceAssetId("");
+    setGuideSceneProfileId("");
+    setGuideSubjectChoice("adult_woman");
+    setGuideSubject("");
+    setGuideAppearance({ ...DEFAULT_GUIDED_APPEARANCE });
+    setGuideSceneChoice("ancient_east");
+    setGuideScene("");
+    setGuideMoodChoice("cool");
+    setGuideShotChoice("character_sheet");
+    setGuideVisualStyle("photoreal");
+    setGuideAspectRatio("2:3");
+    setGuideConstraints(["identity", "body", "hair", "wardrobe", "skin", "no_text"]);
+    setGuideTrackerIds([...DEFAULT_CHARACTER_TRACKER_IDS]);
+    setGuideCustomTrackers([]);
+    setGuidePurpose("portrait");
+    setQualityTier("premium");
+    setRestoredCharacterDraftAt("");
+    setNotice("已开始新的角色方案；选择会自动保存。");
+  };
+
+  const startCreationFlow = (kind: CreationLaunchKind) => {
+    if (kind === "character") {
+      const draft = loadCharacterCreationDraft();
+      if (draft) {
+        applyCharacterCreationDraft(draft);
+        return;
+      }
+    }
+    setCreationLaunchKind(kind);
+    setGuideMode("new");
+    setGuideCharacterId("");
+    setGuideReferenceAssetId("");
+    setGuideSceneProfileId("");
+    setCreationCandidateCount(kind === "series" ? 4 : 2);
+    setSeriesCandidatePlan(createDefaultSeriesPlan());
+    setGuideStoryPlan({ ...DEFAULT_GUIDED_STORY_PLAN });
+    setGuideTrackerIds([...DEFAULT_CHARACTER_TRACKER_IDS]);
+    setGuideCustomTrackers([]);
+    setRestoredCharacterDraftAt("");
+    if (kind === "character") {
+      setGuideAspectRatio("2:3");
+      setGuideDirection("character_sheet");
+      setGuideShotChoice("character_sheet");
+      setGuideConstraints(["identity", "body", "hair", "wardrobe", "skin", "no_text"]);
+    } else if (kind === "scene") {
+      setGuideAspectRatio("16:9");
+      setGuideDirection("story_scene");
+      setGuideShotChoice("full_body");
+      setGuideConstraints(["identity", "body", "hair", "skin", "no_text"]);
+    } else if (kind === "series") {
+      setGuideAspectRatio("9:16");
+      setGuideDirection("series_pack");
+      setGuideShotChoice("full_body");
+      setGuideConstraints(["identity", "body", "hair", "wardrobe", "skin", "no_text"]);
+    } else {
+      setGuideAspectRatio("2:3");
+      setGuideDirection("portrait");
+      setGuideShotChoice("half_body");
+      setGuideConstraints(["identity", "skin", "no_text"]);
+    }
+    setScreen("start");
+  };
+
   return (
-    <div className="app-shell">
-      <AdaptiveDomainNavigation
+    <div className={`app-shell ${screen === "start" || screen === "launch" ? "creator-focus-shell" : ""}`}>
+      {screen !== "start" && screen !== "launch" && <AdaptiveDomainNavigation
         activeDomain={activeDomain}
         connected={connected}
         onNavigate={openDomain}
         onOpenSettings={() => setScreen("settings")}
-      />
+      />}
       <div className="app-main">
-        <header className="context-bar">
+        {screen !== "start" && screen !== "launch" && <header className="context-bar">
           <div className="context-heading">
             <span className="context-domain">当前项目</span>
             <strong>{projectName ?? "全部项目"}</strong>
@@ -2314,95 +3579,246 @@ export default function App() {
               <option value="">全部项目</option>
               {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
             </select>
-            <button className="header-create" onClick={() => { setNotice(""); setActiveDomain("creation"); setScreen("start"); }}>新建创作任务</button>
+            <button className="header-create" onClick={openCreationLaunchpad}>新建创作任务</button>
             <nav className="domain-subnav" aria-label="当前工作域功能">
               {domainSections[activeDomain].map(([target, label]) => <button key={target} className={screen === target ? "selected" : ""} onClick={() => { setNotice(""); setScreen(target); }}>{label}</button>)}
             </nav>
           </div>
-        </header>
+        </header>}
       <main id="main-content" tabIndex={-1}>
+      {screen === "launch" && (
+        <CreationLaunchpad
+          characterCount={characters.length}
+          sceneCount={scenes.length}
+          referenceCount={selectableImages.length}
+          onSelect={startCreationFlow}
+          onExit={() => setScreen("workspace")}
+        />
+      )}
       {screen === "start" && (
-        <section className="workspace guided-workspace">
+        <>
+        <VisualCharacterCreator
+          creationKind={creationLaunchKind}
+          presetId={guidePresetId}
+          onPresetChange={setGuidePresetId}
+          direction={guideDirection}
+          onDirectionChange={(direction) => {
+            setGuideDirection(direction);
+            if (direction === "character_sheet") setGuideShotChoice("character_sheet");
+            else if (direction === "series_pack") {
+              setGuideShotChoice("full_body");
+              setCreationCandidateCount(4);
+            } else if (direction === "dynamic_keyframe") {
+              setGuideShotChoice("full_body");
+              setCreationCandidateCount(2);
+            } else if (guideShotChoice === "character_sheet") setGuideShotChoice(direction === "story_scene" ? "full_body" : "half_body");
+          }}
+          sourceMode={guideMode}
+          onSourceModeChange={setGuideMode}
+          subject={guideSubjectChoice}
+          onSubjectChange={setGuideSubjectChoice}
+          appearance={guideAppearance}
+          onAppearanceChange={(key, value) => setGuideAppearance((current) => ({ ...current, [key]: value }))}
+          scene={guideSceneChoice}
+          onSceneChange={setGuideSceneChoice}
+          mood={guideMoodChoice}
+          onMoodChange={setGuideMoodChoice}
+          storyPlan={guideStoryPlan}
+          onStoryPlanChange={(key, value) => setGuideStoryPlan((current) => ({ ...current, [key]: value }))}
+          shot={guideShotChoice}
+          onShotChange={setGuideShotChoice}
+          visualStyle={guideVisualStyle}
+          onVisualStyleChange={setGuideVisualStyle}
+          constraints={guideConstraints}
+          onConstraintToggle={(value) => setGuideConstraints((current) => current.includes(value) ? current.filter((id) => id !== value) : [...current, value])}
+          trackerIds={guideTrackerIds}
+          onTrackerToggle={(value) => setGuideTrackerIds((current) => current.includes(value) ? current.filter((id) => id !== value) : [...current, value])}
+          customTrackers={guideCustomTrackers}
+          onCustomTrackersChange={setGuideCustomTrackers}
+          characters={characters}
+          characterId={guideCharacterId}
+          onCharacterChange={setGuideCharacterId}
+          characterDetail={guideCharacterDetail}
+          purpose={guidePurpose}
+          onPurposeChange={setGuidePurpose}
+          variantSelections={characterVariantSelections[guideCharacterId] ?? {}}
+          onVariantChange={(kind, value) => setCharacterVariantSelections((current) => ({ ...current, [guideCharacterId]: { ...current[guideCharacterId], [kind]: value } }))}
+          referenceAssets={selectableImages}
+          referenceAssetId={guideReferenceAssetId}
+          onReferenceAssetChange={setGuideReferenceAssetId}
+          scenes={scenes}
+          sceneProfileId={guideSceneProfileId}
+          onSceneProfileChange={setGuideSceneProfileId}
+          customSubject={guideSubject}
+          onCustomSubjectChange={setGuideSubject}
+          customScene={guideScene}
+          onCustomSceneChange={setGuideScene}
+          previewAssetId={guideMode === "saved" ? characters.find((item) => item.id === guideCharacterId)?.masterAssetId : guideMode === "reference" ? guideReferenceAssetId : undefined}
+          preparing={isPreparingCreation || isGeneratingCandidates}
+          canGenerate={canGenerateCurrentImage}
+          candidateCount={creationCandidateCount}
+          onCandidateCountChange={setCreationCandidateCount}
+          seriesPlan={seriesCandidatePlan}
+          onSeriesPlanChange={setSeriesCandidatePlan}
+          qualityTier={qualityTier}
+          onQualityTierChange={(value) => { setQualityTier(value); setTranslation(undefined); }}
+          aspectRatio={guideAspectRatio}
+          onAspectRatioChange={setGuideAspectRatio}
+          onCreate={() => void beginGuidedCreation(false)}
+          onSave={() => void beginGuidedCreation(false, true)}
+          onSaveCharacter={completeGuidedCharacter}
+          onExit={() => setScreen("workspace")}
+          draftRestoredAt={restoredCharacterDraftAt}
+          onRestart={restartCharacterCreation}
+          onOpenSettings={() => setScreen("settings")}
+          notice={notice}
+            onNoticeDismiss={() => setNotice("")}
+        />
+        {false && (
+        <section className="workspace creation-launch-workspace">
           <header className="workspace-header">
             <div>
-              <p className="eyebrow">贴合优先 / 简易设定</p>
-              <h2>从一句创作意图开始</h2>
-              <p className="result-note">只填影响结果的内容，先锁定基线。</p>
+              <p className="eyebrow">创作流水线</p>
+              <h2>选几项，直接进入出图</h2>
+              <p className="result-note">系统自动组装提示词、参考资产、画幅和质量约束。</p>
             </div>
           </header>
-          <section className="guided-grid" aria-label="简易创作设定">
-            <article className="guided-step">
-              <span>01</span>
-              <h3>你从哪里开始？</h3>
-              <div className="choice-row">
+          <ol className="creation-pipeline" aria-label="创作流程">
+            <li className="pipeline-active"><span>1</span><strong>选择方向</strong><small>当前</small></li>
+            <li><span>2</span><strong>自动组装</strong><small>系统完成</small></li>
+            <li><span>3</span><strong>生成候选</strong><small>选出最佳</small></li>
+            <li><span>4</span><strong>审片入库</strong><small>沉淀资产</small></li>
+          </ol>
+          <section className="creation-launch-grid" aria-label="快速创作">
+            <article className="creation-brief-card">
+              <div className="creation-question">
+                <div className="creation-section-heading"><span>1. 做什么</span><small>选择交付类型</small></div>
+                <div className="direction-grid" role="group" aria-label="画面方向">
+                  {CREATION_DIRECTIONS.map((direction) => (
+                    <button
+                      key={direction.id}
+                      type="button"
+                      aria-pressed={guideDirection === direction.id}
+                      className={guideDirection === direction.id ? "direction-card direction-selected" : "direction-card"}
+                      onClick={() => {
+                        setGuideDirection(direction.id);
+                        if (direction.id === "character_sheet") setGuideShotChoice("character_sheet");
+                        else if (guideShotChoice === "character_sheet") setGuideShotChoice(direction.id === "story_scene" ? "full_body" : "half_body");
+                      }}
+                    >
+                      <strong>{direction.label}</strong>
+                      <small>{direction.description}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {guideMode === "new" && <div className="creation-question">
+                <div className="creation-section-heading"><span>2. 画谁</span><small>原创主体</small></div>
+                <div className="choice-chip-grid" role="group" aria-label="人物主体">
+                  {GUIDED_SUBJECTS.map((option) => <button type="button" key={option.id} aria-pressed={guideSubjectChoice === option.id} className={guideSubjectChoice === option.id ? "choice-chip choice-selected" : "choice-chip"} onClick={() => setGuideSubjectChoice(option.id)}>{option.label}</button>)}
+                </div>
+                {guideSubjectChoice === "custom" && <input autoFocus aria-label="自定义主体" value={guideSubject} onChange={(event) => setGuideSubject(event.target.value)} placeholder="只补充系统没有的主体" />}
+              </div>}
+              <div className="creation-question">
+                <div className="creation-section-heading"><span>{guideMode === "new" ? "3" : "2"}. 在哪里</span><small>选择场景世界</small></div>
+                <div className="choice-chip-grid" role="group" aria-label="场景世界">
+                  {GUIDED_SCENES.map((option) => <button type="button" key={option.id} aria-pressed={guideSceneChoice === option.id} className={guideSceneChoice === option.id ? "choice-chip choice-selected" : "choice-chip"} onClick={() => setGuideSceneChoice(option.id)}>{option.label}</button>)}
+                </div>
+                {guideSceneChoice === "custom" && <input autoFocus aria-label="自定义场景" value={guideScene} onChange={(event) => setGuideScene(event.target.value)} placeholder="只补充系统没有的场景" />}
+              </div>
+              <div className="creation-question split-question">
+                <div>
+                  <div className="creation-section-heading"><span>{guideMode === "new" ? "4" : "3"}. 什么感觉</span></div>
+                  <div className="choice-chip-grid" role="group" aria-label="画面气质">
+                    {GUIDED_MOODS.map((option) => <button type="button" key={option.id} aria-pressed={guideMoodChoice === option.id} className={guideMoodChoice === option.id ? "choice-chip choice-selected" : "choice-chip"} onClick={() => setGuideMoodChoice(option.id)}>{option.label}</button>)}
+                  </div>
+                </div>
+                <div>
+                  <div className="creation-section-heading"><span>{guideMode === "new" ? "5" : "4"}. 怎么拍</span></div>
+                  <div className="choice-chip-grid" role="group" aria-label="镜头范围">
+                    {GUIDED_SHOTS.map((option) => <button type="button" key={option.id} aria-pressed={guideShotChoice === option.id} className={guideShotChoice === option.id ? "choice-chip choice-selected" : "choice-chip"} onClick={() => setGuideShotChoice(option.id)}>{option.label}</button>)}
+                  </div>
+                </div>
+              </div>
+              <div className="creation-question">
+                <div className="creation-section-heading"><span>{guideMode === "new" ? "6" : "5"}. 什么质感</span><small>决定整套视觉语言</small></div>
+                <div className="choice-chip-grid" role="group" aria-label="视觉质感">
+                  {GUIDED_VISUAL_STYLES.map((option) => <button type="button" key={option.id} aria-pressed={guideVisualStyle === option.id} className={guideVisualStyle === option.id ? "choice-chip choice-selected" : "choice-chip"} onClick={() => setGuideVisualStyle(option.id)}>{option.label}</button>)}
+                </div>
+              </div>
+            </article>
+            <aside className="creation-context-card">
+              <div className="creation-section-heading">
+                <span>人物来源</span>
+                <small>原创、沿用角色或参考图</small>
+              </div>
+              <div className="source-switch" role="group" aria-label="创作依据">
                 {([
-                  ["new", "新建一个角色"],
-                  ["saved", "用已保存角色"],
-                  ["reference", "按参考图创作"],
+                  ["new", "原创角色"],
+                  ["saved", "已存角色"],
+                  ["reference", "参考图"],
                 ] as const).map(([mode, label]) => (
-                  <button key={mode} className={guideMode === mode ? "choice-selected" : ""} onClick={() => setGuideMode(mode)}>{label}</button>
+                  <button type="button" key={mode} aria-pressed={guideMode === mode} className={guideMode === mode ? "source-selected" : ""} onClick={() => setGuideMode(mode)}>{label}</button>
                 ))}
               </div>
               {guideMode === "saved" && (
-                <label>选择角色
+                <label>角色
                   <select value={guideCharacterId} onChange={(event) => setGuideCharacterId(event.target.value)}>
-                    <option value="">请选择</option>
-                    {characters.filter((profile) => profile.lifecycle !== "archived").map((profile) => <option value={profile.id} key={profile.id}>{CHARACTER_GROUP_LABELS[profile.group]} · {profile.name}</option>)}
+                    <option value="">选择角色</option>
+                    {characters.filter((profile) => profile.lifecycle !== "archived").map((profile) => <option value={profile.id} key={profile.id}>{profile.name}</option>)}
                   </select>
                 </label>
               )}
-              {guideMode === "saved" && guideCharacterDetail?.id === guideCharacterId && <div className="guide-variant-panel">
-                <label>本轮用途<select value={guidePurpose} onChange={(event) => setGuidePurpose(event.target.value as CharacterUseCase)}><option value="portrait">肖像</option><option value="full_body">全身设定</option><option value="series">连续镜头</option></select></label>
-                {(["look", "expression", "pose", "scene"] as CharacterVariantKind[]).map((kind) => <label key={kind}>{kind === "look" ? "造型" : kind === "expression" ? "表情" : kind === "pose" ? "动作" : "情境"}
-                  <select value={characterVariantSelections[guideCharacterDetail.id]?.[kind] ?? ""} onChange={(event) => setCharacterVariantSelections((current) => ({ ...current, [guideCharacterDetail.id]: { ...current[guideCharacterDetail.id], [kind]: event.target.value || undefined } }))}>
-                    <option value="">基础配置</option>{guideCharacterDetail.variants.filter((item) => item.kind === kind).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                  </select>
-                </label>)}
-                <p>本轮还缺 {evaluateCharacterCoverage(guideCharacterDetail, guidePurpose, characterVariantSelections[guideCharacterId]).missingRequiredKeys.length} 个必需细项；只继承已确认且来源有效的设定。</p>
-              </div>}
-              {guideMode === "reference" && (<>
-                <label>选择参考图
+              {guideMode === "reference" && (
+                <label>参考图
                   <select value={guideReferenceAssetId} onChange={(event) => setGuideReferenceAssetId(event.target.value)}>
-                    <option value="">请选择</option>
+                    <option value="">选择已确认图片</option>
                     {selectableImages.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
                   </select>
                 </label>
-                {!selectableImages.length && <small>没有可生产参考图：先在资产库完成审片和使用权核实。</small>}
-              </>)}
-              {collections.length > 0 && (
-                <div className="guide-collections">
-                  <small>本次继承哪些资产包（可选）</small>
+              )}
+              {guideMode === "reference" && !selectableImages.length && <small className="context-warning">暂无可用图片，请先到资产库完成审片与权利确认。</small>}
+              <label>场景来源
+                <select value={guideSceneProfileId} onChange={(event) => setGuideSceneProfileId(event.target.value)}>
+                  <option value="">使用左侧场景方向</option>
+                  {scenes.filter((scene) => scene.lifecycle !== "archived").map((scene) => <option value={scene.id} key={scene.id}>{scene.name}</option>)}
+                </select>
+              </label>
+              <div className="creation-section-heading constraint-heading"><span>保持什么</span><small>可多选</small></div>
+              <div className="choice-chip-grid constraint-grid" role="group" aria-label="生成约束">
+                {GUIDED_CONSTRAINTS.map((option) => <button type="button" key={option.id} aria-pressed={guideConstraints.includes(option.id)} className={guideConstraints.includes(option.id) ? "choice-chip choice-selected" : "choice-chip"} onClick={() => setGuideConstraints((current) => current.includes(option.id) ? current.filter((id) => id !== option.id) : [...current, option.id])}>{option.label}</button>)}
+              </div>
+              <button type="button" className="subtle-button" aria-expanded={showGuideOptions} onClick={() => setShowGuideOptions((value) => !value)}>
+                {showGuideOptions ? "收起已有资产" : "使用更多已有资产"}
+              </button>
+              {showGuideOptions && <div className="creation-options">
+                {guideMode === "saved" && guideCharacterDetail?.id === guideCharacterId && <>
+                  <label>用途<select value={guidePurpose} onChange={(event) => setGuidePurpose(event.target.value as CharacterUseCase)}><option value="portrait">肖像</option><option value="full_body">全身设定</option><option value="series">连续镜头</option></select></label>
+                  {(["look", "expression", "pose", "scene"] as CharacterVariantKind[]).map((kind) => <label key={kind}>{kind === "look" ? "造型" : kind === "expression" ? "表情" : kind === "pose" ? "动作" : "情境"}
+                    <select value={characterVariantSelections[guideCharacterDetail!.id]?.[kind] ?? ""} onChange={(event) => setCharacterVariantSelections((current) => ({ ...current, [guideCharacterDetail!.id]: { ...current[guideCharacterDetail!.id], [kind]: event.target.value || undefined } }))}>
+                      <option value="">使用角色默认</option>{guideCharacterDetail!.variants.filter((item) => item.kind === kind).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                  </label>)}
+                </>}
+                {collections.length > 0 && <div className="guide-collections">
+                  <small>继承资产包</small>
                   <div className="choice-row">
                     {collections.filter((collection) => collection.status !== "archived").map((collection) => (
-                      <button key={collection.id} className={guideCollectionIds.includes(collection.id) ? "choice-selected" : ""} onClick={() => setGuideCollectionIds((current) => current.includes(collection.id) ? current.filter((id) => id !== collection.id) : [...current, collection.id])}>{collection.name}</button>
+                      <button type="button" key={collection.id} className={guideCollectionIds.includes(collection.id) ? "choice-selected" : ""} onClick={() => setGuideCollectionIds((current) => current.includes(collection.id) ? current.filter((id) => id !== collection.id) : [...current, collection.id])}>{collection.name}</button>
                     ))}
                   </div>
-                </div>
-              )}
-            </article>
-            <article className="guided-step guided-step-wide">
-              <span>02</span>
-              <h3>这次要做什么？</h3>
-              <label>一句话目标（必填）
-                <textarea value={guideGoal} onChange={(event) => setGuideGoal(event.target.value)} placeholder="例如：为蝶灵角色做一张夜晚温室的真人感全身时装图" />
-              </label>
-              {guideMode !== "saved" && <label>人物主体（没有参考图时必填）
-                <input value={guideSubject} onChange={(event) => setGuideSubject(event.target.value)} placeholder="例如：25 岁原创成年东亚女性，清冷但有力量感" />
-              </label>}
-              <label>这次变化的场景或动作（可选）
-                <input value={guideScene} onChange={(event) => setGuideScene(event.target.value)} placeholder="例如：雨后玻璃温室，缓慢回头看向镜头" />
-              </label>
-            </article>
-            <article className="guided-step guided-lock">
-              <span>03</span>
-              <h3>必须保持</h3>
-              <p>这是贴合度的核心。只写最不能漂移的 1—3 件事。</p>
-              <textarea value={guideMustKeep} onChange={(event) => setGuideMustKeep(event.target.value)} placeholder="例如：脸型和黑色长发不变；保持真实皮肤；不要文字和水印" />
-              <button className="primary-button" onClick={() => void beginGuidedCreation()}>建立创作基线</button>
-            </article>
+                </div>}
+              </div>}
+              <div className="creation-launch-action">
+                <button className="primary-button" disabled={isPreparingCreation} onClick={() => void beginGuidedCreation()}>{isPreparingCreation ? "正在自动组装…" : "自动组装并进入出图"}</button>
+                <small>下一步只看方案和生成结果，不再填写提示词。</small>
+              </div>
+            </aside>
           </section>
           {notice && <p className="notice" role="status">{notice}</p>}
         </section>
+        )}
+        </>
       )}
       {screen === "characters" && (
         <section className="workspace character-workspace">
@@ -2465,13 +3881,16 @@ export default function App() {
           <section className="character-catalog" aria-label="角色档案库">
             {characters.map((profile) => (
               <article className={selectedCharacterId === profile.id ? "character-profile character-current" : "character-profile"} key={profile.id}>
-                <div>
-                  <span className="pattern-status">{CHARACTER_GROUP_LABELS[profile.group]}</span>
-                  <h3>{profile.name}</h3>
-                  <p>{profile.card.identityAnchor || profile.card.subject || "尚未填写身份锚点"}</p>
-                  <small>{profile.masterAssetId ? "已绑定主参考图" : "尚未绑定主参考图"} · {CHARACTER_LIFECYCLE_LABELS[profile.lifecycle]}</small>
-                </div>
-                <div className="character-actions">
+                <button type="button" className="character-profile-open" aria-label={`打开角色 ${profile.name}`} aria-pressed={selectedCharacterId === profile.id} onClick={() => selectCharacter(profile.id)}>
+                  <CharacterProfileVisual profile={profile} />
+                  <span className="character-profile-copy">
+                    <span className="pattern-status">{CHARACTER_GROUP_LABELS[profile.group]}</span>
+                    <strong>{profile.name}</strong>
+                    <span>{profile.card.identityAnchor || profile.card.subject || "等待补充身份锚点"}</span>
+                    <small>{CHARACTER_LIFECYCLE_LABELS[profile.lifecycle]}</small>
+                  </span>
+                </button>
+                {selectedCharacterId === profile.id && <div className="character-actions">
                   <label>角色组
                     <select value={profile.group} onChange={(event) => void updateCharacterManagement(profile, { group: event.target.value as CharacterGroup })}>
                       {Object.entries(CHARACTER_GROUP_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -2482,10 +3901,10 @@ export default function App() {
                       {Object.entries(CHARACTER_LIFECYCLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                     </select>
                   </label>
-                  <button onClick={() => { setGuideMode("saved"); setGuideCharacterId(profile.id); setGuideCollectionIds(collections.filter((collection) => collection.characterProfileId === profile.id).map((collection) => collection.id)); setGuideGoal(""); setGuideMustKeep(""); setScreen("start"); }}>用此角色做新场景</button>
-                  <button className="primary-button" onClick={() => selectCharacter(profile.id)}>管理细项</button>
+                  <button onClick={() => { setCreationLaunchKind("scene"); setGuideMode("saved"); setGuideCharacterId(profile.id); setGuideCollectionIds(collections.filter((collection) => collection.characterProfileId === profile.id).map((collection) => collection.id)); setGuideSceneChoice("modern_city"); setScreen("start"); }}>用此角色做新场景</button>
+                  <button className="primary-button" onClick={() => selectCharacter(profile.id)}>打开工作室</button>
                   <button type="button" onClick={() => void openMasterPicker(profile)}>{profile.masterAssetId ? "更换主参考图" : "选择主参考图"}</button>
-                </div>
+                </div>}
                 {masterPickerCharacterId === profile.id && <div className="character-master-picker" aria-label={`${profile.name}的主参考图管理`}>
                   <strong>{profile.masterAssetId ? "更换角色主参考" : "绑定角色主参考"}</strong>
                   <p>{profile.projectId ? "仅显示本项目" : "仅显示未归属项目"}的已确认图片。</p>
@@ -2513,16 +3932,48 @@ export default function App() {
           </section>
           <div className="character-detail-stack">
           {selectedCharacterId && (selectedCharacterDetail?.id !== selectedCharacterId || selectedCharacterWorkspace?.character.id !== selectedCharacterId) && <p role="status">正在读取角色工作室…</p>}
-          {selectedCharacterWorkspace?.character.id === selectedCharacterId && <CharacterWorkspacePanel
+          {selectedCharacterId && selectedCharacterDetail?.id === selectedCharacterId && selectedCharacterWorkspace?.character.id === selectedCharacterId && <section className="character-center-switcher" aria-label="角色管理模式">
+            <div className="character-center-context">
+              <span>当前角色</span>
+              <strong>{selectedCharacterDetail.name}</strong>
+            </div>
+            <div className="character-center-tabs" role="tablist" aria-label="角色工作区视图">
+              <button
+                type="button"
+                role="tab"
+                id="character-workspace-tab"
+                aria-selected={characterCenterView === "workspace"}
+                aria-controls="character-workspace-panel"
+                className={characterCenterView === "workspace" ? "character-center-tab is-active" : "character-center-tab"}
+                onClick={() => setCharacterCenterView("workspace")}
+              >
+                <strong>创作与复用</strong>
+                <small>版本、状态与衍生图</small>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="character-details-tab"
+                aria-selected={characterCenterView === "details"}
+                aria-controls="character-details-panel"
+                className={characterCenterView === "details" ? "character-center-tab is-active" : "character-center-tab"}
+                onClick={() => setCharacterCenterView("details")}
+              >
+                <strong>细节设定</strong>
+                <small>身份、外观与素材证据</small>
+              </button>
+            </div>
+          </section>}
+          {characterCenterView === "workspace" && selectedCharacterWorkspace?.character.id === selectedCharacterId && <div id="character-workspace-panel" role="tabpanel" aria-labelledby="character-workspace-tab"><CharacterWorkspacePanel
             snapshot={selectedCharacterWorkspace}
             onChanged={(workspace) => {
               setSelectedCharacterWorkspace(workspace);
               setSelectedCharacterDetail(workspace.character);
               setCharacters((current) => current.map((item) => item.id === workspace.character.id ? workspace.character : item));
             }}
-            onStartImage={(context) => startCharacterImageCreation(selectedCharacterWorkspace, context)}
-          />}
-          {selectedCharacterDetail?.id === selectedCharacterId && <CharacterInspector
+            onStartCreation={(context) => void startCharacterExtensionCreation(selectedCharacterWorkspace, context)}
+          /></div>}
+          {characterCenterView === "details" && selectedCharacterDetail?.id === selectedCharacterId && <div id="character-details-panel" role="tabpanel" aria-labelledby="character-details-tab"><CharacterInspector
             key={selectedCharacterDetail.id}
             detail={selectedCharacterDetail}
             selection={characterVariantSelections[selectedCharacterDetail.id] ?? {}}
@@ -2531,7 +3982,7 @@ export default function App() {
             onCreateVariant={(kind, name) => addCharacterVariant(selectedCharacterDetail.id, kind, name)}
             onOpenAsset={(assetId) => { setSelectedAssetId(assetId); setScreen("assets"); }}
             onOpenLibrary={() => setScreen("assets")}
-          />}
+          /></div>}
           {!selectedCharacterId && characters.length > 0 && <div className="empty-state character-placeholder"><strong>选择角色，开始核对</strong><p>按用途补齐素材证据。</p></div>}
           </div>
           </div>}
@@ -2585,24 +4036,30 @@ export default function App() {
         </section>
       )}
       {screen === "workspace" && (
-        <section className="workspace project-workspace">
-          <header className="workspace-header">
+        <section className="workspace project-workspace creation-home-workspace">
+          <CreationLaunchpad
+            embedded
+            characterCount={characters.length}
+            sceneCount={scenes.length}
+            referenceCount={selectableImages.length}
+            onSelect={startCreationFlow}
+            onExit={() => document.getElementById("creation-projects")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          />
+          <section id="creation-projects" className="creation-home-management" aria-label="项目与历史">
+          <header className="workspace-header creation-management-header">
             <div>
-              <p className="eyebrow">创作主线 / {projectName ?? "尚未选择项目"}</p>
-              <h2>把创作收敛成可复用项目</h2>
+              <p className="eyebrow">项目与历史</p>
+              <h2>{selectedProjectId ? projectName : "需要长期管理时，再建立项目"}</h2>
+              <p className="result-note">项目负责归档任务、角色与结果，不阻挡快速创作。</p>
             </div>
-            {selectedProjectId && (
-              <button className="primary-button" onClick={() => setScreen("creation")}>
-                从创作卡开始
-              </button>
-            )}
+            {selectedProjectId && <button className="primary-button" onClick={() => setScreen("creation")}>继续当前创作</button>}
           </header>
           {!selectedProjectId ? (
             <section className="onboarding-panel" aria-label="建立第一个创作项目">
               <div className="onboarding-intro">
-                <span>开始工作</span>
-                <strong>先建项目，再组织角色、素材和出图。</strong>
-                <p>项目集中保存创作进度。</p>
+                <span>可选</span>
+                <strong>为长期创作建立项目。</strong>
+                <p>适合连续角色、批量镜头和需要追踪版本的工作。</p>
               </div>
               <div className="onboarding-form">
                 <label>项目名称
@@ -2613,11 +4070,10 @@ export default function App() {
                     {PROJECT_MEDIUMS.map((medium) => <option key={medium.value} value={medium.value}>{medium.label}</option>)}
                   </select>
                 </label>
-                <button className="primary-button" onClick={() => void createProject()}>创建第一个项目</button>
+                <button className="primary-button" onClick={() => void createProject()}>建立项目</button>
               </div>
               <div className="onboarding-options">
-                <button onClick={() => setScreen("start")}><strong>先做一张图</strong><span>跳过项目，直接开始。</span></button>
-                <button onClick={() => setScreen("assets")}><strong>先导入素材</strong><span>把参考图放入素材库。</span></button>
+                <button onClick={() => setScreen("assets")}><strong>导入已有素材</strong><span>把角色图、场景图和参考图放入资产库。</span></button>
               </div>
             </section>
           ) : (
@@ -2626,11 +4082,11 @@ export default function App() {
               <section className="task-board" aria-label="创作任务">
                 <div className="task-board-header">
                   <div><p className="eyebrow">创作任务</p><strong>每次创作都有记录</strong></div>
-                  <button className="primary-button" onClick={() => setScreen("start")}>新建任务</button>
+                  <button className="primary-button" onClick={openCreationLaunchpad}>新建任务</button>
                 </div>
                 <div className="task-grid">
                   {creativeTasks.slice(0, 6).map((task) => (
-                    <button className={activeTaskId === task.id ? "task-card task-current" : "task-card"} key={task.id} onClick={() => { setActiveTaskId(task.id); setCard(normalizeCreativeCard(task.card)); setPromptBuild(undefined); setScreen("creation"); }}>
+                    <button className={activeTaskId === task.id ? "task-card task-current" : "task-card"} key={task.id} onClick={() => void openCreativeTask(task)}>
                       <span>{taskStatusLabel(task.status)}</span>
                       <strong>{task.name}</strong>
                       <small>{task.objective}</small>
@@ -2639,27 +4095,42 @@ export default function App() {
                   {!creativeTasks.length && <p className="task-empty">还没有任务。创建后，角色、候选和母版会自动关联。</p>}
                 </div>
               </section>
-              <section className="form-panel brief-panel">
-                <div>
-                  <p className="eyebrow">项目简报 / 所有创作的共同验收标准</p>
-                  <p className="result-note">先写目标，细节在创作卡补充。</p>
+              <section className="form-panel brief-panel" aria-label="项目默认方案">
+                <div className="brief-panel-heading">
+                  <div>
+                    <p className="eyebrow">项目默认方案</p>
+                    <strong>点选后，后续任务自动沿用</strong>
+                  </div>
+                  <button type="button" onClick={() => setProjectBrief({
+                    goal: "建立可复用角色",
+                    audience: "竖屏漫剧",
+                    visualWorld: "写实东方幻想",
+                    delivery: "3 张候选",
+                    acceptance: "人物一致；真人质感；场景准确",
+                  })}>采用推荐组合</button>
                 </div>
-                <div className="form-grid">
-                  {([
-                    ["goal", "这次要完成什么", "例如：建立可连续使用的古风女主资产"],
-                    ["audience", "给谁看", "例如：竖屏漫剧观众"],
-                    ["visualWorld", "整体视觉世界", "例如：写实东方幻想、夜色电影感"],
-                    ["delivery", "最后要交付什么", "例如：角色定妆、三张场景图、一个镜头"],
-                    ["acceptance", "怎样算这次成功", "例如：换场景仍能一眼认出同一角色"],
-                  ] as Array<[keyof ProjectBrief, string, string]>).map(([key, label, placeholder]) => (
-                    <label key={key}>
-                      {label}
-                      <textarea value={projectBrief[key]} placeholder={placeholder} onChange={(event) => setProjectBrief((current) => ({ ...current, [key]: event.target.value }))} />
-                    </label>
-                  ))}
+                <div className="brief-choice-layout">
+                  {(Object.keys(PROJECT_BRIEF_OPTIONS) as ProjectBriefSingleKey[]).map((key) => {
+                    const group = PROJECT_BRIEF_OPTIONS[key];
+                    const custom = projectBrief[key] === "自定义" || isCustomBriefValue(key, projectBrief[key]);
+                    return <section className="brief-question" key={key} aria-label={group.label}>
+                      <strong>{group.label}</strong>
+                      <div className="choice-chip-grid">
+                        {group.options.map((option) => <button type="button" key={option} aria-pressed={projectBrief[key] === option} className={projectBrief[key] === option ? "choice-chip choice-selected" : "choice-chip"} onClick={() => setProjectBrief((current) => ({ ...current, [key]: option }))}>{option}</button>)}
+                        <button type="button" aria-pressed={custom} className={custom ? "choice-chip choice-selected" : "choice-chip"} onClick={() => setProjectBrief((current) => ({ ...current, [key]: "自定义" }))}>自定义</button>
+                      </div>
+                      {custom && <input autoFocus aria-label={`${group.label}自定义`} value={projectBrief[key] === "自定义" ? "" : projectBrief[key]} onChange={(event) => setProjectBrief((current) => ({ ...current, [key]: event.target.value || "自定义" }))} placeholder="只补充现有选项没有的内容" />}
+                    </section>;
+                  })}
+                  <section className="brief-question brief-acceptance" aria-label="验收重点">
+                    <strong>验收重点 <small>可多选</small></strong>
+                    <div className="choice-chip-grid">
+                      {PROJECT_ACCEPTANCE_OPTIONS.map((option) => <button type="button" key={option} aria-pressed={hasAcceptance(projectBrief, option)} className={hasAcceptance(projectBrief, option) ? "choice-chip choice-selected" : "choice-chip"} onClick={() => setProjectBrief((current) => ({ ...current, acceptance: toggleAcceptance(current.acceptance, option) }))}>{option}</button>)}
+                    </div>
+                  </section>
                 </div>
                 <div className="form-actions">
-                  <button onClick={() => void saveProjectBrief()}>保存项目简报</button>
+                  <button className="primary-button" onClick={() => void saveProjectBrief()}>保存项目默认方案</button>
                 </div>
               </section>
               <section className="workspace-next">
@@ -2692,6 +4163,7 @@ export default function App() {
               </section>
             </>
           )}
+          </section>
           {notice && <p className="notice" role="status">{notice}</p>}
         </section>
       )}
@@ -3232,15 +4704,34 @@ export default function App() {
           </section>
         </section>
       )}
-      {screen === "creation" && (
+      {screen === "creation" && !activeTaskId && !activeCharacterContext && !activeSceneContext && !promptBuild && (
+        <section className="workspace creation-empty-workspace">
+          <section className="creation-empty-state">
+            <p className="eyebrow">当前没有创作方案</p>
+            <h2>先选角色，再进入生成</h2>
+            <p>通过视觉选项塑造人物，不必先写提示词。</p>
+            <button className="primary-button" onClick={openCreationLaunchpad}>开始新创作</button>
+          </section>
+        </section>
+      )}
+      {screen === "creation" && Boolean(activeTaskId || activeCharacterContext || activeSceneContext || promptBuild) && (
         <section className="workspace">
           <header className="workspace-header">
             <div>
-              <p className="eyebrow">当前任务 / 模块化提示词</p>
-              <h2>{creativeTasks.find((task) => task.id === activeTaskId)?.name ?? "先建立一个创作任务"}</h2>
-              <p className="result-note">{activeTaskId ? "人物、候选和结果都会回写到此任务。" : "先建任务，再开始出图。"}</p>
+              <p className="eyebrow">{creationWorkspaceCopy.eyebrow}</p>
+              <h2>{creationWorkspaceCopy.title}</h2>
+              <p className="result-note">{creativeTasks.find((task) => task.id === activeTaskId)?.name ?? "当前角色方案"}</p>
             </div>
           </header>
+          <CreationStudioJourney
+            kind={creationStudioKind}
+            active={creationStudioStage}
+            available={creationJourneyAvailable}
+            completed={creationJourneyCompleted}
+            onChange={setCreationStudioStage}
+          />
+          {characterReferenceIssues && <p className="notice notice-warning" role="alert">{characterReferenceIssues}</p>}
+          {notice && <p className="notice creation-global-notice" role="status">{notice}</p>}
           {activeCharacterContext && selectedCharacterWorkspace?.character.id === activeCharacterContext.profileId && (
             <section className="creation-character-context" aria-label="本轮角色上下文">
               <div>
@@ -3282,195 +4773,380 @@ export default function App() {
               </div>
             </section>
           )}
-          <section className="form-panel">
+          {creationStudioStage === "plan" && <section className="creation-plan-panel" aria-label="创作方案">
+            <header className={`creation-plan-header creation-plan-visual-header ${currentCreationPreset && activeCreationPresetId ? "" : "without-cover"}`}>
+              {currentCreationPreset && activeCreationPresetId && (
+                <figure className="creation-plan-cover">
+                  <img src={CREATION_PRESET_ARTWORKS[activeCreationPresetId]} alt={`${currentCreationPreset.label}创作方向`} />
+                  <figcaption>{currentCreationPreset.label}</figcaption>
+                </figure>
+              )}
+              <div className="creation-plan-overview">
+                <p className="eyebrow">{currentCharacterExtension ? "角色衍生方案已建立" : creationPlanStatus}</p>
+                <h3>{currentCreationPreset?.label ?? creativeTasks.find((task) => task.id === activeTaskId)?.name ?? "当前创作"}</h3>
+                <div className={`creation-plan-facts ${isStoryExtensionPlan ? "creation-plan-facts-compact" : ""}`} aria-label="创作方案摘要">
+                  {currentCreationPlanItems.map((item) => <div key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}
+                </div>
+              </div>
+              <div className="plan-header-actions">
+                <button type="button" onClick={returnToCreationSetup}>返回调整</button>
+                {creationStudioKind === "character" && !activeTask?.characterProfileId && <button type="button" onClick={() => void saveCharacter()}>保存为角色</button>}
+                {creationStudioKind === "scene" && card.sceneProfileId && <button type="button" onClick={() => {
+                  setSelectedSceneId(card.sceneProfileId ?? "");
+                  setActiveDomain("assets");
+                  setScreen("scenes");
+                }}>查看场景资产</button>}
+                {creationStudioKind === "series" && <button type="button" onClick={() => { setActiveDomain("production"); setScreen("production"); }}>进入生产准备</button>}
+                {creationStudioKind === "image" && <button type="button" onClick={() => void saveCurrentTask()}>保存当前方案</button>}
+                {creationStudioKind === "character" && <button type="button" aria-expanded={showReuseTools} onClick={() => setShowReuseTools((value) => !value)}>保存与复用</button>}
+                {!isStoryExtensionPlan && <button type="button" aria-expanded={showAdvancedCreation} onClick={() => setShowAdvancedCreation((value) => !value)}>{showAdvancedCreation ? "收起设置" : "更多设置"}</button>}
+              </div>
+            </header>
+            {!isStoryExtensionPlan && card.characterExtension && currentCharacterExtension && (
+              <section className="creation-extension-summary" aria-label="当前角色衍生任务">
+                <span className="character-extension-marker" aria-hidden="true">{currentCharacterExtension.marker}</span>
+                <div>
+                  <span>基于已锁定角色</span>
+                  <strong>{currentCharacterExtension.label}</strong>
+                  <small>{currentCharacterExtension.result} · 可回溯至角色、版本与状态</small>
+                </div>
+                <div className="creation-extension-provenance">
+                  <span>角色 {selectedCharacterWorkspace?.character.name ?? characterName ?? "已锁定"}</span>
+                  <span>{card.characterExtension.sourceVersionId ? "版本已锁定" : "当前档案"}</span>
+                  <span>{card.characterExtension.sourceStateId ? "状态已锁定" : "基础状态"}</span>
+                </div>
+              </section>
+            )}
+            {isStoryExtensionPlan && currentCharacterExtension ? <div className="creation-plan-focus-layout">
+              <div className="creation-plan-focus-main">
+                {!card.sceneProfileId ? <section className="creation-extension-scene-picker" aria-label="选择剧情场景">
+                  <header>
+                    <div><span>只需完成当前选择</span><strong>这段剧情发生在哪里？</strong></div>
+                    <small>点击画面即可，不用填写描述</small>
+                  </header>
+                  <div>
+                    {GUIDED_SCENES.filter((option) => option.id !== "custom").map((option) => <button
+                      type="button"
+                      key={option.id}
+                      aria-pressed={activeCharacterExtensionSceneId === option.id}
+                      className={activeCharacterExtensionSceneId === option.id ? "selected" : ""}
+                      onClick={() => void selectCharacterExtensionScene(option.id)}
+                    >
+                      {SCENE_ARTWORKS[option.id] && <img src={SCENE_ARTWORKS[option.id]} alt="" />}
+                      <span><strong>{option.label}</strong><small>{option.prompt}</small></span>
+                    </button>)}
+                  </div>
+                </section> : <section className="creation-plan-saved-scene" aria-label="已锁定剧情场景">
+                  <span className="context-avatar scene-avatar" aria-hidden="true">景</span>
+                  <div><small>场景已锁定</small><strong>{selectedSceneWorkspace?.scene.name ?? "当前场景资产"}</strong><p>空间基线与状态已经进入本轮剧情方案。</p></div>
+                  <button type="button" onClick={() => {
+                    setSelectedSceneId(card.sceneProfileId ?? "");
+                    setActiveDomain("assets");
+                    setScreen("scenes");
+                  }}>查看场景</button>
+                </section>}
+                <details className="creation-plan-details">
+                  <summary>查看已锁定内容</summary>
+                  <section className="creation-extension-summary" aria-label="当前角色衍生任务">
+                    <span className="character-extension-marker" aria-hidden="true">{currentCharacterExtension.marker}</span>
+                    <div>
+                      <span>基于已锁定角色</span>
+                      <strong>{currentCharacterExtension.label}</strong>
+                      <small>{currentCharacterExtension.result} · 可回溯至角色、版本与状态</small>
+                    </div>
+                    <div className="creation-extension-provenance">
+                      <span>角色 {selectedCharacterWorkspace?.character.name ?? characterName ?? "已锁定"}</span>
+                      <span>{card.characterExtension?.sourceVersionId ? "版本已锁定" : "当前档案"}</span>
+                      <span>{card.characterExtension?.sourceStateId ? "状态已锁定" : "基础状态"}</span>
+                    </div>
+                  </section>
+                  {card.candidatePlan?.length ? <section className="creation-sequence-summary" aria-label="当前执行计划">
+                    <header><span>执行计划</span><strong>{card.candidatePlan.length} 个创作项</strong></header>
+                    <ol>
+                      {card.candidatePlan.map((item, index) => <li key={`${index}-${item.id}`}>
+                        <i>{String(index + 1).padStart(2, "0")}</i>
+                        <span><strong>{item.label}</strong><small>{item.directive}</small></span>
+                      </li>)}
+                    </ol>
+                  </section> : null}
+                  {card.characterCore && <section className="creation-character-core-summary" aria-label="当前角色内核">
+                    <header><span>角色内核</span><strong>已写入人物资产</strong></header>
+                    <div>
+                      {[
+                        ["身份", GUIDED_ROLES.find((item) => item.id === card.characterCore?.roleId)?.label],
+                        ["性格", GUIDED_MOODS.find((item) => item.id === card.characterCore?.personalityId)?.label],
+                        ["声线", GUIDED_VOICES.find((item) => item.id === card.characterCore?.voiceId)?.label],
+                        ["关系", GUIDED_RELATIONSHIPS.find((item) => item.id === card.characterCore?.relationshipId)?.label],
+                        ["兴趣", GUIDED_INTERESTS.find((item) => item.id === card.characterCore?.interestId)?.label],
+                        ["表演", GUIDED_PERFORMANCES.find((item) => item.id === card.characterCore?.performanceId)?.label],
+                        ["原型", GUIDED_ARCHETYPES.find((item) => item.id === card.characterCore?.archetypeId)?.label],
+                        ["目标", GUIDED_DRIVES.find((item) => item.id === card.characterCore?.driveId)?.label],
+                        ["冲突", GUIDED_CONFLICTS.find((item) => item.id === card.characterCore?.conflictId)?.label],
+                        ["开场", GUIDED_OPENINGS.find((item) => item.id === card.characterCore?.openingId)?.label],
+                      ].map(([label, value]) => <p key={label}><span>{label}</span><strong>{value ?? "未设置"}</strong></p>)}
+                    </div>
+                  </section>}
+                </details>
+              </div>
+              <aside className="creation-plan-focus-rail" aria-label="本次创作摘要">
+                <div><p className="eyebrow">本次创作</p><h4>{currentCharacterExtension.label}</h4></div>
+                <div className="creation-plan-facts">
+                  {currentCreationPlanItems.map((item) => <div key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}
+                </div>
+                <div className="creation-plan-next">
+                  <span>{characterExtensionNeedsScene ? "选择一个场景即可继续" : "已保存到本地，可继续选择剧情方向"}</span>
+                  <button type="button" className="primary-button" disabled={characterExtensionNeedsScene} onClick={() => setCreationStudioStage("candidates")}>{characterExtensionNeedsScene ? "请先选择场景" : "下一步 · 选择方向"}</button>
+                </div>
+              </aside>
+            </div> : <>
+            {card.candidatePlan?.length && (
+              <section className="creation-sequence-summary" aria-label={card.deliveryMode === "series_pack" ? "当前镜头计划" : "当前执行计划"}>
+                <header><span>{card.deliveryMode === "series_pack" ? "镜头计划" : "执行计划"}</span><strong>{card.candidatePlan.length} 个生成项</strong></header>
+                <ol>
+                  {card.candidatePlan.map((item, index) => <li key={`${index}-${item.id}`}>
+                    <i>{String(index + 1).padStart(2, "0")}</i>
+                    <span><strong>{item.label}</strong><small>{item.directive}</small></span>
+                  </li>)}
+                </ol>
+              </section>
+            )}
+            {card.characterCore && (
+              <section className="creation-character-core-summary" aria-label="当前角色内核">
+                <header><span>角色内核</span><strong>已写入人物资产</strong></header>
+                <div>
+                  {[
+                    ["身份", GUIDED_ROLES.find((item) => item.id === card.characterCore?.roleId)?.label],
+                    ["性格", GUIDED_MOODS.find((item) => item.id === card.characterCore?.personalityId)?.label],
+                    ["声线", GUIDED_VOICES.find((item) => item.id === card.characterCore?.voiceId)?.label],
+                    ["关系", GUIDED_RELATIONSHIPS.find((item) => item.id === card.characterCore?.relationshipId)?.label],
+                    ["兴趣", GUIDED_INTERESTS.find((item) => item.id === card.characterCore?.interestId)?.label],
+                    ["表演", GUIDED_PERFORMANCES.find((item) => item.id === card.characterCore?.performanceId)?.label],
+                    ["原型", GUIDED_ARCHETYPES.find((item) => item.id === card.characterCore?.archetypeId)?.label],
+                    ["目标", GUIDED_DRIVES.find((item) => item.id === card.characterCore?.driveId)?.label],
+                    ["冲突", GUIDED_CONFLICTS.find((item) => item.id === card.characterCore?.conflictId)?.label],
+                    ["开场", GUIDED_OPENINGS.find((item) => item.id === card.characterCore?.openingId)?.label],
+                  ].map(([label, value]) => <p key={label}><span>{label}</span><strong>{value ?? "未设置"}</strong></p>)}
+                </div>
+              </section>
+            )}
+            <div className="creation-plan-next">
+              <span>方案已保存在本地，可以继续选择方向。</span>
+              <button type="button" className="primary-button" onClick={() => setCreationStudioStage("candidates")}>下一步 · 选择方向</button>
+            </div>
+            </>}
+          </section>}
+          {creationStudioStage !== "plan" && <>
+          {creationStudioStage === "candidates" && (activeTaskCandidates.length > 0 || isGeneratingCandidates) && <section className="creation-control-bar creation-candidate-controls" aria-label="候选生成设置">
+            <div className="compact-control">
+              <label>画幅<select value={normalizeCreativeAspectRatio(card.aspectRatio)} onChange={(event) => updateCard("aspectRatio", event.target.value)}>{CREATIVE_ASPECT_RATIOS.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
+              <label>候选数<select value={creationCandidateCount} onChange={(event) => setCreationCandidateCount(Number(event.target.value) as 1 | 2 | 4)}><option value="1">1 张</option><option value="2">2 张</option><option value="4">4 张</option></select></label>
+              <span className="creation-context-count">{card.referenceAssetIds.length ? `${card.referenceAssetIds.length} 张参考图` : "当前方案"}</span>
+            </div>
+            {canGenerateCurrentImage
+              ? <button className="primary-button creation-generate-button" disabled={Boolean(characterReferenceIssues) || isGeneratingCandidates} onClick={() => void generateFirstVersion()}>{isGeneratingCandidates ? "正在生成…" : activeTaskCandidates.length ? "再生成一组" : "生成候选"}</button>
+              : <span className="creation-service-note">方案可继续编辑；需要出图时再连接生成服务。</span>}
+          </section>}
+          <section className={`creation-studio-grid stage-${creationStudioStage}`} aria-label="候选与继续创作">
+            {activeTaskCandidates.length || isGeneratingCandidates
+              ? <CreationCandidateGallery
+                candidates={activeTaskCandidates}
+                selectedId={selectedCreationCandidate?.id}
+                generating={isGeneratingCandidates}
+                comparisonIds={activeTaskComparisonIds}
+                detailsByAssetId={activeTaskCandidateDetails}
+                emptyPreviewSrc={localDirectionPreviewSrc}
+                emptyTitle={creationWorkspaceCopy.emptyTitle}
+                emptyDescription={creationWorkspaceCopy.emptyDescription}
+                onSelect={(assetId) => {
+                  setSelectedCreationCandidateId(assetId);
+                  setSelectedAssetId(assetId);
+                }}
+                onToggleComparison={toggleCandidateComparison}
+              />
+              : <LocalDirectionCandidateGallery
+                previewSrc={localDirectionPreviewSrc}
+                variations={localDirectionCandidates}
+                selectedId={effectiveLocalDirectionId}
+                onSelect={(variationId) => {
+                  setSelectedLocalDirectionId(variationId);
+                  setConfirmedLocalDirectionId("");
+                  setLocalRefinementApplied(false);
+                }}
+              />}
+            <aside className="creation-iteration-panel">
+              <header>
+                <p className="eyebrow">继续创作</p>
+                <h3>{selectedCreationCandidate
+                  ? "基于所选候选继续"
+                  : creationStudioStage === "candidates"
+                    ? "选择一个方案方向"
+                    : creationStudioStage === "refine"
+                      ? "一次只调整一个变量"
+                    : creationStudioStage === "asset"
+                      ? "保存并继续复用"
+                      : creationWorkspaceCopy.pendingTitle}</h3>
+              </header>
+              {selectedCreationCandidate ? <>
+                <div className="creation-selected-summary">
+                  <strong>{selectedCreationCandidate.name}</strong>
+                  <span>{selectedCreationCandidate.confirmation === "confirmed" ? "已确认" : selectedCreationCandidate.confirmation === "rejected" ? "已淘汰" : "待确认"} · {selectedCreationCandidate.rightsStatus === "original" ? "原创" : selectedCreationCandidate.rightsStatus === "authorized" ? "已授权" : "权利待复核"}</span>
+                </div>
+                {creationStudioStage === "candidates" && <>
+                <div className="candidate-decision-actions">
+                  {selectedCreationCandidate.confirmation === "draft" && <>
+                    <button type="button" onClick={() => void reviewAsset("confirmed", selectedCreationCandidate.id)}>确认候选</button>
+                    <button type="button" onClick={() => void reviewAsset("rejected", selectedCreationCandidate.id)}>淘汰</button>
+                  </>}
+                  <button type="button" onClick={() => { setSelectedAssetId(selectedCreationCandidate.id); setScreen("review"); }}>完整审片</button>
+                </div>
+                <button type="button" className="primary-button creation-stage-next" onClick={() => setCreationStudioStage("refine")}>下一步 · 局部调整</button>
+                </>}
+                {creationStudioStage === "refine" && <>
+                  <div className="creation-section-heading"><span>只改变一项</span><small>其他约束继续锁定</small></div>
+                  <div className="refinement-choice-grid" role="group" aria-label="候选变化方式">
+                    {activeCreationRefinements.map((preset) => <button type="button" key={preset.id} aria-pressed={creationRefinementId === preset.id} className={creationRefinementId === preset.id ? "refinement-choice refinement-selected" : "refinement-choice"} onClick={() => setCreationRefinementId(preset.id)}><strong>{preset.label}</strong><small>{preset.description}</small></button>)}
+                  </div>
+                  <button type="button" className="iteration-generate-button" onClick={() => void applyRefinementToPlan()}>先应用到方案</button>
+                  {canGenerateCurrentImage && <button type="button" className="iteration-generate-button secondary" disabled={isGeneratingCandidates} onClick={() => void generateSelectedRefinement()}>{isGeneratingCandidates ? "正在生成变化…" : "生成变化候选"}</button>}
+                  <button type="button" className="primary-button creation-stage-next" onClick={() => setCreationStudioStage("asset")}>下一步 · 沉淀资产</button>
+                </>}
+                {creationStudioStage === "asset" && <>
+                {selectedCreationCandidate.confirmation === "confirmed" && !["authorized", "original"].includes(selectedCreationCandidate.rightsStatus) && (
+                  <div className="creation-inline-rights">
+                    <strong>入库前复核使用权</strong>
+                    <AssetRightsEditor asset={selectedCreationCandidate} onSaved={async () => {
+                      await refresh();
+                      setAssets(await window.studio.assets.list({ projectId: selectedProjectId || undefined }));
+                    }} />
+                  </div>
+                )}
+                <div className="creation-output-actions">
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={selectedCreationCandidate.confirmation !== "confirmed" || !["authorized", "original"].includes(selectedCreationCandidate.rightsStatus)}
+                    onClick={() => void setSelectedAssetAsMaster(selectedCreationCandidate)}
+                  >锁定为母版</button>
+                  <button
+                    type="button"
+                    disabled={Boolean(activeTask?.characterProfileId) || selectedCreationCandidate.confirmation !== "confirmed" || !["authorized", "original"].includes(selectedCreationCandidate.rightsStatus)}
+                    onClick={() => void saveCandidateAsCharacter(selectedCreationCandidate)}
+                  >{activeTask?.characterProfileId ? "角色资产已关联" : "沉淀为角色资产"}</button>
+                  <button type="button" onClick={() => {
+                    setSelectedAssetId(selectedCreationCandidate.id);
+                    setShotPurpose("video");
+                    setShot((current) => ({ ...current, referenceAssetIds: [selectedCreationCandidate.id], startFrame: card.scene || card.intent }));
+                    setActiveDomain("production");
+                    setScreen("shot");
+                  }}>继续做动态</button>
+                </div>
+                </>}
+              </> : creationStudioStage === "candidates" && selectedLocalDirection ? <div className="creation-local-direction-summary">
+                <span className="creation-local-badge">本地方案候选</span>
+                <h3>{selectedLocalDirection.label}</h3>
+                <p>{selectedLocalDirection.directive}</p>
+                <dl>
+                  <div><dt>人物身份</dt><dd>保持锁定</dd></div>
+                  <div><dt>造型场景</dt><dd>保持锁定</dd></div>
+                  <div><dt>本次变化</dt><dd>{selectedLocalDirection.label}</dd></div>
+                </dl>
+                <button type="button" className="primary-button creation-stage-next" onClick={() => void confirmLocalDirectionCandidate()}>确认方向 · 继续调整</button>
+                <small>方向已经保存，可以继续调整。</small>
+              </div> : creationStudioStage === "refine" ? <div className="creation-plan-refinement">
+                <strong>一次只调整一个变量</strong>
+                <p>选择一个变化方向，人物、服装和场景继续保持锁定。</p>
+                <div className="refinement-choice-grid" role="group" aria-label="方案变化方式">
+                  {activeCreationRefinements.map((preset) => <button type="button" key={preset.id} aria-pressed={creationRefinementId === preset.id} className={creationRefinementId === preset.id ? "refinement-choice refinement-selected" : "refinement-choice"} onClick={() => setCreationRefinementId(preset.id)}><strong>{preset.label}</strong><small>{preset.description}</small></button>)}
+                </div>
+                <button type="button" className="primary-button creation-stage-next" onClick={() => void applyRefinementToPlan()}>应用到当前方案</button>
+                {confirmedLocalDirectionId && <button type="button" className="secondary-button creation-stage-next" onClick={() => setCreationStudioStage("asset")}>完成调整 · 保存资产</button>}
+              </div> : creationStudioStage === "asset" && confirmedLocalDirectionId ? <div className="creation-local-asset-panel">
+                <span className="creation-local-badge">方案资产</span>
+                <h3>{creationAssetCopy.title}</h3>
+                <p>{creationAssetCopy.description}</p>
+                <div className="creation-local-asset-facts">
+                  <div><span>方向</span><strong>{localDirectionCandidates.find((item) => item.id === confirmedLocalDirectionId)?.label ?? "已确认"}</strong></div>
+                  <div><span>调整</span><strong>{localRefinementApplied ? "已写入" : "沿用方案"}</strong></div>
+                  <div><span>资产</span><strong>{creationAssetCopy.status}</strong></div>
+                </div>
+                <div className="creation-output-actions local-output-actions">
+                  {creationStudioKind === "character" && !activeTask?.characterProfileId && <button type="button" className="primary-button" onClick={() => void saveCharacter()}>保存为角色方案</button>}
+                  {creationStudioKind === "scene" && card.sceneProfileId && <button type="button" className="primary-button" onClick={() => {
+                    setSelectedSceneId(card.sceneProfileId ?? "");
+                    setActiveDomain("assets");
+                    setScreen("scenes");
+                  }}>查看场景资产</button>}
+                  {creationStudioKind === "scene" && !card.sceneProfileId && <button type="button" className="primary-button" onClick={() => void saveCurrentPlanAsSceneAsset()}>保存为场景资产</button>}
+                  <button type="button" onClick={() => void saveCurrentTask()}>保存创作任务</button>
+                  <button type="button" onClick={() => { setActiveDomain("production"); setScreen("production"); }}>进入生产准备</button>
+                </div>
+                <small>方案与资产已经保存在当前任务中。</small>
+              </div> : <div className="creation-iteration-empty">
+                <ol>
+                  <li><span>1</span><div><strong>生成候选</strong><small>确认后再开始，不会自动调用</small></div></li>
+                  <li><span>2</span><div><strong>选择一张</strong><small>支持并排比较和淘汰</small></div></li>
+                  <li><span>3</span><div><strong>继续变化</strong><small>只换表情、动作、造型或场景</small></div></li>
+                </ol>
+              </div>}
+            </aside>
+            <div className="creation-inline-compare">
+              <CandidateComparePanel
+                items={activeTaskCandidateItems.filter(({ asset }) => activeTaskComparisonIds.includes(asset.id))}
+                renderAsset={(asset) => <AssetVisual asset={asset} />}
+                onClear={() => setCompareAssetIds((current) => current.filter((assetId) => !activeTaskComparisonIds.includes(assetId)))}
+                onOpen={(assetId) => { setSelectedAssetId(assetId); setScreen("review"); }}
+              />
+            </div>
+          </section>
+          </>}
+          {showAdvancedCreation && <section className="form-panel creation-advanced-panel" aria-label="高级创作设置">
             <div className="paradigm-summary">
               <div>
-                <p className="eyebrow">视觉生产范式</p>
-                <strong>
-                  {card.paradigmIds?.length
-                    ? paradigmComposition?.paradigms
-                        .map((item) => item.name)
-                        .join(" × ") || "已带入范式"
-                    : "尚未选择：先决定这次要生产哪一种视觉作品"}
-                </strong>
-                <p className="result-note">
-                  范式定方向；创作卡补人物、场景和细节。
-                </p>
+                <p className="eyebrow">视觉范式</p>
+                <strong>{card.paradigmIds?.length ? paradigmComposition?.paradigms.map((item) => item.name).join(" × ") || "已带入范式" : "使用当前方案默认视觉方向"}</strong>
               </div>
-              <button onClick={() => setScreen("paradigms")}>
-                选择视觉范式
-              </button>
+              <button onClick={() => setScreen("paradigms")}>更换范式</button>
             </div>
             <div className="form-grid">
-              {(
-                [
-                  ["intent", "想做什么"],
-                  ["subject", "人物主体"],
-                  ["identityAnchor", "人物不变的关键特征"],
-                  ["mustKeep", "必须贴合（本轮不能漂移）"],
-                  ["bodyAndWardrobe", "身材与衣着"],
-                  ["expressionAndPose", "表情与动作"],
-                  ["scene", "现实或幻想场景"],
-                  ["lighting", "光线"],
-                  ["camera", "镜头与构图"],
-                  ["style", "成图质感"],
-                  ["avoid", "一定避免什么"],
-                ] as [keyof CreativeCard, string][]
-              ).map(([key, label]) => (
-                <label key={key}>
-                  {label}
-                  <textarea
-                    value={card[key] as string}
-                    onChange={(event) => updateCard(key, event.target.value)}
-                    placeholder={`填写${label}`}
-                  />
-                </label>
-              ))}
+              {([
+                ["intent", "创作目标"], ["subject", "主体"], ["identityAnchor", "身份锚点"], ["mustKeep", "必须保持"],
+                ["bodyAndWardrobe", "身材与衣着"], ["expressionAndPose", "表情与动作"], ["scene", "场景"],
+                ["lighting", "光线"], ["camera", "镜头与构图"], ["style", "成图质感"], ["avoid", "避免项"],
+              ] as [keyof CreativeCard, string][]).map(([key, label]) => <label key={key}>{label}<textarea value={card[key] as string} onChange={(event) => updateCard(key, event.target.value)} /></label>)}
             </div>
             <ReferenceBindingsPanel card={card} assets={assets} onChange={setCard} />
             <div className="form-actions">
-              <label>
-                角色档案名称
-                <input
-                  value={characterName}
-                  onChange={(event) => setCharacterName(event.target.value)}
-                  placeholder="例如：蝶灵仙姬"
-                />
-              </label>
-              <label>
-                角色组
-                <select value={characterGroup} onChange={(event) => setCharacterGroup(event.target.value as CharacterGroup)}>
-                  {Object.entries(CHARACTER_GROUP_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-                </select>
-              </label>
+              <button disabled={!canUse("text")} onClick={() => void enrichCard()}>{canUse("text") ? "重新智能补全" : "创作模型未连接"}</button>
+              <button onClick={() => void saveCurrentTask()}>保存任务修改</button>
+            </div>
+          </section>}
+          {showReuseTools && <section className="form-panel creation-reuse-panel" aria-label="保存与复用">
+            <div className="creation-section-heading"><span>沉淀资产</span><small>需要时再保存角色或配方，不影响本次生成</small></div>
+            <div className="form-actions">
+              <label>角色名称<input value={characterName} onChange={(event) => setCharacterName(event.target.value)} placeholder="例如：蝶灵仙姬" /></label>
+              <label>角色组<select value={characterGroup} onChange={(event) => setCharacterGroup(event.target.value as CharacterGroup)}>{Object.entries(CHARACTER_GROUP_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
               <button onClick={() => void saveCharacter()}>保存角色档案</button>
               <button onClick={() => void saveCurrentTask()}>保存当前任务</button>
-              <label>
-                画幅
-                <select
-                  value={normalizeCreativeAspectRatio(card.aspectRatio)}
-                  onChange={(event) =>
-                    updateCard("aspectRatio", event.target.value)
-                  }
-                >
-                  {CREATIVE_ASPECT_RATIOS.map((value) => (
-                    <option value={value} key={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                disabled={!canUse("text")}
-                onClick={() => void enrichCard()}
-              >
-                {canUse("text") ? "用创作模型补全" : "先配置创作模型"}
-              </button>
-              <button
-                className="primary-button"
-                onClick={() => {
-                  setTranslation(undefined);
-                  window.studio.creation
-                    .compilePrompt(card)
-                    .then(setPromptBuild);
-                }}
-              >
-                生成结构化提示词
-              </button>
             </div>
-          </section>
-          {characters.length > 0 && (
-            <section className="pattern-list">
-              {characters.map((profile) => (
-                <article key={profile.id}>
-                  <span className="pattern-status">角色</span>
-                  <div>
-                    <h3>{profile.name}</h3>
-                    <p>
-                      {profile.card.identityAnchor ||
-                        profile.card.subject ||
-                        "未填写身份锚点"}{" "}
-                      ·{" "}
-                      {profile.masterAssetId
-                        ? "已绑定主参考图"
-                        : "尚未绑定主参考图"}
-                    </p>
-                    <div className="pattern-actions">
-                      <button onClick={() => void loadCharacter(profile)}>
-                        加载后做新场景
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </section>
-          )}
-          {promptBuild && (
-            <section className="result-panel">
+            <div className="form-actions reuse-recipe-row">
+              <label>配方名称<input value={recipeName} onChange={(event) => setRecipeName(event.target.value)} /></label>
+              <label>适用用途<input value={recipePurpose} onChange={(event) => setRecipePurpose(event.target.value)} /></label>
+              <label>适用条件<input value={recipeApplicability} onChange={(event) => setRecipeApplicability(event.target.value)} /></label>
+              <label>失效条件<textarea value={recipeInvalidation} onChange={(event) => setRecipeInvalidation(event.target.value)} /></label>
+              <button onClick={() => void saveRecipe()}>保存为配方</button>
+            </div>
+          </section>}
+          {promptBuild && showPromptDetails && (
+            <section className="result-panel creation-prompt-panel">
               <p className="eyebrow">可复制的生成指令</p>
               <pre>{translation?.positive ?? promptBuild.positive}</pre>
               <p className="eyebrow">避免项</p>
-              <pre>
-                {(translation?.negative ?? promptBuild.negative) || "未填写"}
-              </pre>
-              {characterReferenceIssues && <p className="notice notice-warning" role="alert">生成前检查：{characterReferenceIssues}</p>}
+              <pre>{(translation?.negative ?? promptBuild.negative) || "未填写"}</pre>
               <div className="form-actions">
-                <label>
-                  配方名称
-                  <input value={recipeName} onChange={(event) => setRecipeName(event.target.value)} />
-                </label>
-                <label>
-                  适用用途
-                  <input value={recipePurpose} onChange={(event) => setRecipePurpose(event.target.value)} />
-                </label>
-                <label>
-                  适用条件
-                  <input value={recipeApplicability} onChange={(event) => setRecipeApplicability(event.target.value)} />
-                </label>
-                <label>
-                  失效条件（每行一条）
-                  <textarea value={recipeInvalidation} onChange={(event) => setRecipeInvalidation(event.target.value)} />
-                </label>
-                <button onClick={() => void saveRecipe()}>保存为配方</button>
-                <label>
-                  成图档位
-                  <select
-                    value={qualityTier}
-                    onChange={(event) => {
-                      setQualityTier(
-                        event.target.value as GenerationQualityTier,
-                      );
-                      setTranslation(undefined);
-                    }}
-                  >
-                    <option value="draft">草稿：更快验证构图</option>
-                    <option value="standard">标准：日常候选</option>
-                    <option value="premium">高质：主版本与精修</option>
-                  </select>
-                </label>
-                <button
-                  disabled={!canUse("text")}
-                  onClick={() => void translatePrompt()}
-                >
-                  {canUse("text") ? "适配当前绘图模型" : "先配置创作模型"}
-                </button>
-                <button
-                  className="primary-button"
-                  disabled={!canGenerateCurrentImage || Boolean(characterReferenceIssues)}
-                  onClick={() => void generateImage()}
-                >
-                  {canGenerateCurrentImage
-                    ? `使用 ${providerLabel(currentImageProvider)} ${currentImageCapability === "image_edit" ? "保持参考生成" : "生成成图"}`
-                    : `请先配置${currentImageCapability === "image_edit" ? "修图" : "绘图"}模型`}
-                </button>
+                <button disabled={!canUse("text")} onClick={() => void translatePrompt()}>{canUse("text") ? "重新适配模型" : "使用原始指令"}</button>
+                <button onClick={() => { setTranslation(undefined); window.studio.creation.compilePrompt(card).then(setPromptBuild); }}>重新编译</button>
               </div>
-              {translation && (
-                <p className="result-note">
-                  模型适配：
-                  {translation.notes.join("；") ||
-                    "沿用原始提示词"}；原始提示词已保留。
-                </p>
-              )}
+              {translation && <p className="result-note">模型适配：{translation.notes.join("；") || "沿用原始提示词"}；原始指令仍保留。</p>}
             </section>
           )}
         </section>
@@ -3618,11 +5294,7 @@ export default function App() {
                     {batch.creativeTaskId && (
                       <button onClick={() => {
                         const task = creativeTasks.find((item) => item.id === batch.creativeTaskId);
-                        if (task) {
-                          setActiveTaskId(task.id);
-                          setCard(normalizeCreativeCard(task.card));
-                          setScreen("creation");
-                        }
+                        if (task) void openCreativeTask(task);
                       }}>
                         查看关联任务
                       </button>
@@ -4197,17 +5869,29 @@ export default function App() {
                 ["deepseek", "DeepSeek", "创作对话与提示词规划（路由已预留）"],
                 ["gemini", "Gemini", "Gemini 图片生成与参考图修订"],
               ] as [ProviderId, string, string][]
-            ).map(([id, label, description]) => (
-              <div className="provider-row" key={id}>
+            ).map(([id, label, description]) => {
+              const connection = provider?.providers.find((item) => item.id === id);
+              const verification = providerVerifications[id];
+              return <div className="provider-row" key={id}>
                 <div>
                   <strong>{label}</strong>
                   <p className="result-note">
                     {description} ·{" "}
-                    {provider?.providers.find((item) => item.id === id)
-                      ?.configured
-                      ? "已配置"
-                      : "未配置"}
+                    {!connection?.configured
+                      ? "未配置"
+                      : id !== "gemini"
+                        ? "已配置"
+                        : verification?.ok
+                          ? "已验证可访问"
+                          : verification
+                            ? "验证失败"
+                            : "已配置，尚未验证"}
                   </p>
+                  {id === "gemini" && verification && (
+                    <p className={`provider-verification-detail ${verification.ok ? "success" : "error"}`} role="status">
+                      {verification.message}
+                    </p>
+                  )}
                 </div>
                 <input
                   type="password"
@@ -4221,8 +5905,13 @@ export default function App() {
                   placeholder={`粘贴 ${label} API 密钥`}
                 />
                 <button onClick={() => void saveProviderKey(id)}>保存</button>
-              </div>
-            ))}
+                {id === "gemini" && connection?.configured && (
+                  <button disabled={verifyingProviderId === id} onClick={() => void verifyProviderConnection(id)}>
+                    {verifyingProviderId === id ? "正在验证…" : "测试连接"}
+                  </button>
+                )}
+              </div>;
+            })}
           </section>
           <section className="form-panel">
             <p className="eyebrow">能力路由</p>

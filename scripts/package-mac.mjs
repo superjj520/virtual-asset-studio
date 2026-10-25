@@ -56,7 +56,6 @@ try {
       "--overwrite",
       "--prune=false",
       "--app-bundle-id=com.superjj.virtualassetstudio",
-      "--executable-name=virtual-asset-studio",
       "--no-asar",
       `--electron-zip-dir=${cachedElectronZipDirectory}`,
     ];

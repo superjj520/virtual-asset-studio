@@ -1,8 +1,9 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import App, { assetCollectionRole } from './App';
 
 beforeEach(() => {
+  window.localStorage.clear();
   window.studio = {
     getHealth: vi.fn().mockResolvedValue({ appDataDir: '/tmp/studio', databaseReady: false }),
     selectFiles: vi.fn().mockResolvedValue([]),
@@ -35,7 +36,11 @@ beforeEach(() => {
     characterWorkspace: {
       get: vi.fn().mockResolvedValue(undefined),
       createVersion: vi.fn(),
-      createState: vi.fn(),
+      createState: vi.fn().mockImplementation(async (profileId, input) => ({
+        id: 'baseline-state', profileId, createdAt: '', updatedAt: '',
+        wardrobe: '', hair: '', expression: '', pose: '', scene: '', emotion: '', continuityNotes: '',
+        ...input,
+      })),
       updateState: vi.fn(),
       createSession: vi.fn(),
       updateSessionStatus: vi.fn(),
@@ -56,13 +61,16 @@ beforeEach(() => {
     shots: { create: vi.fn(), list: vi.fn().mockResolvedValue([]) },
     learning: { ingestPrompt: vi.fn(), list: vi.fn().mockResolvedValue([]), importGitHubSource: vi.fn(), importWebSource: vi.fn(), listSources: vi.fn().mockResolvedValue([]), searchEntries: vi.fn().mockResolvedValue([]), entryCategories: vi.fn().mockResolvedValue([]), entryCount: vi.fn().mockResolvedValue(0), updateStatus: vi.fn() },
     paradigms: { list: vi.fn().mockResolvedValue([]), compose: vi.fn().mockResolvedValue({ paradigms: [], acceptance: '', promptModule: '', warnings: [], canApply: false }), create: vi.fn() },
-    settings: { providerStatus: vi.fn().mockResolvedValue({ providers: [{ id: 'openai', configured: false, capabilities: ['vision', 'image', 'image_edit', 'video'] }, { id: 'flux', configured: false, capabilities: ['image'] }, { id: 'deepseek', configured: false, capabilities: ['text'] }], routes: { vision: 'openai', image: 'openai', image_edit: 'openai', video: 'openai', text: 'deepseek' } }), budgetStatus: vi.fn().mockResolvedValue({ plannedSpendUsd: 0 }), saveMonthlyBudget: vi.fn(), saveProviderKey: vi.fn(), saveRoute: vi.fn() },
+    settings: { providerStatus: vi.fn().mockResolvedValue({ providers: [{ id: 'openai', configured: false, capabilities: ['vision', 'image', 'image_edit', 'video'] }, { id: 'flux', configured: false, capabilities: ['image'] }, { id: 'deepseek', configured: false, capabilities: ['text'] }], routes: { vision: 'openai', image: 'openai', image_edit: 'openai', video: 'openai', text: 'deepseek' } }), verifyProvider: vi.fn(), budgetStatus: vi.fn().mockResolvedValue({ plannedSpendUsd: 0 }), saveMonthlyBudget: vi.fn(), saveProviderKey: vi.fn(), saveRoute: vi.fn() },
     vision: { analyze: vi.fn(), buildReversePrompt: vi.fn() },
     generation: { image: vi.fn(), refineImage: vi.fn(), video: vi.fn(), pollVideo: vi.fn(), jobs: vi.fn().mockResolvedValue([]) },
   };
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+});
 
 it('资产包成员角色只依据当前项目母版关系，不读取全局 metadata.role', () => {
   const asset = { id: 'shared', metadata: { role: 'master' } } as never;
@@ -76,14 +84,507 @@ it('显示工作台标题与本地运行状态', async () => {
   expect(await screen.findByText(/本地服务已连接/)).toBeInTheDocument();
 });
 
+it('Gemini 配置与真实连通状态分开显示，并保留失败原因', async () => {
+  vi.mocked(window.studio.settings.providerStatus).mockResolvedValue({
+    providers: [{ id: 'gemini', configured: true, capabilities: ['image', 'image_edit'] }],
+    routes: { image: 'gemini', image_edit: 'gemini' },
+    network: 'system_proxy',
+  });
+  vi.mocked(window.studio.settings.verifyProvider).mockRejectedValue(new Error('Gemini 请求超时，请检查代理设置。'));
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
+  expect(await screen.findByText(/Gemini 图片生成与参考图修订.*已配置，尚未验证/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '测试连接' }));
+
+  expect(await screen.findByText('Gemini 请求超时，请检查代理设置。')).toHaveAttribute('role', 'status');
+  expect(screen.getByText(/Gemini 图片生成与参考图修订.*验证失败/)).toBeInTheDocument();
+});
+
 it('默认进入创作工作总览，并提供四个工作域入口与主内容区', async () => {
   render(<App />);
-  expect(screen.getAllByRole('heading', { name: '把创作收敛成可复用项目' }).length).toBeGreaterThan(0);
+  expect(screen.getByRole('heading', { name: '现在想做什么？' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '角色塑造' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '单张画面' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '剧情场景' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '系列镜头' })).toBeInTheDocument();
   expect(screen.getAllByRole('navigation', { name: '四个工作域' }).length).toBeGreaterThan(0);
   expect(screen.getAllByRole('button', { name: '模板' }).length).toBeGreaterThan(0);
   expect(screen.getByRole('main')).toHaveAttribute('id', 'main-content');
-  expect(screen.getByRole('button', { name: '创建第一个项目' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '建立项目' })).toBeInTheDocument();
   expect(screen.getByRole('textbox', { name: '项目名称' })).toBeInTheDocument();
+});
+
+it('项目默认方案使用选择题，并可一键保存推荐组合', async () => {
+  const project = { id: 'project-choice', name: '选择题项目', medium: 'image', brief: { goal: '', audience: '', visualWorld: '', delivery: '', acceptance: '' } };
+  vi.mocked(window.studio.projects.list).mockResolvedValue([project] as never);
+  vi.mocked(window.studio.projects.workspace).mockResolvedValue({ project, masterAssets: [], recentGenerations: [], recentTasks: [], health: {}, pipeline: [], blockers: [], recommendedNextAction: '' } as never);
+  vi.mocked(window.studio.projects.updateBrief).mockImplementation(async (_id, brief) => ({ ...project, brief }) as never);
+
+  render(<App />);
+  fireEvent.change(await screen.findByRole('combobox', { name: '当前项目' }), { target: { value: project.id } });
+  const brief = await screen.findByRole('region', { name: '项目默认方案' });
+  expect(brief.querySelector('textarea')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '采用推荐组合' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存项目默认方案' }));
+
+  await waitFor(() => expect(window.studio.projects.updateBrief).toHaveBeenCalledWith(project.id, {
+    goal: '建立可复用角色',
+    audience: '竖屏漫剧',
+    visualWorld: '写实东方幻想',
+    delivery: '3 张候选',
+    acceptance: '人物一致；真人质感；场景准确',
+  }));
+});
+
+it('角色快速创作无需填写文字，选择会即时更新角色方案', async () => {
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '角色塑造' }));
+  expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  expect(screen.queryByRole('textbox', { name: '身材与衣着' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /动漫女主/ }));
+  const steps = within(screen.getByRole('navigation', { name: '角色创作步骤' }));
+  fireEvent.click(steps.getByRole('button', { name: /外形/ }));
+  fireEvent.click(screen.getByRole('button', { name: /清冷狐系/ }));
+  expect(screen.getAllByText(/22–29 岁 · 成年女性 · 清冷狐系 · 黑色长发/)).toHaveLength(2);
+  expect(screen.getByRole('button', { name: /清冷狐系/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.queryByRole('textbox', { name: '身材与衣着' })).not.toBeInTheDocument();
+  expect(window.studio.tasks.create).not.toHaveBeenCalled();
+  expect(window.studio.generation.image).not.toHaveBeenCalled();
+});
+
+it('退出或重启应用后恢复未完成角色草稿，也可以重新开始', async () => {
+  const first = render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '角色塑造' }));
+  fireEvent.click(screen.getByRole('button', { name: /动漫女主/ }));
+  await waitFor(() => expect(window.localStorage.length).toBeGreaterThan(0));
+  first.unmount();
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '角色塑造' }));
+  expect(await screen.findByText('已恢复上次进度')).toBeInTheDocument();
+  expect(screen.queryByText('已恢复上次未完成的角色方案；所有选择仍会自动保存。')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /下一步 · 基础/ })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /动漫女主/ })).toHaveAttribute('aria-pressed', 'true');
+  fireEvent.click(screen.getByRole('button', { name: '重新开始' }));
+  expect(screen.queryByText('已恢复上次进度')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /月下东方/ })).toHaveAttribute('aria-pressed', 'true');
+});
+
+it('单张画面用独立选择流程建立方案并保留用户画幅', async () => {
+  vi.mocked(window.studio.tasks.create).mockImplementation(async (input) => ({
+    id: 'task-image-flow', status: 'draft', createdAt: '', updatedAt: '', ...input,
+  }) as never);
+  vi.mocked(window.studio.creation.compilePrompt).mockResolvedValue({ positive: '单张画面方案', negative: '', modules: [] });
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '单张画面' }));
+
+  expect(screen.getByRole('region', { name: '单张画面工作台' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '精细塑造' })).not.toBeInTheDocument();
+  fireEvent.click(within(screen.getByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /输出/ }));
+  fireEvent.click(within(screen.getByRole('group', { name: '快速画面比例' })).getByRole('button', { name: '16:9' }));
+  fireEvent.click(screen.getByRole('button', { name: '建立单张画面方案' }));
+
+  await waitFor(() => expect(window.studio.tasks.create).toHaveBeenCalledWith(expect.objectContaining({
+    card: expect.objectContaining({ deliveryMode: 'portrait', aspectRatio: '16:9' }),
+  })));
+  expect(screen.getByRole('heading', { name: '单张创作台' })).toBeInTheDocument();
+  expect(window.studio.generation.image).not.toHaveBeenCalled();
+});
+
+it('角色选择完成后可直接沉淀为角色资产并进入角色中枢', async () => {
+  const profile = characterFixture('guided-character', '世界探索者 · 动漫女主');
+  const collection = {
+    id: 'guided-character-pack',
+    characterProfileId: profile.id,
+    kind: 'character',
+    name: `${profile.name} · 角色资产包`,
+    description: '角色创建器自动建立的资产包',
+    status: 'draft',
+  };
+  vi.mocked(window.studio.characters.create).mockResolvedValue(profile as never);
+  vi.mocked(window.studio.characters.detail).mockResolvedValue({ ...profile, facts: [], variants: [], evidenceAssets: [] } as never);
+  vi.mocked(window.studio.characterWorkspace.get).mockResolvedValue({
+    character: { ...profile, facts: [], variants: [], evidenceAssets: [] },
+    versions: [], states: [], sessions: [], media: [],
+  } as never);
+  vi.mocked(window.studio.collections.create).mockResolvedValue(collection as never);
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '角色塑造' }));
+  fireEvent.click(screen.getByRole('button', { name: /动漫女主/ }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: '角色创作步骤' })).getByRole('button', { name: /完成/ }));
+  fireEvent.click(screen.getByRole('button', { name: '保存为角色资产' }));
+
+  await waitFor(() => expect(window.studio.characters.create).toHaveBeenCalledWith(expect.objectContaining({
+    name: '世界探索者 · 动漫女主',
+    lifecycle: 'draft',
+    card: expect.objectContaining({
+      visualPresetId: 'anime_heroine',
+      characterCore: expect.objectContaining({
+        roleId: 'adventurer',
+        archetypeId: 'seeker',
+        driveId: 'freedom',
+        conflictId: 'trust_guard',
+        openingId: 'first_meeting',
+      }),
+      appearanceProfile: expect.objectContaining({
+        subjectId: 'adult_woman',
+        roleId: 'adventurer',
+      }),
+    }),
+  })));
+  expect(window.studio.characters.upsertFact).toHaveBeenCalledWith(profile.id, expect.objectContaining({
+    slotKey: 'identity.age',
+    state: 'confirmed',
+  }));
+  expect(window.studio.characters.upsertFact).toHaveBeenCalledWith(profile.id, expect.objectContaining({
+    slotKey: 'character.relationship',
+    state: 'confirmed',
+  }));
+  expect(window.studio.characters.upsertFact).toHaveBeenCalledWith(profile.id, expect.objectContaining({
+    slotKey: 'character.drive',
+    value: '获得自由',
+    state: 'confirmed',
+  }));
+  expect(window.studio.collections.create).toHaveBeenCalledWith(expect.objectContaining({
+    characterProfileId: profile.id,
+    kind: 'character',
+  }));
+  expect(window.studio.characterWorkspace.createState).toHaveBeenCalledWith(profile.id, expect.objectContaining({
+    name: '基础状态',
+    kind: 'baseline',
+    status: 'active',
+    trackers: expect.arrayContaining([
+      expect.objectContaining({ id: 'mood', label: '心情' }),
+      expect.objectContaining({ id: 'affinity', label: '关系温度', valueKind: 'scale' }),
+    ]),
+  }));
+  expect(window.studio.tasks.create).not.toHaveBeenCalled();
+  expect(window.studio.generation.image).not.toHaveBeenCalled();
+  expect(await screen.findByRole('tab', { name: /创作与复用/ })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.getByRole('region', { name: '角色资产' })).toBeInTheDocument();
+  expect(await screen.findByText(new RegExp(`角色资产「${profile.name}」已建立，\\d+ 个创作选择与 4 个持续状态已归档`))).toBeInTheDocument();
+});
+
+it('选择已有角色完成塑造时直接返回角色中枢且不重复建档', async () => {
+  const profile = characterFixture('existing-character', '已有东方主角');
+  vi.mocked(window.studio.characters.list).mockResolvedValue([profile] as never);
+  vi.mocked(window.studio.characters.detail).mockResolvedValue({ ...profile, facts: [], variants: [], evidenceAssets: [] } as never);
+  vi.mocked(window.studio.characterWorkspace.get).mockResolvedValue({
+    character: { ...profile, facts: [], variants: [], evidenceAssets: [] },
+    versions: [], states: [], sessions: [], media: [],
+  } as never);
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '角色塑造' }));
+  fireEvent.click(screen.getByRole('button', { name: '角色资产' }));
+  fireEvent.click(await screen.findByRole('option', { name: `使用角色 ${profile.name}` }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: '角色创作步骤' })).getByRole('button', { name: /完成/ }));
+  fireEvent.click(screen.getByRole('button', { name: '进入角色中枢' }));
+
+  expect(window.studio.characters.create).not.toHaveBeenCalled();
+  expect(window.studio.collections.create).not.toHaveBeenCalled();
+  expect(window.studio.generation.image).not.toHaveBeenCalled();
+  expect(await screen.findByRole('tab', { name: /创作与复用/ })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.getByRole('region', { name: '角色资产' })).toBeInTheDocument();
+  expect(await screen.findByText(`已进入「${profile.name}」角色中枢，可继续扩展造型、表情、动作与剧情。`)).toBeInTheDocument();
+});
+
+it('系列镜头选择与顺序写入创作卡并控制后续候选', async () => {
+  vi.mocked(window.studio.tasks.create).mockImplementation(async (input) => ({
+    id: 'task-series', status: 'draft', createdAt: '', updatedAt: '', ...input,
+  }) as never);
+  vi.mocked(window.studio.creation.compilePrompt).mockResolvedValue({
+    positive: '同一角色连续镜头', negative: '角色漂移', modules: [],
+  });
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '系列镜头' }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /分镜/ }));
+  const sequence = within(await screen.findByRole('region', { name: '连续镜头规划' }));
+  fireEvent.click(sequence.getByRole('button', { name: '第 2 镜头：近景情绪' }));
+  fireEvent.click(within(sequence.getByRole('group', { name: '镜头类型' })).getByRole('button', { name: /动作瞬间/ }));
+  fireEvent.click(within(sequence.getByRole('group', { name: '调整镜头顺序' })).getByRole('button', { name: '后移' }));
+  fireEvent.click(screen.getByRole('button', { name: '下一步 · 交付' }));
+  fireEvent.click(screen.getByRole('button', { name: '建立系列镜头方案' }));
+
+  await waitFor(() => expect(window.studio.tasks.create).toHaveBeenCalledWith(expect.objectContaining({
+    card: expect.objectContaining({
+      deliveryMode: 'series_pack',
+      aspectRatio: '9:16',
+      candidatePlan: [
+        expect.objectContaining({ id: 'series_base' }),
+        expect.objectContaining({ id: 'full_body' }),
+        expect.objectContaining({ id: 'action_moment' }),
+        expect.objectContaining({ id: 'environment_interaction' }),
+      ],
+    }),
+  })));
+  const savedSequence = within(await screen.findByRole('region', { name: '当前镜头计划' }));
+  expect(screen.getByRole('heading', { name: '系列镜头台' })).toBeInTheDocument();
+  expect(screen.getByText('镜头计划已保存')).toBeInTheDocument();
+  expect(screen.getByText('系列镜头计划已建立')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /确认系列/ })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '保存为角色' })).not.toBeInTheDocument();
+  expect(savedSequence.getByText('动作瞬间')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '返回调整' }));
+  fireEvent.click(within(await screen.findByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /分镜/ }));
+  expect(await screen.findByRole('button', { name: '第 3 镜头：动作瞬间' })).toBeInTheDocument();
+});
+
+it('剧情场景选择形成可回溯叙事骨架并进入场景创作台', async () => {
+  const scene = {
+    id: 'scene-story', name: '东方古风 · 局势反转', kind: 'environment', lifecycle: 'draft',
+    anchor: '真实东方古风环境', layout: '全身构图', materials: '真实摄影', colorSystem: '危险逼近',
+    requiredElements: '正面对峙；局势反转', forbiddenChanges: '人物身份保持一致', createdAt: '', updatedAt: '',
+  };
+  const sceneState = {
+    id: 'scene-state-story', profileId: scene.id, name: '局势反转 · 危险逼近', status: 'active',
+    timeOfDay: '', weather: '', season: '', lighting: '电影光影', atmosphere: '危险逼近',
+    setDressing: '真实东方古风环境', continuityNotes: '人物身份保持一致', createdAt: '', updatedAt: '',
+  };
+  vi.mocked(window.studio.sceneWorkspace.create).mockResolvedValue(scene as never);
+  vi.mocked(window.studio.sceneWorkspace.createState).mockResolvedValue(sceneState as never);
+  vi.mocked(window.studio.sceneWorkspace.get).mockResolvedValue({
+    scene, versions: [], states: [sceneState], sessions: [], media: [], activeState: sceneState,
+  } as never);
+  vi.mocked(window.studio.tasks.create).mockImplementation(async (input) => ({
+    id: 'task-story', status: 'draft', createdAt: '', updatedAt: '', ...input,
+  }) as never);
+  vi.mocked(window.studio.creation.compilePrompt).mockResolvedValue({
+    positive: '正面对峙时局势反转', negative: '人物关系不清', modules: [],
+  });
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '剧情场景' }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /剧情/ }));
+  const story = within(await screen.findByRole('region', { name: '剧情骨架' }));
+  fireEvent.click(story.getByRole('button', { name: '正面对峙' }));
+  fireEvent.click(story.getByRole('button', { name: '局势反转' }));
+  fireEvent.click(story.getByRole('button', { name: '情绪峰值' }));
+  fireEvent.click(story.getByRole('button', { name: '危险逼近' }));
+  fireEvent.click(screen.getByRole('button', { name: '下一步 · 输出' }));
+  fireEvent.click(screen.getByRole('button', { name: '建立剧情场景方案' }));
+
+  await waitFor(() => expect(window.studio.tasks.create).toHaveBeenCalledWith(expect.objectContaining({
+    card: expect.objectContaining({
+      deliveryMode: 'story_scene',
+      aspectRatio: '16:9',
+      sceneProfileId: scene.id,
+      storyPlan: {
+        relationshipId: 'confrontation',
+        momentId: 'reversal',
+        pacingId: 'peak',
+        atmosphereId: 'danger',
+      },
+      scene: expect.stringContaining('局势突然反转'),
+    }),
+  })));
+  expect(window.studio.sceneWorkspace.create).toHaveBeenCalledWith(expect.objectContaining({
+    name: '东方古风 · 局势反转',
+    lifecycle: 'draft',
+  }));
+  expect(window.studio.sceneWorkspace.createState).toHaveBeenCalledWith(scene.id, expect.objectContaining({
+    name: '局势反转 · 危险逼近',
+    status: 'active',
+  }));
+  expect(screen.getByRole('heading', { name: '场景创作台' })).toBeInTheDocument();
+  expect(screen.getAllByText('剧情场景与场景资产已建立')).toHaveLength(2);
+  expect(screen.getByRole('button', { name: /确认剧情/ })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '查看场景资产' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '保存为角色' })).not.toBeInTheDocument();
+  expect(screen.getByText('正面对峙')).toBeInTheDocument();
+  expect(screen.getByText('局势反转')).toBeInTheDocument();
+  expect(screen.getByText('情绪峰值')).toBeInTheDocument();
+  expect(screen.getByText('危险逼近')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '返回调整' }));
+  fireEvent.click(within(await screen.findByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /剧情/ }));
+  const restored = within(await screen.findByRole('region', { name: '剧情骨架' }));
+  expect(restored.getByRole('button', { name: '正面对峙' })).toHaveAttribute('aria-pressed', 'true');
+  expect(restored.getByRole('button', { name: '局势反转' })).toHaveAttribute('aria-pressed', 'true');
+});
+
+it('重新打开剧情任务时恢复场景资产、场景状态与专属操作', async () => {
+  const project = { id: 'project-scene-task', name: '剧情任务项目', medium: 'image', brief: { goal: '', audience: '', visualWorld: '', delivery: '', acceptance: '' } };
+  const scene = {
+    id: 'scene-restored', projectId: project.id, name: '雨夜温室 · 真相揭晓', kind: 'interior', lifecycle: 'draft',
+    anchor: '玻璃温室中轴', layout: '中央石板路', materials: '潮湿玻璃', colorSystem: '冷蓝',
+    requiredElements: '拱形门', forbiddenChanges: '不改变空间中轴', createdAt: '', updatedAt: '',
+  };
+  const sceneState = {
+    id: 'scene-state-restored', profileId: scene.id, name: '真相揭晓 · 雨夜', status: 'active',
+    timeOfDay: '深夜', weather: '小雨', season: '', lighting: '冷月光', atmosphere: '水汽',
+    setDressing: '散落信件', continuityNotes: '保持地面潮湿', createdAt: '', updatedAt: '',
+  };
+  const sceneWorkspace = { scene, versions: [], states: [sceneState], sessions: [], media: [], activeState: sceneState };
+  const task = {
+    id: 'task-scene-restored', projectId: project.id, name: '雨夜温室真相揭晓', objective: '完成剧情场景',
+    status: 'ready', collectionIds: [], createdAt: '', updatedAt: '',
+    card: {
+      projectId: project.id, intent: '剧情场景', subject: '成年原创角色', identityAnchor: '', bodyAndWardrobe: '',
+      expressionAndPose: '发现线索', scene: '玻璃温室中轴', lighting: '冷月光', camera: '中景', style: '写实电影感',
+      avoid: '文字、水印', mustKeep: '人物与空间连续', aspectRatio: '16:9', referenceAssetIds: [],
+      deliveryMode: 'story_scene', sceneProfileId: scene.id,
+      storyPlan: { relationshipId: 'confrontation', momentId: 'reveal', pacingId: 'peak', atmosphereId: 'mystery' },
+    },
+  };
+  vi.mocked(window.studio.projects.list).mockResolvedValue([project] as never);
+  vi.mocked(window.studio.projects.workspace).mockResolvedValue({ project, masterAssets: [], recentGenerations: [], recentTasks: [task], health: {}, pipeline: [], blockers: [], recommendedNextAction: '' } as never);
+  vi.mocked(window.studio.tasks.list).mockResolvedValue([task] as never);
+  vi.mocked(window.studio.sceneWorkspace.list).mockResolvedValue([scene] as never);
+  vi.mocked(window.studio.sceneWorkspace.get).mockResolvedValue(sceneWorkspace as never);
+
+  render(<App />);
+  fireEvent.change(await screen.findByRole('combobox', { name: '当前项目' }), { target: { value: project.id } });
+  fireEvent.click(await screen.findByRole('button', { name: /雨夜温室真相揭晓/ }));
+
+  expect(await screen.findByRole('heading', { name: '场景创作台' })).toBeInTheDocument();
+  expect(screen.getByText('本轮锁定场景')).toBeInTheDocument();
+  expect(screen.getByText(scene.name)).toBeInTheDocument();
+  expect(screen.getByText(new RegExp(sceneState.name), { selector: 'p' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '查看场景资产' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '保存为角色' })).not.toBeInTheDocument();
+  expect(window.studio.sceneWorkspace.get).toHaveBeenCalledWith(scene.id);
+});
+
+it('创作方案可单独保存且主流程不暴露模型状态', async () => {
+  vi.mocked(window.studio.settings.providerStatus).mockResolvedValue({
+    providers: [{ id: 'gemini', configured: true, capabilities: ['text', 'vision', 'image', 'image_edit'] }],
+    routes: { vision: 'gemini', image: 'gemini', image_edit: 'gemini', video: 'gemini', text: 'gemini' },
+  } as never);
+  vi.mocked(window.studio.tasks.create).mockImplementation(async (input) => ({
+    id: 'task-save-only', status: 'draft', createdAt: '', updatedAt: '', ...input,
+  }) as never);
+  vi.mocked(window.studio.creation.compilePrompt).mockResolvedValue({ positive: '已保存方案', negative: '', modules: [] });
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '角色塑造' }));
+  fireEvent.click(screen.getByRole('button', { name: '精细塑造' }));
+  fireEvent.click(screen.getByRole('button', { name: '8 确认方案 总览、交付与锁定' }));
+  expect(await screen.findByText('角色资产已就绪')).toBeInTheDocument();
+  expect(screen.queryByText(/图片模型|模型设置|连接模型/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '保存方案' }));
+
+  expect(await screen.findByText('方案已保存，可继续调整；点击“进入创作台”后再创建候选。')).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: '角色塑造工作台' })).toBeInTheDocument();
+  expect(window.studio.tasks.create).toHaveBeenCalledTimes(1);
+  expect(window.studio.generation.image).not.toHaveBeenCalled();
+});
+
+it('没有图片模型时也能沿创作进度进入局部调整并保存本地方案', async () => {
+  vi.mocked(window.studio.settings.providerStatus).mockResolvedValue({
+    providers: [], routes: { vision: 'none', image: 'none', image_edit: 'none', video: 'none', text: 'none' },
+  } as never);
+  const task = { id: 'task-local-flow', status: 'draft', createdAt: '', updatedAt: '' };
+  vi.mocked(window.studio.tasks.create).mockImplementation(async (input) => ({ ...task, ...input }) as never);
+  vi.mocked(window.studio.tasks.update).mockImplementation(async (_id, patch) => ({ ...task, ...patch }) as never);
+  vi.mocked(window.studio.creation.compilePrompt).mockResolvedValue({ positive: '本地方案', negative: '', modules: [] });
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '单张画面' }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /输出/ }));
+  fireEvent.click(screen.getByRole('button', { name: '建立单张画面方案' }));
+  await screen.findByRole('heading', { name: '单张创作台' });
+
+  const journey = within(screen.getByRole('navigation', { name: '创作进度' }));
+  fireEvent.click(journey.getByRole('button', { name: /局部调整/ }));
+  expect(await screen.findByRole('heading', { name: '一次只调整一个变量' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '换表情 身份、造型和场景不变' }));
+  fireEvent.click(screen.getByRole('button', { name: '应用到当前方案' }));
+
+  await waitFor(() => expect(window.studio.tasks.update).toHaveBeenCalledWith('task-local-flow', expect.objectContaining({
+    card: expect.objectContaining({ expressionAndPose: expect.stringContaining('只改变面部表情') }),
+  })));
+  expect(await screen.findByText('已把“换表情”写入当前方案；没有调用任何模型。')).toBeInTheDocument();
+  expect(window.studio.generation.image).not.toHaveBeenCalled();
+});
+
+it('没有图片模型时可完成方向比较、局部调整和方案资产保存', async () => {
+  vi.mocked(window.studio.settings.providerStatus).mockResolvedValue({
+    providers: [], routes: { vision: 'none', image: 'none', image_edit: 'none', video: 'none', text: 'none' },
+  } as never);
+  const task = { id: 'task-local-complete', status: 'draft', createdAt: '', updatedAt: '' };
+  vi.mocked(window.studio.tasks.create).mockImplementation(async (input) => ({ ...task, ...input }) as never);
+  vi.mocked(window.studio.tasks.update).mockImplementation(async (_id, patch) => ({ ...task, ...patch }) as never);
+  vi.mocked(window.studio.creation.compilePrompt).mockResolvedValue({ positive: '本地完整方案', negative: '', modules: [] });
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '单张画面' }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /输出/ }));
+  fireEvent.click(screen.getByRole('button', { name: '建立单张画面方案' }));
+  await screen.findByRole('heading', { name: '单张创作台' });
+  fireEvent.click(screen.getByRole('button', { name: '下一步 · 选择方向' }));
+
+  expect(await screen.findByRole('region', { name: '方案方向候选' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /构图备选/ }));
+  fireEvent.click(screen.getByRole('button', { name: '确认方向 · 继续调整' }));
+  expect(await screen.findByText('已选择“构图备选”并写入本地方案；没有调用任何模型。')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: '换镜头 内容不变，只换景别机位' }));
+  fireEvent.click(screen.getByRole('button', { name: '应用到当前方案' }));
+  expect(await screen.findByText('已把“换镜头”写入当前方案；没有调用任何模型。')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '完成调整 · 保存资产' }));
+
+  expect(await screen.findByRole('heading', { name: '单张画面方案已经归档' })).toBeInTheDocument();
+  expect(screen.getByText('人物、场景、构图和本轮调整已保存，可从同一方案继续创作。')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '保存创作任务' }));
+  expect(await screen.findByText(/当前创作任务已保存/)).toBeInTheDocument();
+  expect(window.studio.generation.image).not.toHaveBeenCalled();
+});
+
+it('已确认候选可沉淀为角色资产并回写当前创作任务', async () => {
+  const project = { id: 'project-character', name: '角色项目', medium: 'image', brief: { goal: '', audience: '', visualWorld: '', delivery: '', acceptance: '' } };
+  const candidate = {
+    id: 'candidate-character', type: 'image', name: '角色候选', managedPath: '/tmp/character.png', sha256: 'character', mediaType: 'image/png',
+    rightsStatus: 'original', confirmation: 'confirmed', metadata: {}, createdAt: '2026-01-01', updatedAt: '2026-01-01',
+  };
+  const task = {
+    id: 'task-character', projectId: project.id, name: '月下角色定妆', objective: '建立长期角色', status: 'review', collectionIds: [],
+    card: { ...characterFixture('unused', 'unused').card, projectId: project.id, intent: '月下角色定妆', referenceBindings: [] },
+    resultAssetId: candidate.id, createdAt: '', updatedAt: '',
+  };
+  const profile = { ...characterFixture('character-created', '月下角色定妆 · 角色'), projectId: project.id, masterAssetId: candidate.id };
+  const collection = { id: 'collection-created', projectId: project.id, characterProfileId: profile.id, kind: 'character', name: `${profile.name} · 角色资产包`, description: '', status: 'draft', createdAt: '', updatedAt: '' };
+  vi.mocked(window.studio.projects.list).mockResolvedValue([project] as never);
+  vi.mocked(window.studio.projects.workspace).mockResolvedValue({ project, masterAssets: [], recentGenerations: [], recentTasks: [], health: {} } as never);
+  vi.mocked(window.studio.tasks.list).mockResolvedValue([task] as never);
+  vi.mocked(window.studio.assets.list).mockResolvedValue([candidate] as never);
+  vi.mocked(window.studio.assets.preview).mockResolvedValue('data:image/png;base64,AA==');
+  vi.mocked(window.studio.characters.create).mockResolvedValue(profile as never);
+  vi.mocked(window.studio.collections.create).mockResolvedValue(collection as never);
+  vi.mocked(window.studio.tasks.update).mockImplementation(async (_id, patch) => ({ ...task, ...patch }) as never);
+
+  render(<App />);
+  fireEvent.change(await screen.findByRole('combobox', { name: '当前项目' }), { target: { value: project.id } });
+  fireEvent.click(await screen.findByRole('button', { name: /月下角色定妆/ }));
+  expect(await screen.findByRole('button', { name: '沉淀为角色资产' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: '沉淀为角色资产' }));
+
+  await waitFor(() => expect(window.studio.characters.create).toHaveBeenCalledWith(expect.objectContaining({
+    projectId: project.id,
+    masterAssetId: candidate.id,
+    card: expect.objectContaining({ referenceAssetIds: expect.arrayContaining([candidate.id]) }),
+  })));
+  expect(window.studio.collections.attachAsset).toHaveBeenCalledWith(collection.id, candidate.id, '角色主参考');
+  expect(window.studio.tasks.update).toHaveBeenCalledWith(task.id, expect.objectContaining({
+    characterProfileId: profile.id,
+    collectionIds: [collection.id],
+    resultAssetId: candidate.id,
+  }));
+  expect(await screen.findByText(`已建立角色资产「${profile.name}」，主参考、资产包与当前创作任务已联动。`)).toBeInTheDocument();
 });
 
 it('场景档案可从资产域进入工作室，并把锁定场景带入创作卡', async () => {
@@ -105,7 +606,8 @@ it('场景档案可从资产域进入工作室，并把锁定场景带入创作�
   fireEvent.click(await screen.findByRole('button', { name: '管理场景' }));
   fireEvent.click(await screen.findByRole('button', { name: '用当前场景开始图片创作' }));
   expect(await screen.findByText('本轮锁定场景')).toBeInTheDocument();
-  expect(screen.getByText('狭长中轴温室；中央石板路；拱形门；深夜；小雨；玻璃水汽')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '更多设置' }));
+  expect(screen.getByRole('textbox', { name: '场景' })).toHaveValue('狭长中轴温室；中央石板路；拱形门；深夜；小雨；玻璃水汽');
 });
 
 it('镜头工作室锁定角色与场景上下文，并可带入图片创作', async () => {
@@ -303,7 +805,7 @@ it('角色档案空状态直接进入建档，不要求先建立项目或创作�
   vi.mocked(window.studio.collections.create).mockResolvedValue({ id: 'collection-new', kind: 'character', name: '蝶灵 · 角色资产包', status: 'draft' } as never);
 
   render(<App />);
-  fireEvent.click(screen.getByRole('button', { name: '创建第一个项目' }));
+  fireEvent.click(screen.getByRole('button', { name: '建立项目' }));
   expect(await screen.findByText('请先给项目取一个名称。')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: '资产' }));
   fireEvent.click(await screen.findByRole('button', { name: '建立角色档案' }));
@@ -331,7 +833,7 @@ it('从已选角色建立角色设定板时锁定角色 ID 与 4:3 画幅', asyn
 
   render(<App />);
   fireEvent.click(screen.getByRole('button', { name: '资产' }));
-  fireEvent.click(await screen.findByRole('button', { name: '管理细项' }));
+  fireEvent.click(await screen.findByRole('button', { name: '打开角色 蝶灵' }));
   fireEvent.click(await screen.findByRole('button', { name: '创建角色设定板' }));
 
   await waitFor(() => expect(window.studio.tasks.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -339,6 +841,137 @@ it('从已选角色建立角色设定板时锁定角色 ID 与 4:3 画幅', asyn
     card: expect.objectContaining({ aspectRatio: '4:3', referenceAssetIds: ['master-1'] }),
   })));
   expect(await screen.findByRole('heading', { name: '蝶灵 · 角色设定板' })).toBeInTheDocument();
+});
+
+it('角色工作室通过选择题建立可追溯的表情组任务', async () => {
+  const profile = { ...characterFixture('char-extension', '蝶灵'), masterAssetId: 'master-1' };
+  const detail = {
+    ...profile,
+    facts: [],
+    variants: [],
+    evidenceAssets: [{
+      id: 'master-1', type: 'reference_image', name: '角色主参考', managedPath: '/tmp/master.png', sha256: 'master', mediaType: 'image/png',
+      rightsStatus: 'original', confirmation: 'confirmed', metadata: {}, createdAt: '', updatedAt: '',
+    }],
+  };
+  const version = {
+    id: 'version-1', profileId: profile.id, versionNumber: 1, label: '正式定妆', status: 'locked', changeSummary: '',
+    snapshot: { name: profile.name, card: profile.card, specification: profile.specification, masterAssetId: 'master-1', facts: [], variants: [] }, createdAt: '',
+  };
+  const state = {
+    id: 'state-1', profileId: profile.id, versionId: version.id, name: '基础状态', kind: 'baseline', status: 'active',
+    wardrobe: '粉色礼服', hair: '黑色盘发', expression: '', pose: '', scene: '', emotion: '', continuityNotes: '发型与礼服保持一致', createdAt: '', updatedAt: '',
+  };
+  const workspace = { character: detail, versions: [version], states: [state], sessions: [], media: [], activeVersion: version, activeState: state };
+  vi.mocked(window.studio.characters.list).mockResolvedValue([profile] as never);
+  vi.mocked(window.studio.characters.detail).mockResolvedValue(detail as never);
+  vi.mocked(window.studio.characterWorkspace.get).mockResolvedValue(workspace as never);
+  vi.mocked(window.studio.tasks.create).mockImplementation(async (input) => ({
+    id: 'task-expression', status: 'draft', createdAt: '', updatedAt: '', ...input,
+  }) as never);
+  vi.mocked(window.studio.creation.compilePrompt).mockResolvedValue({ positive: '同一角色表情组', negative: '身份漂移', modules: [] });
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '资产' }));
+  fireEvent.click(await screen.findByRole('button', { name: '打开角色 蝶灵' }));
+  fireEvent.click(await screen.findByRole('radio', { name: /表情组/ }));
+  fireEvent.click(screen.getByRole('button', { name: '进入表情组工作台' }));
+
+  await waitFor(() => expect(window.studio.tasks.create).toHaveBeenCalledWith(expect.objectContaining({
+    characterProfileId: profile.id,
+    name: '蝶灵 · 表情组',
+    card: expect.objectContaining({
+      deliveryMode: 'character_sheet',
+      aspectRatio: '4:3',
+      referenceAssetIds: ['master-1'],
+      characterExtension: {
+        kind: 'expression_set', sourceCharacterId: profile.id, sourceVersionId: version.id, sourceStateId: state.id,
+      },
+      candidatePlan: expect.arrayContaining([expect.objectContaining({ label: '平静' }), expect.objectContaining({ label: '坚定' })]),
+    }),
+  })));
+  expect(await screen.findByText('本轮锁定角色')).toBeInTheDocument();
+  expect(screen.getAllByText('蝶灵 · 表情组').length).toBeGreaterThan(0);
+  const executionPlan = within(screen.getByRole('region', { name: '当前执行计划' }));
+  expect(executionPlan.getByText('平静')).toBeInTheDocument();
+  expect(executionPlan.getByText('坚定')).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: '创作方案' }).querySelector('.creation-plan-visual-header')).toHaveClass('without-cover');
+  expect(window.studio.generation.image).not.toHaveBeenCalled();
+});
+
+it('角色剧情方向无需模型即可沉淀为场景资产', async () => {
+  const profile = {
+    ...characterFixture('char-story-extension', '月下东方'),
+    masterAssetId: 'master-story',
+    card: {
+      ...characterFixture('char-story-extension', '月下东方').card,
+      visualPresetId: 'oriental_moon',
+      scene: '深夜东方幻想庭院',
+      lighting: '冷月光',
+      camera: '中景叙事镜头',
+      style: '电影级真实材质',
+      mustKeep: '角色脸部与主造型不变',
+      referenceAssetIds: ['master-story'],
+    },
+  };
+  const detail = { ...profile, facts: [], variants: [], evidenceAssets: [] };
+  const workspace = { character: detail, versions: [], states: [], sessions: [], media: [] };
+  const task = {
+    id: 'task-story-extension', characterProfileId: profile.id, name: '月下东方 · 剧情场景', objective: '剧情场景',
+    status: 'draft', collectionIds: [], card: profile.card, createdAt: '', updatedAt: '',
+  };
+  const scene = {
+    id: 'scene-from-role', name: '月下东方 · 开场建立', kind: 'fantasy', lifecycle: 'draft',
+    anchor: profile.card.scene, layout: profile.card.camera, materials: profile.card.style, colorSystem: profile.card.lighting,
+    requiredElements: '开场建立', forbiddenChanges: profile.card.mustKeep, createdAt: '', updatedAt: '',
+  };
+  const sceneState = {
+    id: 'scene-state-from-role', profileId: scene.id, name: '开场建立', status: 'active',
+    timeOfDay: '', weather: '', season: '', lighting: profile.card.lighting, atmosphere: '',
+    setDressing: profile.card.scene, continuityNotes: profile.card.mustKeep, createdAt: '', updatedAt: '',
+  };
+  vi.mocked(window.studio.characters.list).mockResolvedValue([profile] as never);
+  vi.mocked(window.studio.characters.detail).mockResolvedValue(detail as never);
+  vi.mocked(window.studio.characterWorkspace.get).mockResolvedValue(workspace as never);
+  vi.mocked(window.studio.tasks.create).mockImplementation(async (input) => ({ ...task, ...input }) as never);
+  vi.mocked(window.studio.tasks.update).mockImplementation(async (_id, patch) => ({ ...task, ...patch }) as never);
+  vi.mocked(window.studio.creation.compilePrompt).mockResolvedValue({ positive: '角色剧情场景', negative: '身份漂移', modules: [] });
+  vi.mocked(window.studio.sceneWorkspace.create).mockResolvedValue(scene as never);
+  vi.mocked(window.studio.sceneWorkspace.createState).mockResolvedValue(sceneState as never);
+  vi.mocked(window.studio.sceneWorkspace.get).mockResolvedValue({ scene, versions: [], states: [sceneState], sessions: [], media: [], activeState: sceneState } as never);
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '资产' }));
+  fireEvent.click(await screen.findByRole('button', { name: '打开角色 月下东方' }));
+  fireEvent.click(await screen.findByRole('radio', { name: /剧情场景/ }));
+  fireEvent.click(screen.getByRole('button', { name: '进入剧情场景工作台' }));
+  expect(await screen.findByRole('button', { name: '请先选择场景' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: /幻想世界/ }));
+  fireEvent.click(await screen.findByRole('button', { name: '下一步 · 选择方向' }));
+  fireEvent.click(screen.getByRole('button', { name: /确认方向 · 继续调整/ }));
+
+  expect(await screen.findByRole('button', { name: /情绪强度/ })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /剧情动作/ })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /应用到当前方案/ }));
+  fireEvent.click(await screen.findByRole('button', { name: /完成调整 · 保存资产/ }));
+  expect(await screen.findByRole('button', { name: '保存为场景资产' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '保存为场景资产' }));
+
+  await waitFor(() => expect(window.studio.sceneWorkspace.create).toHaveBeenCalledWith(expect.objectContaining({
+    name: '月下东方 · 开场建立',
+    kind: 'fantasy',
+    lifecycle: 'draft',
+    requiredElements: expect.stringContaining('开场建立'),
+  })));
+  expect(window.studio.sceneWorkspace.createState).toHaveBeenCalledWith(scene.id, expect.objectContaining({
+    name: expect.stringContaining('开场建立'),
+    status: 'active',
+  }));
+  expect(window.studio.tasks.update).toHaveBeenCalledWith(task.id, expect.objectContaining({
+    card: expect.objectContaining({ sceneProfileId: scene.id }),
+  }));
+  expect(await screen.findByRole('button', { name: '查看场景资产' })).toBeInTheDocument();
+  expect(window.studio.generation.image).not.toHaveBeenCalled();
 });
 
 it('角色档案能展开用途化细项、编辑脸型并绑定素材证据', async () => {
@@ -349,14 +982,22 @@ it('角色档案能展开用途化细项、编辑脸型并绑定素材证据', a
   };
   vi.mocked(window.studio.characters.list).mockResolvedValue([profile as never]);
   vi.mocked(window.studio.characters.detail).mockResolvedValue({ ...profile, facts: [], variants: [], evidenceAssets: [{ id: 'ref-1', name: '正面参考', confirmation: 'confirmed', rightsStatus: 'authorized' }] } as never);
+  vi.mocked(window.studio.characterWorkspace.get).mockResolvedValue({
+    character: { ...profile, facts: [], variants: [], evidenceAssets: [] },
+    versions: [], states: [], sessions: [], media: [],
+  } as never);
   vi.mocked(window.studio.characters.upsertFact).mockResolvedValue({ ...profile, facts: [], variants: [], evidenceAssets: [] } as never);
 
   render(<App />);
   fireEvent.click(screen.getByRole('button', { name: '资产' }));
-  fireEvent.click(await screen.findByRole('button', { name: '管理细项' }));
+  fireEvent.click(await screen.findByRole('button', { name: '打开角色 蝶灵' }));
+  expect(await screen.findByRole('tab', { name: /创作与复用/ })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.queryByRole('heading', { name: '角色完整度地图' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: /细节设定/ }));
+  expect(await screen.findByRole('heading', { name: '角色完整度地图' })).toBeInTheDocument();
   fireEvent.click(await screen.findByRole('button', { name: '面部五官' }));
   fireEvent.change(screen.getByRole('textbox', { name: '脸型描述' }), { target: { value: '柔和鹅蛋脸' } });
-  fireEvent.click(screen.getByRole('button', { name: '保存脸型' }));
+  fireEvent.click(screen.getByRole('button', { name: '确认脸型' }));
   expect(window.studio.characters.upsertFact).toHaveBeenCalledWith('char-1', expect.objectContaining({ slotKey: 'face.shape', value: '柔和鹅蛋脸', state: 'draft' }));
 });
 
@@ -402,8 +1043,8 @@ it('创建角色后可从当前项目的合格图片绑定主参考并归入角�
   await screen.findByRole('option', { name: project.name });
   fireEvent.change(screen.getByRole('combobox', { name: '当前项目' }), { target: { value: project.id } });
   fireEvent.click(screen.getByRole('button', { name: '资产' }));
-  fireEvent.click(await screen.findByRole('button', { name: '管理细项' }));
-  await screen.findByRole('heading', { name: '蝶灵 · 完整度管理' });
+  fireEvent.click(await screen.findByRole('button', { name: '打开角色 蝶灵' }));
+  await screen.findByRole('tab', { name: /创作与复用/ });
   fireEvent.click(await screen.findByRole('button', { name: '选择主参考图' }));
   expect(await screen.findByRole('option', { name: available.name })).toBeInTheDocument();
   expect(screen.queryByRole('option', { name: '未审片' })).not.toBeInTheDocument();
@@ -414,8 +1055,10 @@ it('创建角色后可从当前项目的合格图片绑定主参考并归入角�
   await waitFor(() => expect(window.studio.collections.attachAsset).toHaveBeenCalledWith(collection.id, available.id, '主参考'));
   await waitFor(() => expect(window.studio.characters.update).toHaveBeenCalledWith(profile.id, { masterAssetId: available.id }));
   expect(vi.mocked(window.studio.collections.attachAsset).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(window.studio.characters.update).mock.invocationCallOrder[0]);
-  expect(await screen.findByText(/已绑定主参考图/)).toBeInTheDocument();
-  expect((await screen.findAllByRole('checkbox', { name: /可用正面参考/, hidden: true })).length).toBeGreaterThan(0);
+  expect(await screen.findByText(/绑定主参考图「可用正面参考」/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: /细节设定/ }));
+  fireEvent.click(screen.getByRole('button', { name: '角度与局部参考' }));
+  expect((await screen.findAllByRole('button', { name: '可用正面参考' })).length).toBeGreaterThan(0);
 });
 
 it('提交主参考前素材权利变更时停止绑定并提示重新选择', async () => {
@@ -464,16 +1107,19 @@ it.each([
   vi.mocked(window.studio.characters.create).mockImplementation(async (input) => ({ ...characterFixture('new-char', input.name), ...input } as never));
   vi.mocked(window.studio.characters.detail).mockResolvedValue({ ...characterFixture('new-char', '蝶灵'), facts: [], variants: [], evidenceAssets: [] } as never);
   vi.mocked(window.studio.collections.create).mockResolvedValue({ id: 'collection-1', kind: 'character', name: '角色包', status: 'draft' } as never);
+  vi.mocked(window.studio.tasks.create).mockImplementation(async (input) => ({ id: 'task-new', status: 'draft', createdAt: '', updatedAt: '', ...input }) as never);
+  vi.mocked(window.studio.creation.compilePrompt).mockResolvedValue({ positive: '人物创作', negative: '', modules: [] });
 
   render(<App />);
   fireEvent.click(screen.getByRole('button', { name: '资产' }));
   fireEvent.click(screen.getByRole('button', { name: '素材库' }));
   fireEvent.click(await screen.findByRole('heading', { name }));
   fireEvent.click(screen.getByRole('button', { name: '创作' }));
-  fireEvent.click(screen.getByRole('button', { name: '当前创作卡' }));
-  fireEvent.change(screen.getByRole('textbox', { name: '角色档案名称' }), { target: { value: '蝶灵' } });
-  fireEvent.click(screen.getByRole('button', { name: '保存角色档案' }));
-  await waitFor(() => expect(window.studio.characters.create).toHaveBeenCalledWith(expect.objectContaining({ name: '蝶灵', masterAssetId: undefined })));
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '角色塑造' }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: '角色创作步骤' })).getByRole('button', { name: /完成/ }));
+  fireEvent.click(screen.getByRole('button', { name: '保存为角色资产' }));
+  await waitFor(() => expect(window.studio.characters.create).toHaveBeenCalledWith(expect.objectContaining({ masterAssetId: undefined })));
   expect(window.studio.collections.attachAsset).not.toHaveBeenCalled();
 }, 20_000);
 
@@ -676,17 +1322,21 @@ it('快速切换角色时隐藏旧详情，旧读取完成也不覆盖新角色'
   const b = deferred<never>();
   vi.mocked(window.studio.characters.list).mockResolvedValue([first, second] as never);
   vi.mocked(window.studio.characters.detail).mockImplementation((id) => id === 'char-a' ? a.promise : b.promise);
+  vi.mocked(window.studio.characterWorkspace.get).mockImplementation(async (id) => ({
+    character: { ...(id === 'char-a' ? first : second), facts: [], variants: [], evidenceAssets: [] },
+    versions: [], states: [], sessions: [], media: [],
+  }) as never);
 
   render(<App />);
   fireEvent.click(screen.getByRole('button', { name: '资产' }));
-  const manage = await screen.findAllByRole('button', { name: '管理细项' });
-  fireEvent.click(manage[0]);
-  fireEvent.click(manage[1]);
+  await screen.findByRole('button', { name: '打开角色 甲角色' });
+  fireEvent.click(screen.getByRole('button', { name: '打开角色 乙角色' }));
   await act(async () => { b.resolve({ ...second, facts: [], variants: [], evidenceAssets: [] } as never); });
-  expect(screen.getByRole('heading', { name: '乙角色 · 完整度管理' })).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole('tab', { name: /细节设定/ }));
+  expect(screen.getByRole('heading', { name: '乙角色 · 素材完整度' })).toBeInTheDocument();
   await act(async () => { a.resolve({ ...first, facts: [], variants: [], evidenceAssets: [] } as never); });
-  expect(screen.getByRole('heading', { name: '乙角色 · 完整度管理' })).toBeInTheDocument();
-  expect(screen.queryByRole('heading', { name: '甲角色 · 完整度管理' })).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: '乙角色 · 素材完整度' })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: '甲角色 · 素材完整度' })).not.toBeInTheDocument();
 });
 
 it('角色切换期间旧角色保存的结果不能写入当前详情', async () => {
@@ -695,23 +1345,28 @@ it('角色切换期间旧角色保存的结果不能写入当前详情', async (
   const pendingSave = deferred<never>();
   vi.mocked(window.studio.characters.list).mockResolvedValue([first, second] as never);
   vi.mocked(window.studio.characters.detail).mockImplementation(async (id) => ({ ...(id === 'char-a' ? first : second), facts: [], variants: [], evidenceAssets: [] }) as never);
+  vi.mocked(window.studio.characterWorkspace.get).mockImplementation(async (id) => ({
+    character: { ...(id === 'char-a' ? first : second), facts: [], variants: [], evidenceAssets: [] },
+    versions: [], states: [], sessions: [], media: [],
+  }) as never);
   vi.mocked(window.studio.characters.upsertFact).mockReturnValue(pendingSave.promise);
 
   render(<App />);
   fireEvent.click(screen.getByRole('button', { name: '资产' }));
-  const manage = await screen.findAllByRole('button', { name: '管理细项' });
-  fireEvent.click(manage[0]);
-  await screen.findByRole('heading', { name: '甲角色 · 完整度管理' });
+  await screen.findByRole('button', { name: '打开角色 甲角色' });
+  fireEvent.click(await screen.findByRole('tab', { name: /细节设定/ }));
+  await screen.findByRole('heading', { name: '甲角色 · 素材完整度' });
   fireEvent.change(screen.getByRole('textbox', { name: '成年年龄段描述' }), { target: { value: '已成年' } });
-  fireEvent.click(screen.getByRole('button', { name: '保存成年年龄段' }));
+  fireEvent.click(screen.getByRole('button', { name: '确认成年年龄段' }));
   expect(window.studio.characters.upsertFact).toHaveBeenCalledWith('char-a', expect.anything());
-  fireEvent.click(manage[1]);
-  expect(screen.queryByRole('heading', { name: '甲角色 · 完整度管理' })).not.toBeInTheDocument();
-  await screen.findByRole('heading', { name: '乙角色 · 完整度管理' });
+  fireEvent.click(screen.getByRole('button', { name: '打开角色 乙角色' }));
+  expect(screen.queryByRole('heading', { name: '甲角色 · 素材完整度' })).not.toBeInTheDocument();
+  fireEvent.click(await screen.findByRole('tab', { name: /细节设定/ }));
+  await screen.findByRole('heading', { name: '乙角色 · 素材完整度' });
   await act(async () => { pendingSave.resolve({ ...first, facts: [], variants: [], evidenceAssets: [] } as never); });
-  expect(screen.getByRole('heading', { name: '乙角色 · 完整度管理' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: '乙角色 · 素材完整度' })).toBeInTheDocument();
   fireEvent.change(screen.getByRole('textbox', { name: '成年年龄段描述' }), { target: { value: '乙角色设定' } });
-  fireEvent.click(screen.getByRole('button', { name: '保存成年年龄段' }));
+  fireEvent.click(screen.getByRole('button', { name: '确认成年年龄段' }));
   expect(window.studio.characters.upsertFact).toHaveBeenLastCalledWith('char-b', expect.objectContaining({ value: '乙角色设定' }));
 });
 
@@ -724,7 +1379,87 @@ it('使用已存角色开启新场景时不自动继承旧档案的未核验必�
   render(<App />);
   fireEvent.click(screen.getByRole('button', { name: '资产' }));
   fireEvent.click(await screen.findByRole('button', { name: '用此角色做新场景' }));
-  expect(screen.getByPlaceholderText('例如：脸型和黑色长发不变；保持真实皮肤；不要文字和水印')).toHaveValue('');
+  expect(screen.queryByRole('textbox', { name: '必须保持' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '精细塑造' })).not.toBeInTheDocument();
+  fireEvent.click(within(screen.getByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /输出/ }));
+  expect(screen.getByRole('button', { name: '锁定脸部' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('button', { name: '锁定服装' })).toHaveAttribute('aria-pressed', 'false');
+  expect(screen.queryByText('旧档案中的未核验脸型')).not.toBeInTheDocument();
+});
+
+it('使用已存角色创建方案时保留角色身份，不被入口默认外貌覆盖', async () => {
+  const source = {
+    ...characterFixture('char-locked', '锁定角色'),
+    card: {
+      ...characterFixture('char-locked', '锁定角色').card,
+      subject: '明确锁定的成年原创角色',
+      identityAnchor: '固定的脸部结构与银色短发',
+    },
+  };
+  vi.mocked(window.studio.characters.list).mockResolvedValue([source] as never);
+  vi.mocked(window.studio.characters.detail).mockResolvedValue({ ...source, facts: [], variants: [], evidenceAssets: [] } as never);
+  vi.mocked(window.studio.tasks.create).mockImplementation(async (input) => ({
+    id: 'task-locked', status: 'draft', createdAt: '', updatedAt: '', ...input,
+  }) as never);
+  vi.mocked(window.studio.creation.compilePrompt).mockResolvedValue({ positive: '锁定角色方案', negative: '', modules: [] });
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '角色塑造' }));
+  fireEvent.click(screen.getByRole('button', { name: '角色资产' }));
+  fireEvent.click(await screen.findByRole('option', { name: `使用角色 ${source.name}` }));
+  fireEvent.click(screen.getByRole('button', { name: '精细塑造' }));
+  fireEvent.click(screen.getByRole('button', { name: '8 确认方案 总览、交付与锁定' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存方案' }));
+
+  await waitFor(() => expect(window.studio.tasks.create).toHaveBeenCalledWith(expect.objectContaining({
+    characterProfileId: source.id,
+    card: expect.objectContaining({
+      subject: '锁定角色',
+      identityAnchor: expect.stringContaining('人物脸部结构'),
+      mustKeep: expect.stringContaining('沿用角色「锁定角色」的身份结构'),
+    }),
+  })));
+  const created = vi.mocked(window.studio.tasks.create).mock.calls.at(-1)?.[0];
+  expect(created?.card.subject).not.toContain('东亚人物特征');
+  expect(created?.card.subject).not.toContain('冷调象牙白肤色');
+});
+
+it('参考图与场景资产进入同一方案时分别绑定身份和场景角色', async () => {
+  const identityAsset = { id: 'identity-ref', name: '角色正面基准', type: 'reference_image', mediaType: 'image/png', confirmation: 'confirmed', rightsStatus: 'authorized', metadata: {} };
+  const sceneAsset = { id: 'scene-ref', name: '雨夜温室基准', type: 'reference_image', mediaType: 'image/png', confirmation: 'confirmed', rightsStatus: 'original', metadata: {} };
+  const scene = { id: 'scene-profile', name: '雨夜温室', kind: 'interior', lifecycle: 'confirmed', anchor: '玻璃温室中轴', layout: '中央石板路', materials: '潮湿玻璃', colorSystem: '冷蓝', requiredElements: '拱形门', forbiddenChanges: '不改变中轴', createdAt: '', updatedAt: '' };
+  vi.mocked(window.studio.assets.list).mockResolvedValue([identityAsset, sceneAsset] as never);
+  vi.mocked(window.studio.assets.preview).mockResolvedValue('' as never);
+  vi.mocked(window.studio.sceneWorkspace.list).mockResolvedValue([scene] as never);
+  vi.mocked(window.studio.sceneWorkspace.get).mockResolvedValue({
+    scene, versions: [], states: [], sessions: [], activeVersion: undefined, activeState: undefined,
+    media: [{ assetId: sceneAsset.id, asset: sceneAsset, role: 'reference' }],
+  } as never);
+  vi.mocked(window.studio.tasks.create).mockImplementation(async (input) => ({
+    id: 'task-references', status: 'draft', createdAt: '', updatedAt: '', ...input,
+  }) as never);
+  vi.mocked(window.studio.creation.compilePrompt).mockResolvedValue({ positive: '参考图方案', negative: '', modules: [] });
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '角色塑造' }));
+  fireEvent.click(screen.getByRole('button', { name: '参考图' }));
+  fireEvent.click(await screen.findByRole('option', { name: `使用参考图 ${identityAsset.name}` }));
+  fireEvent.click(screen.getByRole('button', { name: '精细塑造' }));
+  fireEvent.click(screen.getByRole('button', { name: '6 造型场景 身份、造型与场景' }));
+  fireEvent.click(screen.getByRole('option', { name: `使用场景 ${scene.name}` }));
+  fireEvent.click(screen.getByRole('button', { name: '8 确认方案 总览、交付与锁定' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存方案' }));
+
+  await waitFor(() => expect(window.studio.tasks.create).toHaveBeenCalled());
+  const created = vi.mocked(window.studio.tasks.create).mock.calls.at(-1)?.[0];
+  expect(created?.card.subject).toContain('按参考图「角色正面基准」锁定人物');
+  expect(created?.card.subject).not.toContain('东亚人物特征');
+  expect(created?.card.referenceBindings).toEqual(expect.arrayContaining([
+    { assetId: identityAsset.id, role: 'identity', priority: 'primary' },
+    { assetId: sceneAsset.id, role: 'scene', priority: 'support' },
+  ]));
 });
 
 it('引导流程快速切角色时不显示另一角色的变体选项', async () => {
@@ -735,13 +1470,14 @@ it('引导流程快速切角色时不显示另一角色的变体选项', async (
   vi.mocked(window.studio.characters.detail).mockImplementation((id) => id === 'char-a' ? a.promise : b.promise);
   render(<App />);
   fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
-  fireEvent.click(screen.getByRole('button', { name: '用已保存角色' }));
-  await screen.findByRole('option', { name: '主角 · 甲角色' });
-  fireEvent.change(screen.getByRole('combobox', { name: '选择角色' }), { target: { value: 'char-a' } });
+  fireEvent.click(screen.getByRole('button', { name: '角色塑造' }));
+  fireEvent.click(screen.getByRole('button', { name: '角色资产' }));
+  fireEvent.click(await screen.findByRole('option', { name: '使用角色 甲角色' }));
   await waitFor(() => expect(window.studio.characters.detail).toHaveBeenCalledWith('char-a'));
-  fireEvent.change(screen.getByRole('combobox', { name: '选择角色' }), { target: { value: 'char-b' } });
+  fireEvent.click(screen.getByRole('option', { name: '使用角色 乙角色' }));
   await waitFor(() => expect(window.studio.characters.detail).toHaveBeenCalledWith('char-b'));
   await act(async () => { b.resolve({ ...second, facts: [], evidenceAssets: [], variants: [{ id: 'look-b', profileId: 'char-b', kind: 'look', name: '乙造型' }] } as never); });
+  fireEvent.click(screen.getByRole('button', { name: '选择造型、表情和动作' }));
   expect(screen.getByRole('option', { name: '乙造型' })).toBeInTheDocument();
   await act(async () => { a.resolve({ ...first, facts: [], evidenceAssets: [], variants: [{ id: 'look-a', profileId: 'char-a', kind: 'look', name: '甲造型' }] } as never); });
   expect(screen.getByRole('option', { name: '乙造型' })).toBeInTheDocument();
@@ -756,10 +1492,11 @@ it('引导选择参考图时排除未审片与权利未明的图片', async () =
   ] as never);
   render(<App />);
   fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
-  fireEvent.click(screen.getByRole('button', { name: '按参考图创作' }));
-  expect(await screen.findByRole('option', { name: '可用主图' })).toBeInTheDocument();
-  expect(screen.queryByRole('option', { name: '权利待核' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('option', { name: '未审片' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '角色塑造' }));
+  fireEvent.click(screen.getByRole('button', { name: '参考图' }));
+  expect(await screen.findByRole('option', { name: '使用参考图 可用主图' })).toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: '使用参考图 权利待核' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: '使用参考图 未审片' })).not.toBeInTheDocument();
 });
 
 it('创作卡明确区分实际送模主参考与仅记录参考', async () => {
@@ -773,6 +1510,7 @@ it('创作卡明确区分实际送模主参考与仅记录参考', async () => {
   await screen.findByRole('option', { name: '人物项目' });
   fireEvent.change(await screen.findByRole('combobox', { name: '当前项目' }), { target: { value: 'project-1' } });
   fireEvent.click(await screen.findByRole('button', { name: /人物图.*人物图/ }));
+  fireEvent.click(screen.getByRole('button', { name: '更多设置' }));
   expect(screen.getByText('实际送模')).toBeInTheDocument();
   expect(screen.getByText('仅记录')).toBeInTheDocument();
   expect(screen.getByText(/只有已确认且使用权为原创或已授权/)).toBeInTheDocument();

@@ -34,11 +34,11 @@ export class CreativeTaskRepository {
     return (rows as TaskRow[]).map(mapTask);
   }
 
-  update(id: string, patch: Partial<Pick<CreativeTask, 'name' | 'objective' | 'status' | 'collectionIds' | 'card' | 'resultAssetId'>>): CreativeTask {
+  update(id: string, patch: Partial<Pick<CreativeTask, 'characterProfileId' | 'name' | 'objective' | 'status' | 'collectionIds' | 'card' | 'resultAssetId'>>): CreativeTask {
     const current = this.get(id);
     if (!current) throw new Error(`创作任务不存在：${id}`);
-    this.db.database.prepare('UPDATE creative_tasks SET name = ?, objective = ?, status = ?, collection_ids_json = ?, card_json = ?, result_asset_id = ?, updated_at = ? WHERE id = ?')
-      .run(patch.name?.trim() || current.name, patch.objective?.trim() || current.objective, patch.status ?? current.status, JSON.stringify([...new Set(patch.collectionIds ?? current.collectionIds)]), JSON.stringify(patch.card ?? current.card), patch.resultAssetId === undefined ? current.resultAssetId ?? null : patch.resultAssetId ?? null, new Date().toISOString(), id);
+    this.db.database.prepare('UPDATE creative_tasks SET character_profile_id = ?, name = ?, objective = ?, status = ?, collection_ids_json = ?, card_json = ?, result_asset_id = ?, updated_at = ? WHERE id = ?')
+      .run(patch.characterProfileId === undefined ? current.characterProfileId ?? null : patch.characterProfileId ?? null, patch.name?.trim() || current.name, patch.objective?.trim() || current.objective, patch.status ?? current.status, JSON.stringify([...new Set(patch.collectionIds ?? current.collectionIds)]), JSON.stringify(patch.card ?? current.card), patch.resultAssetId === undefined ? current.resultAssetId ?? null : patch.resultAssetId ?? null, new Date().toISOString(), id);
     return this.get(id)!;
   }
 }

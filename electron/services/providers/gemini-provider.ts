@@ -33,6 +33,21 @@ export class GeminiProvider {
 
   isConfigured(): boolean { return Boolean(this.options.apiKey()); }
 
+  async verifyConnection(): Promise<void> {
+    const apiKey = this.options.apiKey();
+    if (!apiKey) throw new Error('尚未配置 Gemini API 密钥。请在设置中完成本机连接。');
+    const response = await fetchProvider('Gemini', 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1', {
+      method: 'GET',
+      headers: { 'x-goog-api-key': apiKey },
+    }, 20_000);
+    const payload = await response.json() as { models?: unknown[]; error?: { code?: number; message?: string } };
+    if (!response.ok) {
+      const code = payload.error?.code ? ` [${payload.error.code}]` : '';
+      throw new Error(`Gemini 连接验证失败（${response.status}${code}）：${payload.error?.message ?? '请检查 API 密钥、网络和项目权限。'}`);
+    }
+    if (!Array.isArray(payload.models)) throw new Error('Gemini 连接成功，但没有返回可用模型列表。');
+  }
+
   private async request(body: Record<string, unknown>): Promise<GeminiResponse> {
     const apiKey = this.options.apiKey();
     if (!apiKey) throw new Error('尚未配置 Gemini API 密钥。请在设置中完成本机连接。');

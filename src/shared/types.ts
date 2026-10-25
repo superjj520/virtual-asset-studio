@@ -319,8 +319,105 @@ export type ReferenceAssetBinding = {
   priority: "primary" | "support";
 };
 
+export type CreativeDeliveryMode =
+  | "portrait"
+  | "character_sheet"
+  | "story_scene"
+  | "cover"
+  | "series_pack"
+  | "dynamic_keyframe";
+
+/** 系列创作中的单个候选／镜头策略；需要随创作卡保存并参与真实生成。 */
+export type CreativeCandidatePlanItem = {
+  id: string;
+  label: string;
+  directive: string;
+};
+
+/**
+ * 角色内核使用稳定选项编号保存，供人物档案、连续剧情、语音与动态内容复用。
+ * 展示文案由当前选项库解析，避免把结构化选择退化成一段不可管理的提示词。
+ */
+export type CreativeCharacterCore = {
+  roleId: string;
+  personalityId: string;
+  voiceId: string;
+  relationshipId: string;
+  interestId: string;
+  performanceId: string;
+  /** 人物故事原型；旧角色卡可能没有该字段。 */
+  archetypeId?: string;
+  /** 长期推动角色行动的核心目标。 */
+  driveId?: string;
+  /** 形成反差和剧情转折的内在冲突。 */
+  conflictId?: string;
+  /** 默认进入连续内容时采用的开场情境。 */
+  openingId?: string;
+};
+
+/**
+ * 快速人物塑造的稳定选择编号。它与展示用长文本并存，保存角色时会被拆成可独立维护的事实细项。
+ */
+export type CreativeAppearanceProfile = {
+  subjectId: string;
+  ageId: string;
+  roleId: string;
+  ethnicityId: string;
+  skinToneId: string;
+  faceId: string;
+  eyesId: string;
+  eyeColorId: string;
+  hairId: string;
+  hairColorId: string;
+  bodyId: string;
+  heightId: string;
+  proportionId: string;
+  upperVolumeId: string;
+  lowerShapeId: string;
+  wardrobeId: string;
+  poseId: string;
+  expressionId: string;
+};
+
+/**
+ * 剧情场景的结构化叙事骨架。稳定编号随创作卡保存，展示文案由当前选项库解析，
+ * 使场景能够继续扩展为连续镜头，而不是退化为一段无法管理的描述文字。
+ */
+export type CreativeStoryPlan = {
+  relationshipId: string;
+  momentId: string;
+  pacingId: string;
+  atmosphereId: string;
+};
+
+/**
+ * 角色确认后可继续生产的标准资产类型。它描述业务目的，不等同于底层模型的出图模式。
+ */
+export type CharacterExtensionKind =
+  | "portrait"
+  | "expression_set"
+  | "pose_set"
+  | "wardrobe_set"
+  | "story_scene"
+  | "series_pack"
+  | "dialogue_scene"
+  | "dynamic_keyframe";
+
+/** 记录衍生任务来自哪个角色、版本与状态，保证后续资产可以回溯。 */
+export type CharacterExtensionPlan = {
+  kind: CharacterExtensionKind;
+  sourceCharacterId: string;
+  sourceVersionId?: string;
+  sourceStateId?: string;
+};
+
 export type CreativeCard = {
   projectId?: string;
+  deliveryMode?: CreativeDeliveryMode;
+  /** 本地创作方向的视觉基线。仅用于预演与复用，不代表已经生成的结果。 */
+  visualPresetId?: string;
+  /** 剧情／镜头任务确认的场景方向编号；用于恢复选择式流程。 */
+  sceneDirectionId?: string;
   intent: string;
   subject: string;
   identityAnchor: string;
@@ -340,6 +437,18 @@ export type CreativeCard = {
   referenceAssetIds: string[];
   /** 与 referenceAssetIds 同步；旧数据缺失时会自动迁移为首张主参考。 */
   referenceBindings?: ReferenceAssetBinding[];
+  /** 用户在系列规划中确认的镜头顺序与生成策略。 */
+  candidatePlan?: CreativeCandidatePlanItem[];
+  /** 角色塑造入口确认的结构化人物内核。 */
+  characterCore?: CreativeCharacterCore;
+  /** 角色塑造入口确认的结构化外观选择。 */
+  appearanceProfile?: CreativeAppearanceProfile;
+  /** 剧情场景入口确认的人物关系、事件瞬间、节拍与空间氛围。 */
+  storyPlan?: CreativeStoryPlan;
+  /** 剧情场景已经沉淀出的场景档案；重新打开任务时据此恢复空间与状态上下文。 */
+  sceneProfileId?: string;
+  /** 从角色工作室发起的结构化衍生任务。 */
+  characterExtension?: CharacterExtensionPlan;
 };
 
 export type CreativeTaskStatus = "draft" | "ready" | "producing" | "blocked" | "review" | "completed" | "archived";
@@ -473,6 +582,23 @@ export type CharacterVersion = {
 /** 可变化的演出上下文与角色核心分离；换装、换场景不会创建一个新角色。 */
 export type CharacterStateKind = "baseline" | "scene" | "performance";
 export type CharacterStateStatus = "draft" | "active" | "archived";
+export type CharacterTrackerValueKind = "scale" | "choice" | "text";
+export type CharacterTrackerVisibility = "visible" | "internal";
+/**
+ * 可持续角色状态字段。它记录“现在是什么”以及“何时变化”，让角色从静态设定
+ * 延伸到剧情、漫剧和游戏，而不依赖某个具体模型的私有格式。
+ */
+export type CharacterStateTracker = {
+  id: string;
+  label: string;
+  valueKind: CharacterTrackerValueKind;
+  value: string;
+  min?: number;
+  max?: number;
+  options: string[];
+  visibility: CharacterTrackerVisibility;
+  updateRule: string;
+};
 export type CharacterState = {
   id: string;
   profileId: string;
@@ -487,6 +613,7 @@ export type CharacterState = {
   scene: string;
   emotion: string;
   continuityNotes: string;
+  trackers?: CharacterStateTracker[];
   createdAt: string;
   updatedAt: string;
 };
@@ -863,6 +990,13 @@ export type ProviderStatus = {
   providers: ProviderConnection[];
   routes: Partial<Record<ProviderCapability, ProviderId>>;
   network?: "system_proxy" | "direct";
+};
+
+export type ProviderVerificationResult = {
+  providerId: ProviderId;
+  ok: boolean;
+  checkedAt: string;
+  message: string;
 };
 
 export type BudgetStatus = {

@@ -74,14 +74,27 @@ it("角色状态只能属于当前角色，同一角色只有一个正在使用�
   const publicState = workspace.createState(profile.id, {
     versionId: version.id, name: "公开工作状态", kind: "scene", status: "active",
     wardrobe: "深色西装", scene: "办公室", emotion: "克制",
+    trackers: [
+      { id: "mood", label: "心情", valueKind: "choice", value: "克制", options: ["克制", "放松"], visibility: "visible", updateRule: "剧情压力变化时更新" },
+      { id: "mood", label: "重复心情", valueKind: "text", value: "应被丢弃", options: [], visibility: "visible", updateRule: "" },
+    ],
   });
   const privateState = workspace.createState(profile.id, {
     versionId: version.id, name: "私人放松状态", kind: "performance", status: "active",
     wardrobe: "居家服", scene: "公寓", emotion: "放松",
   });
   expect(workspace.getState(publicState.id)?.status).toBe("draft");
+  expect(workspace.getState(publicState.id)?.trackers).toEqual([
+    expect.objectContaining({ id: "mood", label: "心情", value: "克制" }),
+  ]);
   expect(workspace.getState(privateState.id)?.status).toBe("active");
   expect(workspace.getWorkspace(profile.id).activeState?.id).toBe(privateState.id);
+  const updated = workspace.updateState(privateState.id, {
+    trackers: [{ id: "affinity", label: "关系温度", valueKind: "scale", value: "35", min: 0, max: 100, options: [], visibility: "internal", updateRule: "信任增加时提高" }],
+  });
+  expect(updated.trackers).toEqual([expect.objectContaining({ id: "affinity", value: "35", visibility: "internal" })]);
+  const columns = database.database.prepare("PRAGMA table_info(character_states)").all() as Array<{ name: string }>;
+  expect(columns.some((column) => column.name === "trackers_json")).toBe(true);
   database.close();
 });
 
