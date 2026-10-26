@@ -86,10 +86,9 @@ export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, 
     </div>
     <footer className="creation-launchpad-footer">
       <span>已有角色、场景和参考图会在下一步自动出现。</span>
-      <div>
-        {embedded && <button type="button" className="creation-launchpad-manage" onClick={onExit}>项目与历史</button>}
-        <button type="button" onClick={() => onSelect("image")}>直接做一张图</button>
-      </div>
+      {embedded && <div>
+        <button type="button" className="creation-launchpad-manage" onClick={onExit}>项目与历史</button>
+      </div>}
     </footer>
   </section>;
 }

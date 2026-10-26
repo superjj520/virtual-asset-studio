@@ -3179,7 +3179,7 @@ button:active { transform: translateY(1px); }
   overflow: visible;
 }
 .creation-launchpad-embedded {
-  min-height: calc(100vh - 64px);
+  min-height: calc(100vh - 96px);
   padding: 28px clamp(24px, 3.5vw, 56px) 22px;
 }
 .creation-launchpad-embedded .creation-launchpad-header {
