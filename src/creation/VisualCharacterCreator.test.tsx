@@ -848,4 +848,72 @@ describe("VisualCharacterCreator", () => {
     expect(onStoryPlanChange).toHaveBeenCalledWith("pacing", "peak");
     expect(onStoryPlanChange).toHaveBeenCalledWith("atmosphere", "danger");
   });
+
+  it("快速创作把面部与体型细节收进渐进披露", () => {
+    render(<VisualCharacterCreator
+      creationKind="character"
+      presetId="oriental_moon"
+      onPresetChange={vi.fn()}
+      direction="portrait"
+      onDirectionChange={vi.fn()}
+      sourceMode="new"
+      onSourceModeChange={vi.fn()}
+      subject="adult_woman"
+      onSubjectChange={vi.fn()}
+      appearance={DEFAULT_GUIDED_APPEARANCE}
+      onAppearanceChange={vi.fn()}
+      scene="ancient_east"
+      onSceneChange={vi.fn()}
+      mood="cool"
+      onMoodChange={vi.fn()}
+      shot="half_body"
+      onShotChange={vi.fn()}
+      visualStyle="photoreal"
+      onVisualStyleChange={vi.fn()}
+      constraints={["identity", "skin"]}
+      onConstraintToggle={vi.fn()}
+      characters={[]}
+      characterId=""
+      onCharacterChange={vi.fn()}
+      purpose="portrait"
+      onPurposeChange={vi.fn()}
+      variantSelections={{}}
+      onVariantChange={vi.fn()}
+      referenceAssets={[]}
+      referenceAssetId=""
+      onReferenceAssetChange={vi.fn()}
+      scenes={[]}
+      sceneProfileId=""
+      onSceneProfileChange={vi.fn()}
+      customSubject=""
+      onCustomSubjectChange={vi.fn()}
+      customScene=""
+      onCustomSceneChange={vi.fn()}
+      canGenerate
+      candidateCount={2}
+      onCandidateCountChange={vi.fn()}
+      qualityTier="premium"
+      onQualityTierChange={vi.fn()}
+      onCreate={vi.fn()}
+      onSave={vi.fn()}
+      onOpenSettings={vi.fn()}
+    />);
+
+    const steps = within(screen.getByRole("navigation", { name: "角色创作步骤" }));
+    fireEvent.click(steps.getByRole("button", { name: /外形/ }));
+    expect(screen.getByText("脸部轮廓")).toBeInTheDocument();
+    expect(screen.queryByText("眼神方向")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /更多细节：眼神/ }));
+    expect(screen.getByText("眼神方向")).toBeInTheDocument();
+    expect(screen.getByText("瞳孔颜色")).toBeInTheDocument();
+    expect(screen.getByText("发色")).toBeInTheDocument();
+
+    fireEvent.click(steps.getByRole("button", { name: /形体/ }));
+    expect(screen.getByText("身体比例")).toBeInTheDocument();
+    expect(screen.queryByText("体态比例")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /更多细节：体态/ }));
+    expect(screen.getByText("体态比例")).toBeInTheDocument();
+    expect(screen.getByText("上身量感")).toBeInTheDocument();
+    expect(screen.getByText("下身轮廓")).toBeInTheDocument();
+  });
 });

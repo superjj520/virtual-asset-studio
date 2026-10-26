@@ -596,6 +596,8 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
   const [quickStage, setQuickStage] = useState<CreationQuickStage>(initialProgress.current?.quickStage ?? "direction");
   const [characterCorePanel, setCharacterCorePanel] = useState<CharacterCorePanel>(initialProgress.current?.corePanel ?? "identity");
   const [showSavedAssets, setShowSavedAssets] = useState(false);
+  const [showFaceDetails, setShowFaceDetails] = useState(false);
+  const [showBodyDetails, setShowBodyDetails] = useState(false);
   const [activeSeriesShotIndex, setActiveSeriesShotIndex] = useState(0);
   const availableCharacters = props.characters.filter((item) => item.lifecycle !== "archived");
   const visualCharacters = availableCharacters.filter((item) => item.masterAssetId);
@@ -763,9 +765,21 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
   </>;
 
   const renderCharacterAppearance = () => <>
-    {renderFace()}
-    <div className="character-step-divider" aria-hidden="true" />
-    {renderHair()}
+    <div className="character-disclosure-bar">
+      <span>先定轮廓，进阶细节不阻塞下一步</span>
+      <button type="button" className="creator-more-button" aria-expanded={showFaceDetails} onClick={() => setShowFaceDetails((value) => !value)}>
+        {showFaceDetails ? "收起面部细节" : "更多细节：眼神、瞳孔颜色、发色"}
+      </button>
+    </div>
+    <BoardChoiceGrid label="脸部轮廓" options={GUIDED_FACES} value={props.appearance.face} onChange={(value) => props.onAppearanceChange("face", value)} artwork={faceReferenceBoard} hint="同一身份对比" />
+    <BoardChoiceGrid label="发型轮廓" options={GUIDED_HAIR} value={props.appearance.hair} onChange={(value) => props.onAppearanceChange("hair", value)} artwork={hairReferenceBoard} hint="同一身份对比" />
+    {showFaceDetails && (
+      <div className="creator-progressive-details">
+        <BoardChoiceGrid label="眼神方向" options={GUIDED_EYES} value={props.appearance.eyes} onChange={(value) => props.onAppearanceChange("eyes", value)} artwork={eyesReferenceBoard} hint="同一身份对比" />
+        <ColorChoiceGrid label="瞳孔颜色" options={GUIDED_EYE_COLORS} value={props.appearance.eyeColor} onChange={(value) => props.onAppearanceChange("eyeColor", value)} colors={EYE_COLORS} />
+        <ColorChoiceGrid label="发色" options={GUIDED_HAIR_COLORS} value={props.appearance.hairColor} onChange={(value) => props.onAppearanceChange("hairColor", value)} colors={HAIR_COLORS} />
+      </div>
+    )}
   </>;
 
   const renderBody = () => <>
@@ -774,6 +788,24 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
     <VisualChoiceGrid label="体态比例" options={GUIDED_PROPORTIONS} value={props.appearance.proportion} onChange={(value) => props.onAppearanceChange("proportion", value)} />
     <VisualChoiceGrid label="上身量感" options={GUIDED_UPPER_VOLUMES} value={props.appearance.upperVolume} onChange={(value) => props.onAppearanceChange("upperVolume", value)} />
     <VisualChoiceGrid label="下身轮廓" options={GUIDED_LOWER_SHAPES} value={props.appearance.lowerShape} onChange={(value) => props.onAppearanceChange("lowerShape", value)} />
+  </>;
+
+  const renderQuickBody = () => <>
+    <div className="character-disclosure-bar">
+      <span>先定比例，进阶细节不阻塞下一步</span>
+      <button type="button" className="creator-more-button" aria-expanded={showBodyDetails} onClick={() => setShowBodyDetails((value) => !value)}>
+        {showBodyDetails ? "收起体型细节" : "更多细节：体态比例、上身量感、下身轮廓"}
+      </button>
+    </div>
+    <BoardChoiceGrid label="身体比例" options={GUIDED_BODIES} value={props.appearance.body} onChange={(value) => props.onAppearanceChange("body", value)} artwork={bodyReferenceBoard} hint="真实成年比例" layout="full-body" />
+    <VisualChoiceGrid label="身高" options={GUIDED_HEIGHTS} value={props.appearance.height} onChange={(value) => props.onAppearanceChange("height", value)} />
+    {showBodyDetails && (
+      <div className="creator-progressive-details">
+        <VisualChoiceGrid label="体态比例" options={GUIDED_PROPORTIONS} value={props.appearance.proportion} onChange={(value) => props.onAppearanceChange("proportion", value)} />
+        <VisualChoiceGrid label="上身量感" options={GUIDED_UPPER_VOLUMES} value={props.appearance.upperVolume} onChange={(value) => props.onAppearanceChange("upperVolume", value)} />
+        <VisualChoiceGrid label="下身轮廓" options={GUIDED_LOWER_SHAPES} value={props.appearance.lowerShape} onChange={(value) => props.onAppearanceChange("lowerShape", value)} />
+      </div>
+    )}
   </>;
 
   const renderWorld = () => <>
@@ -1399,12 +1431,12 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
       if (section === "direction") return renderDirection();
       if (section === "identity") return renderIdentity();
       if (section === "face") return renderCharacterAppearance();
-      if (section === "body") return renderBody();
+      if (section === "body") return renderQuickBody();
       if (section === "details") return renderCharacterCore();
       return renderCharacterQuickReview();
     };
 
-    return <section className="character-visual-flow" aria-label="角色视觉创作">
+    return <section className="character-visual-flow quick-mode" aria-label="角色视觉创作">
       <header className="character-flow-header">
         <div className="creator-title-row">
           {props.onExit && <button type="button" className="creator-exit" onClick={props.onExit} aria-label="退出创作">←</button>}
