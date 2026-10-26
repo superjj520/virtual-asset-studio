@@ -1974,6 +1974,21 @@ button:active { transform: translateY(1px); }
 .series-refine-panel .series-refine-row { grid-template-columns: 22px minmax(0, 1fr) 128px; padding: 6px 8px; }
 .series-refine-panel .series-refine-row small { display: none; }
 .series-refine-panel .series-refine-row select { min-height: 32px; }
+.series-shot-adjustment-summary { display: block; margin-top: 3px; color: var(--accent-strong); font-size: 9px; font-style: normal; line-height: 1.4; }
+.series-shot-adjustments { grid-column: 1 / -1; margin-top: 4px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.series-shot-adjustments summary { cursor: pointer; color: var(--accent-strong); font-size: 9px; font-weight: 700; }
+.series-shot-adjustment-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 7px; }
+.series-shot-adjustment-grid label:first-child { grid-column: 1 / -1; }
+.series-shot-adjustment-grid label { display: grid; gap: 3px; color: var(--ink-muted); font-size: 8px; }
+.series-shot-adjustment-grid select { min-height: 32px; font-size: 9px; }
+.series-shot-adjustments > small { display: block; margin-top: 6px; color: var(--ink-muted); font-size: 8px; line-height: 1.5; }
+@media (min-width: 1240px) {
+  .series-refine-panel { display: flex; flex-direction: column; min-height: 0; max-height: calc(100vh - 450px); }
+  .series-refine-panel > .creation-section-heading,
+  .series-refine-panel > .series-refine-note { flex: 0 0 auto; }
+  .series-refine-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; }
+  .series-refine-actions { flex: 0 0 auto; }
+}
 .series-refine-count span { color: var(--ink-muted); font-size: 10px; }
 .series-refine-count strong { font-size: 12px; }
 .series-plan-panel { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: 0 8px 24px rgba(31, 42, 62, .035); }
@@ -2227,6 +2242,7 @@ button:active { transform: translateY(1px); }
   .series-direction-compare { grid-template-columns: 1fr; }
   .series-refine-row { grid-template-columns: 22px minmax(0, 1fr); }
   .series-refine-row select { grid-column: 1 / -1; }
+  .series-shot-adjustment-grid { grid-template-columns: 1fr; }
   .creation-journey button > span { width: 22px; height: 22px; }
   .creation-journey button small { display: none; }
   .creation-plan-next { align-items: stretch; flex-direction: column; }

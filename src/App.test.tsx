@@ -390,6 +390,17 @@ it('系列方向按整组四镜比较并保留顺序进入逐镜调整', async (
     }),
   })));
 
+  fireEvent.click(screen.getAllByText('本镜细项 · 场景 / 造型 / 情绪')[0]);
+  fireEvent.change(screen.getByRole('combobox', { name: '第 1 镜头场景' }), { target: { value: 'new_space' } });
+  await waitFor(() => expect(screen.getByText(/已调整第 1 镜头的场景/)).toBeInTheDocument());
+  expect(window.studio.tasks.update).toHaveBeenLastCalledWith('task-series-direction', expect.objectContaining({
+    card: expect.objectContaining({
+      candidatePlan: expect.arrayContaining([
+        expect.objectContaining({ id: 'wide_scene', scene: 'new_space', directive: expect.stringContaining('新空间') }),
+      ]),
+    }),
+  }));
+
   fireEvent.click(screen.getByRole('button', { name: '下一步 · 归档镜头计划' }));
   expect(screen.getByText('系列镜头计划')).toBeInTheDocument();
   expect(screen.getByText('01→04 已锁定')).toBeInTheDocument();

@@ -83,10 +83,14 @@ import {
   applySeriesDirection,
   buildSeriesDirections,
   findSeriesDirectionId,
+  SERIES_SHOT_ADJUSTMENT_LABELS,
   replaceSeriesShot,
+  setSeriesShotAdjustment,
   summarizeSeriesDirectionChanges,
   type SeriesDirection,
+  type SeriesShotAdjustmentKind,
 } from "./creation/series-direction";
+import { SeriesShotAdjustmentFields } from "./creation/SeriesShotAdjustmentFields";
 import {
   hasAcceptance,
   isCustomBriefValue,
@@ -2000,6 +2004,18 @@ export default function App() {
     await persistSeriesPlan(
       nextPlan,
       `已把第 ${index + 1} 镜头替换为“${nextShot?.label ?? "新镜头"}”；其余镜头与顺序保持不变。`,
+    );
+  };
+  const changeSeriesShotAdjustment = async (
+    index: number,
+    kind: SeriesShotAdjustmentKind,
+    optionId: string,
+  ) => {
+    const currentPlan = card.candidatePlan?.length ? card.candidatePlan : createDefaultSeriesPlan();
+    const nextPlan = setSeriesShotAdjustment(currentPlan, index, kind, optionId);
+    await persistSeriesPlan(
+      nextPlan,
+      `已调整第 ${index + 1} 镜头的${SERIES_SHOT_ADJUSTMENT_LABELS[kind]}；其余镜头、顺序与角色连续性保持不变。`,
     );
   };
   const selectCharacterExtensionScene = async (sceneId: GuidedScene) => {
@@ -5153,15 +5169,20 @@ export default function App() {
                 <button type="button" className="primary-button creation-stage-next" onClick={() => void confirmLocalDirectionCandidate()}>确认方向 · 继续调整</button>
                 <small>方向已经保存，可以继续调整。</small>
               </div> : creationStudioStage === "refine" && creationStudioKind === "series" ? <div className="creation-plan-refinement series-refine-panel">
-                <div className="creation-section-heading"><span>逐镜检查</span><small>角色与造型锁定，只换镜头类型</small></div>
+                <div className="creation-section-heading"><span>逐镜检查</span><small>只换类型或本镜细项，不拆散序列</small></div>
                 <div className="series-refine-list" role="list" aria-label="逐镜调整">
                   {seriesPlan.map((shot, index) => <div className="series-refine-row" role="listitem" key={`${shot.id}-${index}`}>
                     <span className="series-refine-index">{String(index + 1).padStart(2, "0")}</span>
                     <div><strong>{shot.label}</strong><small>{shot.directive}</small></div>
                     <label>镜头类型<select value={shot.id} onChange={(event) => void changeSeriesShot(index, event.target.value)}>{SERIES_VARIATION_LIBRARY.map((variation) => <option key={variation.id} value={variation.id}>{variation.label}</option>)}</select></label>
+                    <SeriesShotAdjustmentFields
+                      index={index}
+                      shot={shot}
+                      onChange={(shotIndex, kind, optionId) => void changeSeriesShotAdjustment(shotIndex, kind, optionId)}
+                    />
                   </div>)}
                 </div>
-                <p className="series-refine-note">只替换所选镜头的类型；其他镜头、顺序、角色与造型约束保持不变。</p>
+                <p className="series-refine-note">只替换所选镜头的类型或细项；其他镜头、顺序、角色与造型约束保持不变。</p>
                 <div className="series-refine-actions">
                   <button type="button" className="primary-button creation-stage-next" onClick={() => setCreationStudioStage("asset")}>下一步 · 归档镜头计划</button>
                   {selectedSeriesDirection && <button type="button" className="secondary-button creation-stage-next" onClick={() => void confirmSeriesDirection(selectedSeriesDirection)}>恢复“{selectedSeriesDirection.label}”</button>}

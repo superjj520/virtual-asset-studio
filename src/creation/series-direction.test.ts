@@ -3,10 +3,13 @@ import { createDefaultSeriesPlan } from "./candidate-variations";
 import {
   applySeriesDirection,
   buildSeriesDirections,
+  describeSeriesShotAdjustments,
   findSeriesDirectionId,
   replaceSeriesShot,
   SERIES_DIRECTIONS,
+  SERIES_SHOT_ADJUSTMENTS,
   seriesPlanSignature,
+  setSeriesShotAdjustment,
   summarizeSeriesDirectionChanges,
 } from "./series-direction";
 
@@ -70,5 +73,32 @@ describe("系列整组方向", () => {
     expect(changes).toHaveLength(4);
     expect(changes.map((change) => change.changed)).toEqual([false, true, false, false]);
     expect(changes[1]).toMatchObject({ index: 1, before: "近景情绪", after: "动作瞬间" });
+  });
+
+  it("逐镜细项只追加到目标镜头，并被识别为当前序列", () => {
+    const plan = createDefaultSeriesPlan();
+    const next = setSeriesShotAdjustment(plan, 1, "mood", "tense");
+
+    expect(next[1].mood).toBe("tense");
+    expect(next[1].directive).toContain("紧张、警觉");
+    expect(next[0].directive).toBe(plan[0].directive);
+    expect(describeSeriesShotAdjustments(next[1])).toEqual(["情绪：紧张警觉"]);
+    expect(findSeriesDirectionId(next)).toBe("current");
+    expect(SERIES_SHOT_ADJUSTMENTS.mood.map((option) => option.id)).toContain("tense");
+
+    const restored = setSeriesShotAdjustment(next, 1, "mood", "inherit");
+    expect(restored[1].mood).toBeUndefined();
+    expect(restored[1].directive).toBe(plan[1].directive);
+    expect(findSeriesDirectionId(restored)).toBe("narrative");
+  });
+
+  it("替换镜头类型时保留已选细项，但重新计算指令", () => {
+    const adjusted = setSeriesShotAdjustment(createDefaultSeriesPlan(), 2, "scene", "new_space");
+    const next = replaceSeriesShot(adjusted, 2, "detail_closeup");
+
+    expect(next[2].id).toBe("detail_closeup");
+    expect(next[2].scene).toBe("new_space");
+    expect(next[2].directive).toContain("新空间");
+    expect(next[2].directive).not.toContain("全身造型");
   });
 });

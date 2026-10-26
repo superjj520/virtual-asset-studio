@@ -94,10 +94,15 @@ import {
 import {
   createDefaultSeriesPlan,
   moveCandidateVariation,
-  replaceCandidateVariation,
   SERIES_VARIATION_LIBRARY,
   type CandidateVariation,
 } from "./candidate-variations";
+import {
+  describeSeriesShotAdjustments,
+  replaceSeriesShot,
+  setSeriesShotAdjustment,
+} from "./series-direction";
+import { SeriesShotAdjustmentFields } from "./SeriesShotAdjustmentFields";
 import {
   CHARACTER_TRACKER_PRESETS,
   DEFAULT_CHARACTER_TRACKER_IDS,
@@ -999,7 +1004,9 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
           </div>
           {activeSeriesShot && <div className="series-shot-active-preview" aria-live="polite">
             <SeriesShotArtwork variationId={activeSeriesShot.id} label={activeSeriesShot.label} presetArtwork={CREATION_PRESET_ARTWORKS[selectedPreset.id]} sceneArtwork={activeSceneArtwork} />
-            <div><span>当前镜头</span><strong>{activeSeriesShot.label}</strong><small>{activeSeriesShot.directive}</small></div>
+            <div><span>当前镜头</span><strong>{activeSeriesShot.label}</strong><small>{activeSeriesShot.directive}</small>
+              {describeSeriesShotAdjustments(activeSeriesShot).length > 0 && <em className="series-shot-adjustment-summary">{describeSeriesShotAdjustments(activeSeriesShot).join(" · ")}</em>}
+            </div>
           </div>}
           <div className="visual-choice-heading series-shot-choice-heading"><strong>替换镜头类型</strong><span>角色、造型和世界保持不变</span></div>
           <div className="series-shot-type-grid" role="group" aria-label="镜头类型">
@@ -1008,12 +1015,17 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
               key={item.id}
               aria-pressed={seriesPlan[activeSeriesShotIndex]?.id === item.id}
               className={seriesPlan[activeSeriesShotIndex]?.id === item.id ? "selected" : ""}
-              onClick={() => props.onSeriesPlanChange?.(replaceCandidateVariation(seriesPlan, activeSeriesShotIndex, item.id))}
+              onClick={() => props.onSeriesPlanChange?.(replaceSeriesShot(seriesPlan, activeSeriesShotIndex, item.id))}
             >
               <SeriesShotArtwork variationId={item.id} label={item.label} presetArtwork={CREATION_PRESET_ARTWORKS[selectedPreset.id]} sceneArtwork={activeSceneArtwork} />
               <span><strong>{item.label}</strong></span>
             </button>)}
           </div>
+          {activeSeriesShot && <SeriesShotAdjustmentFields
+            index={activeSeriesShotIndex}
+            shot={activeSeriesShot}
+            onChange={(index, kind, optionId) => props.onSeriesPlanChange?.(setSeriesShotAdjustment(seriesPlan, index, kind, optionId))}
+          />}
         </div>
       </section>}
       {(creationKind === "image" || creationKind === "series") && <>

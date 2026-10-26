@@ -332,6 +332,10 @@ export type CreativeCandidatePlanItem = {
   id: string;
   label: string;
   directive: string;
+  /** 系列镜头可独立覆盖的场景、造型与情绪；空值表示沿用整组方向。 */
+  scene?: string;
+  wardrobe?: string;
+  mood?: string;
 };
 
 /**
