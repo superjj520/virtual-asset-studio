@@ -341,6 +341,61 @@ it('系列镜头选择与顺序写入创作卡并控制后续候选', async () =
   expect(await screen.findByRole('button', { name: '第 3 镜头：动作瞬间' })).toBeInTheDocument();
 });
 
+it('系列方向按整组四镜比较并保留顺序进入逐镜调整', async () => {
+  vi.mocked(window.studio.tasks.create).mockImplementation(async (input) => ({
+    id: 'task-series-direction', status: 'draft', createdAt: '', updatedAt: '', ...input,
+  }) as never);
+  vi.mocked(window.studio.tasks.update).mockImplementation(async (id, input) => ({
+    id, status: 'draft', createdAt: '', updatedAt: '', ...input,
+  }) as never);
+  vi.mocked(window.studio.creation.compilePrompt).mockResolvedValue({
+    positive: '同一角色连续镜头', negative: '角色漂移', modules: [],
+  });
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '系列镜头' }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /分镜/ }));
+  fireEvent.click(screen.getByRole('button', { name: '下一步 · 交付' }));
+  fireEvent.click(screen.getByRole('button', { name: '建立系列镜头方案' }));
+
+  expect(await screen.findByRole('heading', { name: '系列镜头台' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '下一步 · 选择方向' }));
+  const comparison = within(await screen.findByRole('region', { name: '系列方向比较' }));
+  const directions = within(comparison.getByRole('group', { name: '系列方向候选' }));
+  expect(directions.getByRole('button', { name: /叙事递进方向/ })).toBeInTheDocument();
+  expect(directions.getByRole('button', { name: /情绪递进方向/ })).toBeInTheDocument();
+  expect(directions.getByRole('button', { name: /动作递进方向/ })).toBeInTheDocument();
+  expect(directions.getByRole('button', { name: /空间递进方向/ })).toBeInTheDocument();
+  expect(comparison.getByRole('group', { name: '当前序列与所选方向对比' })).toBeInTheDocument();
+
+  fireEvent.click(directions.getByRole('button', { name: /动作递进方向/ }));
+  expect(screen.getByText('4 镜 · 顺序锁定')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /确认整组方向/ }));
+
+  expect(await screen.findByRole('button', { name: '下一步 · 归档镜头计划' })).toBeInTheDocument();
+  const shotSelects = screen.getAllByRole('combobox', { name: '镜头类型' });
+  expect(shotSelects).toHaveLength(4);
+  fireEvent.change(shotSelects[0], { target: { value: 'wide_scene' } });
+
+  await waitFor(() => expect(screen.getByText(/已把第 1 镜头替换/)).toBeInTheDocument());
+  await waitFor(() => expect(window.studio.tasks.update).toHaveBeenCalledWith('task-series-direction', expect.objectContaining({
+    card: expect.objectContaining({
+      candidatePlan: [
+        expect.objectContaining({ id: 'wide_scene' }),
+        expect.objectContaining({ id: 'action_moment' }),
+        expect.objectContaining({ id: 'over_shoulder' }),
+        expect.objectContaining({ id: 'wide_scene' }),
+      ],
+    }),
+  })));
+
+  fireEvent.click(screen.getByRole('button', { name: '下一步 · 归档镜头计划' }));
+  expect(screen.getByText('系列镜头计划')).toBeInTheDocument();
+  expect(screen.getByText('01→04 已锁定')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '进入生产准备' })).toBeInTheDocument();
+});
+
 it('剧情场景选择形成可回溯叙事骨架并进入场景创作台', async () => {
   const scene = {
     id: 'scene-story', name: '东方古风 · 局势反转', kind: 'environment', lifecycle: 'draft',

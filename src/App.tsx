@@ -10,6 +10,8 @@ import { ProjectPipelinePanel } from "./project/ProjectPipelinePanel";
 import { ReferenceBindingsPanel } from "./creation/ReferenceBindingsPanel";
 import { CreationCandidateGallery } from "./creation/CreationCandidateGallery";
 import { LocalDirectionCandidateGallery } from "./creation/LocalDirectionCandidateGallery";
+import { SeriesDirectionComparison } from "./creation/SeriesDirectionComparison";
+import { SeriesPlanOverview } from "./creation/SeriesPlanOverview";
 import { CreationStudioJourney, type CreationStudioStage } from "./creation/CreationStudioJourney";
 import { CreationLaunchpad, type CreationLaunchKind } from "./creation/CreationLaunchpad";
 import { CREATION_PRESET_ARTWORKS, SCENE_ARTWORKS, VisualCharacterCreator } from "./creation/VisualCharacterCreator";
@@ -74,8 +76,17 @@ import { buildLocalSceneAssetDraft } from "./creation/local-scene-asset";
 import {
   buildCandidateVariations,
   createDefaultSeriesPlan,
+  SERIES_VARIATION_LIBRARY,
   type CandidateVariation,
 } from "./creation/candidate-variations";
+import {
+  applySeriesDirection,
+  buildSeriesDirections,
+  findSeriesDirectionId,
+  replaceSeriesShot,
+  summarizeSeriesDirectionChanges,
+  type SeriesDirection,
+} from "./creation/series-direction";
 import {
   hasAcceptance,
   isCustomBriefValue,
@@ -513,6 +524,7 @@ export default function App() {
   const [isGeneratingCandidates, setIsGeneratingCandidates] = useState(false);
   const [selectedCreationCandidateId, setSelectedCreationCandidateId] = useState("");
   const [selectedLocalDirectionId, setSelectedLocalDirectionId] = useState("");
+  const [selectedSeriesDirectionId, setSelectedSeriesDirectionId] = useState("");
   const [confirmedLocalDirectionId, setConfirmedLocalDirectionId] = useState("");
   const [localRefinementApplied, setLocalRefinementApplied] = useState(false);
   const [creationRefinementId, setCreationRefinementId] = useState<CreationRefinementId>("expression");
@@ -1944,6 +1956,52 @@ export default function App() {
     setCreationStudioStage("refine");
     setNotice(`已选择“${variation.label}”并写入本地方案；没有调用任何模型。`);
   };
+  const persistSeriesPlan = async (nextPlan: CandidateVariation[], message: string) => {
+    const nextCard = normalizeCreativeCard({
+      ...card,
+      candidatePlan: nextPlan.map((item) => ({ ...item })),
+    });
+    setCard(nextCard);
+    setPromptBuild(await window.studio.creation.compilePrompt(nextCard));
+    setTranslation(undefined);
+    if (activeTaskId) {
+      const updated = await window.studio.tasks.update(activeTaskId, { card: nextCard });
+      setCreativeTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
+    }
+    setLocalRefinementApplied(true);
+    setNotice(message);
+  };
+  const confirmSeriesDirection = async (direction: SeriesDirection) => {
+    const nextPlan = applySeriesDirection(direction);
+    const directionNote = `系列方向：${direction.label}（${direction.hint}）`;
+    const intentParts = card.intent.split("；").map((item) => item.trim()).filter(Boolean);
+    const nextCard = normalizeCreativeCard({
+      ...card,
+      candidatePlan: nextPlan,
+      intent: [...new Set([...intentParts.filter((item) => !item.startsWith("系列方向：")), directionNote])].join("；"),
+    });
+    setCard(nextCard);
+    setPromptBuild(await window.studio.creation.compilePrompt(nextCard));
+    setTranslation(undefined);
+    setSelectedSeriesDirectionId(direction.id);
+    setConfirmedLocalDirectionId(direction.id);
+    setLocalRefinementApplied(false);
+    if (activeTaskId) {
+      const updated = await window.studio.tasks.update(activeTaskId, { card: nextCard });
+      setCreativeTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
+    }
+    setCreationStudioStage("refine");
+    setNotice(`已确认“${direction.label}”整组方向：${nextPlan.length} 个镜头顺序已写入方案；没有调用任何模型。`);
+  };
+  const changeSeriesShot = async (index: number, variationId: string) => {
+    const currentPlan = card.candidatePlan?.length ? card.candidatePlan : createDefaultSeriesPlan();
+    const nextPlan = replaceSeriesShot(currentPlan, index, variationId);
+    const nextShot = nextPlan[index];
+    await persistSeriesPlan(
+      nextPlan,
+      `已把第 ${index + 1} 镜头替换为“${nextShot?.label ?? "新镜头"}”；其余镜头与顺序保持不变。`,
+    );
+  };
   const selectCharacterExtensionScene = async (sceneId: GuidedScene) => {
     const option = GUIDED_SCENES.find((item) => item.id === sceneId);
     if (!option || sceneId === "custom") return;
@@ -2949,6 +3007,7 @@ export default function App() {
     setTranslation(undefined);
     setSelectedCreationCandidateId(task.resultAssetId ?? "");
     setSelectedLocalDirectionId("");
+    setSelectedSeriesDirectionId("");
     setConfirmedLocalDirectionId("");
     setLocalRefinementApplied(false);
     setCreationStudioStage(task.resultAssetId ? "asset" : "plan");
@@ -3409,6 +3468,17 @@ export default function App() {
     ? selectedLocalDirectionId
     : localDirectionCandidates[0]?.id ?? "";
   const selectedLocalDirection = localDirectionCandidates.find((item) => item.id === effectiveLocalDirectionId);
+  const seriesPlan = card.candidatePlan?.length ? card.candidatePlan : createDefaultSeriesPlan();
+  const seriesDirectionCandidates = creationStudioKind === "series" ? buildSeriesDirections(seriesPlan) : [];
+  const effectiveSeriesDirectionId = seriesDirectionCandidates.some((item) => item.id === selectedSeriesDirectionId)
+    ? selectedSeriesDirectionId
+    : findSeriesDirectionId(seriesPlan);
+  const selectedSeriesDirection = seriesDirectionCandidates.find((item) => item.id === effectiveSeriesDirectionId)
+    ?? seriesDirectionCandidates[0];
+  const selectedSeriesDirectionChanges = selectedSeriesDirection
+    ? summarizeSeriesDirectionChanges(seriesPlan, selectedSeriesDirection.plan)
+    : [];
+  const selectedSeriesChangedCount = selectedSeriesDirectionChanges.filter((change) => change.changed).length;
   const activeCreationRefinements = getCreationRefinements(card.deliveryMode);
   const creationJourneyAvailable: CreationStudioStage[] = selectedCreationCandidate || confirmedLocalDirectionId
     ? ["plan", "candidates", "refine", "asset"]
@@ -3426,6 +3496,7 @@ export default function App() {
     setActiveDomain("creation");
     setCreationStudioStage("plan");
     setSelectedLocalDirectionId("");
+    setSelectedSeriesDirectionId("");
     setConfirmedLocalDirectionId("");
     setLocalRefinementApplied(false);
     setScreen("launch");
@@ -4963,27 +5034,40 @@ export default function App() {
                 }}
                 onToggleComparison={toggleCandidateComparison}
               />
-              : <LocalDirectionCandidateGallery
-                previewSrc={localDirectionPreviewSrc}
-                variations={localDirectionCandidates}
-                selectedId={effectiveLocalDirectionId}
-                onSelect={(variationId) => {
-                  setSelectedLocalDirectionId(variationId);
-                  setConfirmedLocalDirectionId("");
-                  setLocalRefinementApplied(false);
-                }}
-              />}
+              : creationStudioKind === "series"
+                ? creationStudioStage === "candidates"
+                  ? <SeriesDirectionComparison
+                    currentPlan={seriesPlan}
+                    directions={seriesDirectionCandidates}
+                    selectedId={effectiveSeriesDirectionId}
+                    onSelect={(directionId) => {
+                      setSelectedSeriesDirectionId(directionId);
+                      setConfirmedLocalDirectionId("");
+                      setLocalRefinementApplied(false);
+                    }}
+                  />
+                  : <SeriesPlanOverview plan={seriesPlan} directionLabel={selectedSeriesDirection?.label} />
+                : <LocalDirectionCandidateGallery
+                  previewSrc={localDirectionPreviewSrc}
+                  variations={localDirectionCandidates}
+                  selectedId={effectiveLocalDirectionId}
+                  onSelect={(variationId) => {
+                    setSelectedLocalDirectionId(variationId);
+                    setConfirmedLocalDirectionId("");
+                    setLocalRefinementApplied(false);
+                  }}
+                />}
             <aside className="creation-iteration-panel">
               <header>
                 <p className="eyebrow">继续创作</p>
                 <h3>{selectedCreationCandidate
                   ? "基于所选候选继续"
                   : creationStudioStage === "candidates"
-                    ? "选择一个方案方向"
+                    ? creationStudioKind === "series" ? "选择一组镜头方向" : "选择一个方案方向"
                     : creationStudioStage === "refine"
-                      ? "一次只调整一个变量"
+                      ? creationStudioKind === "series" ? "逐镜检查，一次只换一项" : "一次只调整一个变量"
                     : creationStudioStage === "asset"
-                      ? "保存并继续复用"
+                      ? creationStudioKind === "series" ? "保存整组镜头计划" : "保存并继续复用"
                       : creationWorkspaceCopy.pendingTitle}</h3>
               </header>
               {selectedCreationCandidate ? <>
@@ -5041,7 +5125,23 @@ export default function App() {
                   }}>继续做动态</button>
                 </div>
                 </>}
-              </> : creationStudioStage === "candidates" && selectedLocalDirection ? <div className="creation-local-direction-summary">
+              </> : creationStudioStage === "candidates" && creationStudioKind === "series" && selectedSeriesDirection
+                ? <div className="creation-local-direction-summary series-direction-summary">
+                  <span className="creation-local-badge">系列整组方向</span>
+                  <h3>{selectedSeriesDirection.label}</h3>
+                  <p>{selectedSeriesDirection.hint}</p>
+                  <div className="series-direction-chips" aria-label="所选方向的镜头顺序">
+                    {selectedSeriesDirection.plan.map((shot, index) => <span key={`${shot.id}-${index}`}><b>{String(index + 1).padStart(2, "0")}</b>{shot.label}</span>)}
+                  </div>
+                  <dl>
+                    <div><dt>镜头数量</dt><dd>4 镜 · 顺序锁定</dd></div>
+                    <div><dt>本次变化</dt><dd>{selectedSeriesChangedCount} 个镜头</dd></div>
+                    <div><dt>角色与造型</dt><dd>保持不变</dd></div>
+                  </dl>
+                  <button type="button" className="primary-button creation-stage-next" onClick={() => void confirmSeriesDirection(selectedSeriesDirection)}>确认整组方向 · 进入逐镜调整</button>
+                  <small>确认后 4 个镜头的顺序写入方案；没有调用任何模型。</small>
+                </div>
+                : creationStudioStage === "candidates" && selectedLocalDirection ? <div className="creation-local-direction-summary">
                 <span className="creation-local-badge">本地方案候选</span>
                 <h3>{selectedLocalDirection.label}</h3>
                 <p>{selectedLocalDirection.directive}</p>
@@ -5052,6 +5152,20 @@ export default function App() {
                 </dl>
                 <button type="button" className="primary-button creation-stage-next" onClick={() => void confirmLocalDirectionCandidate()}>确认方向 · 继续调整</button>
                 <small>方向已经保存，可以继续调整。</small>
+              </div> : creationStudioStage === "refine" && creationStudioKind === "series" ? <div className="creation-plan-refinement series-refine-panel">
+                <div className="creation-section-heading"><span>逐镜检查</span><small>角色与造型锁定，只换镜头类型</small></div>
+                <div className="series-refine-list" role="list" aria-label="逐镜调整">
+                  {seriesPlan.map((shot, index) => <div className="series-refine-row" role="listitem" key={`${shot.id}-${index}`}>
+                    <span className="series-refine-index">{String(index + 1).padStart(2, "0")}</span>
+                    <div><strong>{shot.label}</strong><small>{shot.directive}</small></div>
+                    <label>镜头类型<select value={shot.id} onChange={(event) => void changeSeriesShot(index, event.target.value)}>{SERIES_VARIATION_LIBRARY.map((variation) => <option key={variation.id} value={variation.id}>{variation.label}</option>)}</select></label>
+                  </div>)}
+                </div>
+                <p className="series-refine-note">只替换所选镜头的类型；其他镜头、顺序、角色与造型约束保持不变。</p>
+                <div className="series-refine-actions">
+                  <button type="button" className="primary-button creation-stage-next" onClick={() => setCreationStudioStage("asset")}>下一步 · 归档镜头计划</button>
+                  {selectedSeriesDirection && <button type="button" className="secondary-button creation-stage-next" onClick={() => void confirmSeriesDirection(selectedSeriesDirection)}>恢复“{selectedSeriesDirection.label}”</button>}
+                </div>
               </div> : creationStudioStage === "refine" ? <div className="creation-plan-refinement">
                 <strong>一次只调整一个变量</strong>
                 <p>选择一个变化方向，人物、服装和场景继续保持锁定。</p>
@@ -5060,6 +5174,21 @@ export default function App() {
                 </div>
                 <button type="button" className="primary-button creation-stage-next" onClick={() => void applyRefinementToPlan()}>应用到当前方案</button>
                 {confirmedLocalDirectionId && <button type="button" className="secondary-button creation-stage-next" onClick={() => setCreationStudioStage("asset")}>完成调整 · 保存资产</button>}
+              </div> : creationStudioStage === "asset" && creationStudioKind === "series" && confirmedLocalDirectionId ? <div className="creation-local-asset-panel series-asset-panel">
+                <span className="creation-local-badge">系列镜头计划</span>
+                <h3>{creationAssetCopy.title}</h3>
+                <p>{creationAssetCopy.description}</p>
+                <div className="creation-local-asset-facts">
+                  <div><span>方向</span><strong>{selectedSeriesDirection?.label ?? "已确认"}</strong></div>
+                  <div><span>镜头</span><strong>{seriesPlan.length} 镜</strong></div>
+                  <div><span>顺序</span><strong>01→{String(seriesPlan.length).padStart(2, "0")} 已锁定</strong></div>
+                  <div><span>调整</span><strong>{localRefinementApplied ? "已写入" : "沿用所选方向"}</strong></div>
+                </div>
+                <div className="creation-output-actions local-output-actions">
+                  <button type="button" className="primary-button" onClick={() => { setActiveDomain("production"); setScreen("production"); }}>进入生产准备</button>
+                  <button type="button" onClick={() => void saveCurrentTask()}>保存创作任务</button>
+                </div>
+                <small>整组镜头顺序、角色与连续性约束已保存在当前任务中。</small>
               </div> : creationStudioStage === "asset" && confirmedLocalDirectionId ? <div className="creation-local-asset-panel">
                 <span className="creation-local-badge">方案资产</span>
                 <h3>{creationAssetCopy.title}</h3>
