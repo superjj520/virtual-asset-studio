@@ -80,10 +80,15 @@ import {
   type CandidateVariation,
 } from "./creation/candidate-variations";
 import {
+  addSeriesShot,
   applySeriesDirection,
   buildSeriesDirections,
+  duplicateSeriesShot,
   findSeriesDirectionId,
+  removeSeriesShot,
   SERIES_SHOT_ADJUSTMENT_LABELS,
+  SERIES_SHOT_MAX,
+  SERIES_SHOT_MIN,
   replaceSeriesShot,
   setSeriesShotAdjustment,
   summarizeSeriesDirectionChanges,
@@ -529,6 +534,7 @@ export default function App() {
   const [selectedCreationCandidateId, setSelectedCreationCandidateId] = useState("");
   const [selectedLocalDirectionId, setSelectedLocalDirectionId] = useState("");
   const [selectedSeriesDirectionId, setSelectedSeriesDirectionId] = useState("");
+  const [activeRefineShotIndex, setActiveRefineShotIndex] = useState(0);
   const [confirmedLocalDirectionId, setConfirmedLocalDirectionId] = useState("");
   const [localRefinementApplied, setLocalRefinementApplied] = useState(false);
   const [creationRefinementId, setCreationRefinementId] = useState<CreationRefinementId>("expression");
@@ -1972,10 +1978,17 @@ export default function App() {
       const updated = await window.studio.tasks.update(activeTaskId, { card: nextCard });
       setCreativeTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
     }
+    setSelectedSeriesDirectionId("");
+    setConfirmedLocalDirectionId("");
     setLocalRefinementApplied(true);
     setNotice(message);
   };
   const confirmSeriesDirection = async (direction: SeriesDirection) => {
+    const currentPlan = card.candidatePlan?.length ? card.candidatePlan : createDefaultSeriesPlan();
+    if (direction.plan.length !== currentPlan.length) {
+      setNotice(`“${direction.label}”是 ${direction.plan.length} 镜方向模板；当前是 ${currentPlan.length} 镜。请先把镜头数调整回 ${direction.plan.length} 镜，或继续逐镜修改。`);
+      return;
+    }
     const nextPlan = applySeriesDirection(direction);
     const directionNote = `系列方向：${direction.label}（${direction.hint}）`;
     const intentParts = card.intent.split("；").map((item) => item.trim()).filter(Boolean);
@@ -2017,6 +2030,36 @@ export default function App() {
       nextPlan,
       `已调整第 ${index + 1} 镜头的${SERIES_SHOT_ADJUSTMENT_LABELS[kind]}；其余镜头、顺序与角色连续性保持不变。`,
     );
+  };
+  const changeSeriesShotCount = async (action: "add" | "duplicate" | "remove") => {
+    const currentPlan = card.candidatePlan?.length ? card.candidatePlan : createDefaultSeriesPlan();
+    if (action !== "remove" && currentPlan.length >= SERIES_SHOT_MAX) {
+      setNotice(`系列最多 ${SERIES_SHOT_MAX} 镜；请先删除或调整现有镜头。`);
+      return;
+    }
+    if (action === "remove" && currentPlan.length <= SERIES_SHOT_MIN) {
+      setNotice(`系列至少保留 ${SERIES_SHOT_MIN} 镜；当前镜头数不能再减少。`);
+      return;
+    }
+    let nextPlan = currentPlan;
+    let nextIndex = activeRefineShotIndex;
+    let message = "";
+    if (action === "add") {
+      nextPlan = addSeriesShot(currentPlan, activeRefineShotIndex);
+      nextIndex = Math.min(activeRefineShotIndex + 1, nextPlan.length - 1);
+      message = `已新增第 ${nextIndex + 1} 镜头；整组现有 ${nextPlan.length} 镜，顺序保持不变。`;
+    } else if (action === "duplicate") {
+      nextPlan = duplicateSeriesShot(currentPlan, activeRefineShotIndex);
+      nextIndex = Math.min(activeRefineShotIndex + 1, nextPlan.length - 1);
+      message = `已复制第 ${activeRefineShotIndex + 1} 镜头；整组现有 ${nextPlan.length} 镜。`;
+    } else {
+      nextPlan = removeSeriesShot(currentPlan, activeRefineShotIndex);
+      nextIndex = Math.min(activeRefineShotIndex, nextPlan.length - 1);
+      message = `已删除第 ${activeRefineShotIndex + 1} 镜头；整组现有 ${nextPlan.length} 镜。`;
+    }
+    if (nextPlan === currentPlan) return;
+    setActiveRefineShotIndex(nextIndex);
+    await persistSeriesPlan(nextPlan, message);
   };
   const selectCharacterExtensionScene = async (sceneId: GuidedScene) => {
     const option = GUIDED_SCENES.find((item) => item.id === sceneId);
@@ -3024,6 +3067,7 @@ export default function App() {
     setSelectedCreationCandidateId(task.resultAssetId ?? "");
     setSelectedLocalDirectionId("");
     setSelectedSeriesDirectionId("");
+    setActiveRefineShotIndex(0);
     setConfirmedLocalDirectionId("");
     setLocalRefinementApplied(false);
     setCreationStudioStage(task.resultAssetId ? "asset" : "plan");
@@ -3496,14 +3540,16 @@ export default function App() {
     : [];
   const selectedSeriesChangedCount = selectedSeriesDirectionChanges.filter((change) => change.changed).length;
   const activeCreationRefinements = getCreationRefinements(card.deliveryMode);
-  const creationJourneyAvailable: CreationStudioStage[] = selectedCreationCandidate || confirmedLocalDirectionId
+  const hasArchivableSeriesPlan = creationStudioKind === "series" && seriesPlan.length >= 2;
+  const canArchiveCreation = Boolean(confirmedLocalDirectionId) || hasArchivableSeriesPlan;
+  const creationJourneyAvailable: CreationStudioStage[] = selectedCreationCandidate || canArchiveCreation
     ? ["plan", "candidates", "refine", "asset"]
     : ["plan", "candidates", "refine"];
   const creationJourneyCompleted: CreationStudioStage[] = [
     "plan",
-    ...(activeTaskCandidates.length || confirmedLocalDirectionId ? ["candidates" as const] : []),
-    ...(selectedCreationCandidate || localRefinementApplied ? ["refine" as const] : []),
-    ...(selectedCreationCandidate?.confirmation === "confirmed" || (creationStudioStage === "asset" && Boolean(confirmedLocalDirectionId)) ? ["asset" as const] : []),
+    ...(activeTaskCandidates.length || confirmedLocalDirectionId || hasArchivableSeriesPlan ? ["candidates" as const] : []),
+    ...(selectedCreationCandidate || localRefinementApplied || hasArchivableSeriesPlan ? ["refine" as const] : []),
+    ...(selectedCreationCandidate?.confirmation === "confirmed" || (creationStudioStage === "asset" && canArchiveCreation) ? ["asset" as const] : []),
   ];
 
   const openCreationLaunchpad = () => {
@@ -3513,6 +3559,7 @@ export default function App() {
     setCreationStudioStage("plan");
     setSelectedLocalDirectionId("");
     setSelectedSeriesDirectionId("");
+    setActiveRefineShotIndex(0);
     setConfirmedLocalDirectionId("");
     setLocalRefinementApplied(false);
     setScreen("launch");
@@ -5170,6 +5217,21 @@ export default function App() {
                 <small>方向已经保存，可以继续调整。</small>
               </div> : creationStudioStage === "refine" && creationStudioKind === "series" ? <div className="creation-plan-refinement series-refine-panel">
                 <div className="creation-section-heading"><span>逐镜检查</span><small>只换类型或本镜细项，不拆散序列</small></div>
+                <div className="series-refine-toolbar">
+                  <span>{seriesPlan.length} / {SERIES_SHOT_MAX} 镜</span>
+                  <label>当前镜头
+                    <select
+                      aria-label="当前要管理的镜头"
+                      value={Math.min(activeRefineShotIndex, seriesPlan.length - 1)}
+                      onChange={(event) => setActiveRefineShotIndex(Number(event.target.value))}
+                    >
+                      {seriesPlan.map((shot, index) => <option key={`${shot.id}-${index}`} value={index}>第 {index + 1} 镜 · {shot.label}</option>)}
+                    </select>
+                  </label>
+                  <button type="button" aria-label="新增镜头" onClick={() => void changeSeriesShotCount("add")} disabled={seriesPlan.length >= SERIES_SHOT_MAX} title={seriesPlan.length >= SERIES_SHOT_MAX ? "系列最多 6 镜" : "在当前镜头后新增"}>新增</button>
+                  <button type="button" aria-label="复制当前镜头" onClick={() => void changeSeriesShotCount("duplicate")} disabled={seriesPlan.length >= SERIES_SHOT_MAX} title={seriesPlan.length >= SERIES_SHOT_MAX ? "系列最多 6 镜" : "复制当前镜头"}>复制</button>
+                  <button type="button" aria-label="删除当前镜头" onClick={() => void changeSeriesShotCount("remove")} disabled={seriesPlan.length <= SERIES_SHOT_MIN} title={seriesPlan.length <= SERIES_SHOT_MIN ? "系列至少保留 2 镜" : "删除当前镜头"}>删除</button>
+                </div>
                 <div className="series-refine-list" role="list" aria-label="逐镜调整">
                   {seriesPlan.map((shot, index) => <div className="series-refine-row" role="listitem" key={`${shot.id}-${index}`}>
                     <span className="series-refine-index">{String(index + 1).padStart(2, "0")}</span>
@@ -5194,16 +5256,16 @@ export default function App() {
                   {activeCreationRefinements.map((preset) => <button type="button" key={preset.id} aria-pressed={creationRefinementId === preset.id} className={creationRefinementId === preset.id ? "refinement-choice refinement-selected" : "refinement-choice"} onClick={() => setCreationRefinementId(preset.id)}><strong>{preset.label}</strong><small>{preset.description}</small></button>)}
                 </div>
                 <button type="button" className="primary-button creation-stage-next" onClick={() => void applyRefinementToPlan()}>应用到当前方案</button>
-                {confirmedLocalDirectionId && <button type="button" className="secondary-button creation-stage-next" onClick={() => setCreationStudioStage("asset")}>完成调整 · 保存资产</button>}
-              </div> : creationStudioStage === "asset" && creationStudioKind === "series" && confirmedLocalDirectionId ? <div className="creation-local-asset-panel series-asset-panel">
+                {canArchiveCreation && <button type="button" className="secondary-button creation-stage-next" onClick={() => setCreationStudioStage("asset")}>完成调整 · 保存资产</button>}
+              </div> : creationStudioStage === "asset" && creationStudioKind === "series" && hasArchivableSeriesPlan ? <div className="creation-local-asset-panel series-asset-panel">
                 <span className="creation-local-badge">系列镜头计划</span>
                 <h3>{creationAssetCopy.title}</h3>
                 <p>{creationAssetCopy.description}</p>
                 <div className="creation-local-asset-facts">
-                  <div><span>方向</span><strong>{selectedSeriesDirection?.label ?? "已确认"}</strong></div>
+                  <div><span>方向</span><strong>{selectedSeriesDirection?.label ?? "自定义序列"}</strong></div>
                   <div><span>镜头</span><strong>{seriesPlan.length} 镜</strong></div>
                   <div><span>顺序</span><strong>01→{String(seriesPlan.length).padStart(2, "0")} 已锁定</strong></div>
-                  <div><span>调整</span><strong>{localRefinementApplied ? "已写入" : "沿用所选方向"}</strong></div>
+                  <div><span>调整</span><strong>{localRefinementApplied ? "已写入" : confirmedLocalDirectionId ? "沿用所选方向" : "逐镜自定义"}</strong></div>
                 </div>
                 <div className="creation-output-actions local-output-actions">
                   <button type="button" className="primary-button" onClick={() => { setActiveDomain("production"); setScreen("production"); }}>进入生产准备</button>

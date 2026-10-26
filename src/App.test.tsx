@@ -405,6 +405,38 @@ it('系列方向按整组四镜比较并保留顺序进入逐镜调整', async (
   expect(screen.getByText('系列镜头计划')).toBeInTheDocument();
   expect(screen.getByText('01→04 已锁定')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: '进入生产准备' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: /连续性调整/ }));
+  expect(await screen.findByText('4 / 6 镜')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '新增镜头' }));
+  await waitFor(() => expect(screen.getByText('5 / 6 镜')).toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: '复制当前镜头' }));
+  await waitFor(() => expect(screen.getByText('6 / 6 镜')).toBeInTheDocument());
+  expect(screen.getByRole('button', { name: '新增镜头' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: /系列归档/ }));
+  expect(await screen.findByText('01→06 已锁定')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /连续性调整/ }));
+  await screen.findByText('6 / 6 镜');
+  fireEvent.click(screen.getByRole('button', { name: '删除当前镜头' }));
+  await waitFor(() => expect(screen.getByText('5 / 6 镜')).toBeInTheDocument());
+
+  fireEvent.click(screen.getByRole('button', { name: /镜头方向/ }));
+  const mismatchedDirections = within(await screen.findByRole('region', { name: '系列方向比较' }));
+  fireEvent.click(within(mismatchedDirections.getByRole('group', { name: '系列方向候选' })).getByRole('button', { name: /动作递进方向/ }));
+  fireEvent.click(screen.getByRole('button', { name: /确认整组方向/ }));
+  expect(await screen.findByText(/是 4 镜方向模板；当前是 5 镜/)).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: '系列方向比较' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: /连续性调整/ }));
+  expect(await screen.findByText('5 / 6 镜')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '删除当前镜头' }));
+  await waitFor(() => expect(screen.getByText('4 / 6 镜')).toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: /镜头方向/ }));
+  fireEvent.click(within(screen.getByRole('group', { name: '系列方向候选' })).getByRole('button', { name: /动作递进方向/ }));
+  fireEvent.click(screen.getByRole('button', { name: /确认整组方向/ }));
+  await screen.findByRole('button', { name: '下一步 · 归档镜头计划' });
+  fireEvent.click(screen.getByRole('button', { name: '下一步 · 归档镜头计划' }));
+  expect(screen.getByText('01→04 已锁定')).toBeInTheDocument();
 });
 
 it('剧情场景选择形成可回溯叙事骨架并进入场景创作台', async () => {

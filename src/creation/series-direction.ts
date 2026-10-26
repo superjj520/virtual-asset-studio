@@ -188,6 +188,39 @@ export const replaceSeriesShot = (
   });
 };
 
+export const SERIES_SHOT_MIN = 2;
+export const SERIES_SHOT_MAX = 6;
+
+const clampShotIndex = (index: number, length: number) =>
+  Math.max(0, Math.min(index, Math.max(0, length - 1)));
+
+const makeNewShot = () => cloneVariation(SERIES_VARIATION_LIBRARY[1]);
+
+/** 在目标镜头之后插入一个可继续编辑的新镜头；达到 6 镜时保持原计划。 */
+export const addSeriesShot = (plan: CandidateVariation[], afterIndex = plan.length - 1) => {
+  if (plan.length >= SERIES_SHOT_MAX) return plan;
+  const next = plan.map(cloneVariation);
+  next.splice(clampShotIndex(afterIndex, plan.length) + 1, 0, makeNewShot());
+  return next;
+};
+
+/** 复制当前镜头，保留镜头类型与场景/造型/情绪细项。 */
+export const duplicateSeriesShot = (plan: CandidateVariation[], index: number) => {
+  if (plan.length >= SERIES_SHOT_MAX || !plan[index]) return plan;
+  const original = plan[index];
+  const copy = { ...original, label: `${original.label}（副本）` };
+  copy.directive = composeSeriesShotDirective(copy);
+  const next = plan.map(cloneVariation);
+  next.splice(index + 1, 0, copy);
+  return next;
+};
+
+/** 删除目标镜头；至少保留 2 镜，避免把序列变成单图。 */
+export const removeSeriesShot = (plan: CandidateVariation[], index: number) => {
+  if (plan.length <= SERIES_SHOT_MIN || !plan[index]) return plan;
+  return plan.filter((_, itemIndex) => itemIndex !== index);
+};
+
 export const summarizeSeriesDirectionChanges = (
   current: CandidateVariation[],
   next: CandidateVariation[],

@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultSeriesPlan } from "./candidate-variations";
 import {
+  addSeriesShot,
   applySeriesDirection,
   buildSeriesDirections,
   describeSeriesShotAdjustments,
+  duplicateSeriesShot,
   findSeriesDirectionId,
+  removeSeriesShot,
   replaceSeriesShot,
   SERIES_DIRECTIONS,
   SERIES_SHOT_ADJUSTMENTS,
+  SERIES_SHOT_MAX,
+  SERIES_SHOT_MIN,
   seriesPlanSignature,
   setSeriesShotAdjustment,
   summarizeSeriesDirectionChanges,
@@ -100,5 +105,38 @@ describe("系列整组方向", () => {
     expect(next[2].scene).toBe("new_space");
     expect(next[2].directive).toContain("新空间");
     expect(next[2].directive).not.toContain("全身造型");
+  });
+
+  it("镜头数量保持在 2–6 镜，新增和删除都不打乱其余顺序", () => {
+    let plan = createDefaultSeriesPlan();
+    plan = addSeriesShot(plan, 1);
+    expect(plan).toHaveLength(5);
+    expect(plan[2].label).toBe("近景情绪");
+    plan = addSeriesShot(plan, 4);
+    expect(plan).toHaveLength(SERIES_SHOT_MAX);
+    expect(addSeriesShot(plan, 0)).toHaveLength(SERIES_SHOT_MAX);
+
+    const removed = removeSeriesShot(plan, 2);
+    expect(removed).toHaveLength(5);
+    expect(removed[2]).toEqual(plan[3]);
+    let minimum = removed;
+    while (minimum.length > SERIES_SHOT_MIN) minimum = removeSeriesShot(minimum, 0);
+    expect(minimum).toHaveLength(SERIES_SHOT_MIN);
+    expect(removeSeriesShot(minimum, 0)).toHaveLength(SERIES_SHOT_MIN);
+  });
+
+  it("复制镜头保留类型与细项，并插在原镜头之后", () => {
+    const adjusted = setSeriesShotAdjustment(createDefaultSeriesPlan(), 1, "mood", "tense");
+    const next = duplicateSeriesShot(adjusted, 1);
+
+    expect(next).toHaveLength(5);
+    expect(next[1].mood).toBe("tense");
+    expect(next[2]).toMatchObject({ mood: "tense", label: "近景情绪（副本）" });
+    expect(next[2].directive).toContain("紧张、警觉");
+    expect(adjusted).toHaveLength(4);
+
+    let full = createDefaultSeriesPlan();
+    while (full.length < SERIES_SHOT_MAX) full = addSeriesShot(full);
+    expect(duplicateSeriesShot(full, 0)).toHaveLength(SERIES_SHOT_MAX);
   });
 });

@@ -98,8 +98,13 @@ import {
   type CandidateVariation,
 } from "./candidate-variations";
 import {
+  addSeriesShot,
   describeSeriesShotAdjustments,
+  duplicateSeriesShot,
+  removeSeriesShot,
   replaceSeriesShot,
+  SERIES_SHOT_MAX,
+  SERIES_SHOT_MIN,
   setSeriesShotAdjustment,
 } from "./series-direction";
 import { SeriesShotAdjustmentFields } from "./SeriesShotAdjustmentFields";
@@ -971,7 +976,7 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
               props.onSeriesPlanChange?.(createDefaultSeriesPlan());
               setActiveSeriesShotIndex(0);
             }}>恢复推荐序列</button>
-            <b>{seriesPlan.length} 镜头</b>
+            <b>{seriesPlan.length} / {SERIES_SHOT_MAX} 镜头</b>
           </div>
         </header>
         <div className="series-shot-list">{seriesPlan.map((item, index) => <button
@@ -992,6 +997,24 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
           <div className="series-shot-editor-heading">
             <div><span>正在编辑</span><strong>第 {activeSeriesShotIndex + 1} 镜头</strong></div>
             <div className="series-shot-order-actions" role="group" aria-label="调整镜头顺序">
+              <button type="button" aria-label="新增镜头" disabled={seriesPlan.length >= SERIES_SHOT_MAX} onClick={() => {
+                const next = addSeriesShot(seriesPlan, activeSeriesShotIndex);
+                if (next === seriesPlan) return;
+                props.onSeriesPlanChange?.(next);
+                setActiveSeriesShotIndex(Math.min(activeSeriesShotIndex + 1, next.length - 1));
+              }}>新增</button>
+              <button type="button" aria-label="复制当前镜头" disabled={seriesPlan.length >= SERIES_SHOT_MAX} onClick={() => {
+                const next = duplicateSeriesShot(seriesPlan, activeSeriesShotIndex);
+                if (next === seriesPlan) return;
+                props.onSeriesPlanChange?.(next);
+                setActiveSeriesShotIndex(Math.min(activeSeriesShotIndex + 1, next.length - 1));
+              }}>复制</button>
+              <button type="button" aria-label="删除当前镜头" disabled={seriesPlan.length <= SERIES_SHOT_MIN} onClick={() => {
+                const next = removeSeriesShot(seriesPlan, activeSeriesShotIndex);
+                if (next === seriesPlan) return;
+                props.onSeriesPlanChange?.(next);
+                setActiveSeriesShotIndex(Math.min(activeSeriesShotIndex, next.length - 1));
+              }}>删除</button>
               <button type="button" disabled={activeSeriesShotIndex === 0} onClick={() => {
                 props.onSeriesPlanChange?.(moveCandidateVariation(seriesPlan, activeSeriesShotIndex, -1));
                 setActiveSeriesShotIndex((current) => Math.max(0, current - 1));
