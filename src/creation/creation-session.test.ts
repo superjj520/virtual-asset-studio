@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDefaultSeriesPlan } from "./candidate-variations";
 import { clearCreationSession, loadCreationSession, saveCreationSession } from "./creation-session";
 import { DEFAULT_GUIDED_APPEARANCE, DEFAULT_GUIDED_STORY_PLAN } from "./creative-plan";
@@ -88,6 +88,21 @@ describe("creation session", () => {
       storyPlan: { ...DEFAULT_GUIDED_STORY_PLAN },
     });
     clearCreationSession();
+    expect(loadCreationSession()).toBeUndefined();
+  });
+});
+
+describe("creation session retention", () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-01T00:00:00.000Z")); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("超过 30 天的会话自动失效", () => {
+    saveCreationSession({
+      kind: "image", phase: "creator", candidateCount: 2, seriesPlan: [], storyPlan: {
+        title: "测试", logline: "测试", premise: "测试", theme: "测试", characters: [], beats: [], shotIntent: "", deliveryMode: "single_image",
+      },
+    } as never);
+    vi.setSystemTime(new Date("2026-11-15T00:00:00.000Z"));
     expect(loadCreationSession()).toBeUndefined();
   });
 });

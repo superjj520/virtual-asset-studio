@@ -5,6 +5,7 @@ import type { GuidedStoryPlan } from "./creative-plan";
 import type { CreationStudioStage } from "./CreationStudioJourney";
 
 const CREATION_SESSION_KEY = "virtual-asset-studio.creation-session.v1";
+export const CREATION_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type CreationSessionDraft = Omit<CharacterCreationDraft, "version" | "updatedAt">;
 
@@ -41,6 +42,11 @@ export function loadCreationSession(): CreationSession | undefined {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
     const value = parsed as Record<string, unknown>;
     if (value.version !== 1 || typeof value.updatedAt !== "string") return undefined;
+    const updatedAt = Date.parse(value.updatedAt);
+    if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > CREATION_SESSION_TTL_MS) {
+      storage()?.removeItem(CREATION_SESSION_KEY);
+      return undefined;
+    }
     if (!KINDS.has(value.kind as CreationLaunchKind)) return undefined;
     const phase = value.phase === "studio" ? "studio" : "creator";
     if (phase === "creator" && (!value.draft || typeof value.draft !== "object" || Array.isArray(value.draft))) return undefined;
