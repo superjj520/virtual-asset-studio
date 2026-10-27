@@ -4891,6 +4891,15 @@ export default function App() {
                       .join(" · ")}
                   </p>
                 )}
+                {lineage.length > 0 && <div className="asset-version-chain" aria-label="资产版本链">
+                  <strong>版本链 · {lineage.length + 1}</strong>
+                  <button type="button" aria-current="true" onClick={() => setSelectedAssetId(selectedAsset.id)}>
+                    当前 · {selectedAsset.name}
+                  </button>
+                  {lineage.map((item) => <button key={item.asset.id} type="button" onClick={() => setSelectedAssetId(item.asset.id)}>
+                    {item.direction === "source" ? "来源" : "衍生"} · {item.asset.name}
+                  </button>)}
+                </div>}
                 <div className="asset-usage-summary" aria-label="素材引用位置">
                   <strong>被哪里使用 · {assetUsage.length}</strong>
                   {assetUsage.length > 0 ? <ul>{assetUsage.map((usage) => (

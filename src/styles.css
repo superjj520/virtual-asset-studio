@@ -3547,3 +3547,9 @@ button:active { transform: translateY(1px); }
   .creation-resume-banner > span:nth-of-type(2) { flex: 1 0 100%; margin-right: 0; }
   .creation-resume-banner button { min-height: 44px; }
 }
+
+.asset-version-chain { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
+.asset-version-chain strong { margin-right: 4px; font-size: 10px; color: var(--ink-muted); }
+.asset-version-chain button { min-height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); font: inherit; font-size: 10px; cursor: pointer; }
+.asset-version-chain button[aria-current="true"] { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-soft); }
+@media (max-width: 700px) { .asset-version-chain button { min-height: 44px; } }
