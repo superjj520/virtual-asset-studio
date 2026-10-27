@@ -5971,6 +5971,8 @@ export default function App() {
                       ? `预计 $${batch.estimatedCostUsd}`
                       : "费用按模型账单结算"}
                     {batch.actualCostUsd ? ` · 实际 $${batch.actualCostUsd}` : ""}
+                    {batch.seed !== undefined ? ` · 种子 ${batch.seed}` : ""}
+                    {batch.qualityTier ? ` · 画质 ${batch.qualityTier === "draft" ? "快速" : batch.qualityTier === "high" ? "高质量" : "标准"}` : ""}
                   </p>
                   <p className="batch-task-link">
                     {batch.creativeTaskId
