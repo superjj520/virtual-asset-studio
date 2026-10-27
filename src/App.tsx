@@ -5924,6 +5924,18 @@ export default function App() {
                 <input inputMode="numeric" placeholder="留空随机" value={batchSeed} onChange={(event) => setBatchSeed(event.target.value)} />
               </label>
             </div>
+            <div className="batch-model-picker">
+              <GenerationModelPicker
+                providers={provider?.providers}
+                task="portrait"
+                referenceCount={card.referenceAssetIds.length}
+                value={generationModelId}
+                qualityTier={qualityTier}
+                onChange={selectGenerationModel}
+                size={imageSizeForAspectRatio(card.aspectRatio)}
+                aspectRatio={card.aspectRatio}
+              />
+            </div>
             <div className="form-actions">
               <button
                 className="primary-button"
