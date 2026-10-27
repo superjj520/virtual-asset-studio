@@ -357,6 +357,8 @@ export const createStudioRuntime = (
       projectId?: string;
       sourceAssetIds?: string[];
       generation?: {
+        characterProfileId?: string;
+        sceneProfileId?: string;
         modelId?: string;
         providerModel?: string;
         prompt?: string;
@@ -1184,6 +1186,7 @@ export const createStudioRuntime = (
               status: "in_progress",
               result: { remoteTask: generated.remoteTask, progressStage: "downloaded", requestedAspectRatio: input.aspectRatio, actualSize: size },
             });
+            const linkedTask = input.creativeTaskId ? tasks.get(input.creativeTaskId) : undefined;
             const asset = writeGeneratedAsset(generated.image, {
               type: "image",
               mediaType: "image/png",
@@ -1192,6 +1195,8 @@ export const createStudioRuntime = (
               projectId: input.projectId,
               sourceAssetIds: references.length ? [references[0].id] : [],
               generation: {
+                characterProfileId: linkedTask?.characterProfileId,
+                sceneProfileId: linkedTask?.card.sceneProfileId,
                 modelId: requestedModel?.id,
                 providerModel: requestedModel?.model,
                 prompt: input.prompt,
