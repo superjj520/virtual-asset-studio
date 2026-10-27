@@ -16,6 +16,7 @@ import { GenerationModelCatalog } from "./settings/GenerationModelCatalog";
 import { readGenerationModelPreference, writeGenerationModelPreference } from "./creation/generation-model-preference";
 import { findGenerationModel, generationTaskFor, preflightGeneration } from "./shared/generation-models";
 import { resolveGenerationReadiness } from "./creation/generation-readiness";
+import { AssetVersionChain } from "./assets/AssetVersionChain";
 import { classifyGenerationError } from "./shared/generation-errors";
 import { SeriesPlanOverview } from "./creation/SeriesPlanOverview";
 import { orderSeriesCandidates, seriesCandidateLabel, seriesShotPosition } from "./creation/series-candidate-order";
@@ -4888,15 +4889,7 @@ export default function App() {
                       .join(" · ")}
                   </p>
                 )}
-                {lineage.length > 0 && <div className="asset-version-chain" aria-label="资产版本链">
-                  <strong>版本链 · {lineage.length + 1}</strong>
-                  <button type="button" aria-current="true" onClick={() => setSelectedAssetId(selectedAsset.id)}>
-                    当前 · {selectedAsset.name}
-                  </button>
-                  {lineage.map((item) => <button key={item.asset.id} type="button" onClick={() => setSelectedAssetId(item.asset.id)}>
-                    {item.direction === "source" ? "来源" : "衍生"} · {item.asset.name}
-                  </button>)}
-                </div>}
+                <AssetVersionChain current={selectedAsset} items={lineage} onSelect={setSelectedAssetId} />
                 <div className="asset-usage-summary" aria-label="素材引用位置">
                   <strong>被哪里使用 · {assetUsage.length}</strong>
                   {assetUsage.length > 0 ? <ul>{assetUsage.map((usage) => (
