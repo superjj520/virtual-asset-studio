@@ -829,6 +829,10 @@ export type GenerationBatch = {
   providerId: ProviderId;
   /** 创建批次时显式选择的生成模型；为空表示沿用默认路由。 */
   modelId?: string;
+  /** 批次级随机种子；所有变体共用，保证同批次可复现。 */
+  seed?: number;
+  /** 批次画质语义；fal 固定输出时仅作记录。 */
+  qualityTier?: "draft" | "standard" | "high";
   aspectRatio: CreativeCard["aspectRatio"];
   /** 批量候选继承的参考链，所有变体都必须使用同一组身份锚点。 */
   referenceAssetIds: string[];

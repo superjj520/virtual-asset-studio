@@ -239,6 +239,8 @@ export const applySchema = (database: Database.Database) => {
       name TEXT NOT NULL,
       provider_id TEXT NOT NULL,
       model_id TEXT,
+      seed INTEGER,
+      quality_tier TEXT,
       aspect_ratio TEXT NOT NULL,
       reference_asset_ids_json TEXT NOT NULL DEFAULT '[]',
       reference_bindings_json TEXT NOT NULL DEFAULT '[]',
@@ -520,6 +522,10 @@ export const applySchema = (database: Database.Database) => {
     database.exec("ALTER TABLE generation_batches ADD COLUMN reference_bindings_json TEXT NOT NULL DEFAULT '[]'");
   if (!batchColumns.some((column) => column.name === "model_id"))
     database.exec("ALTER TABLE generation_batches ADD COLUMN model_id TEXT");
+  if (!batchColumns.some((column) => column.name === "seed"))
+    database.exec("ALTER TABLE generation_batches ADD COLUMN seed INTEGER");
+  if (!batchColumns.some((column) => column.name === "quality_tier"))
+    database.exec("ALTER TABLE generation_batches ADD COLUMN quality_tier TEXT");
   const recipeColumns = database
     .prepare("PRAGMA table_info(creative_recipes)")
     .all() as Array<{ name: string }>;

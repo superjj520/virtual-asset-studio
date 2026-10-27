@@ -693,6 +693,8 @@ export const createStudioRuntime = (
             projectId?: string;
             creativeTaskId?: string;
             modelId?: string;
+            seed?: number;
+            qualityTier?: "draft" | "standard" | "high";
             aspectRatio: CreativeCard["aspectRatio"];
             referenceAssetIds?: string[];
             referenceBindings?: ReferenceAssetBinding[];
@@ -701,6 +703,8 @@ export const createStudioRuntime = (
         ) => {
           if (!input.name.trim() || !input.variants.length)
             throw new Error("批量任务需要名称和至少一个变体。");
+          if (input.seed !== undefined && (!Number.isInteger(input.seed) || input.seed < 0 || input.seed > 4294967295))
+            throw new Error("随机种子必须是 0–4294967295 的整数。");
           if (input.creativeTaskId && !tasks.get(input.creativeTaskId))
             throw new Error("关联的创作任务不存在，无法建立候选批次。");
           const referenceSelection = normalizeReferenceBindings(input.referenceAssetIds ?? [], input.referenceBindings);
@@ -783,7 +787,7 @@ export const createStudioRuntime = (
               batches.updateVariant(item.id, { status: "planned", jobId: job.id });
               const generated = references.length
                 ? await refineWithResult(batch.providerId, { prompt: `${item.prompt}\n参考图仅用于保持人物身份和服装连续性。`, size, referencePath: references[0].managedPath, referenceMediaType: references[0].mediaType, onRemoteTask: (remoteTask) => jobs.update(job!.id, { status: "in_progress", result: { remoteTask, requestedAspectRatio: batch.aspectRatio, actualSize: size, batchId, variantId: item.id } }) })
-                : await generateWithResult(batch.providerId, { prompt: item.prompt, size, falModel: batchModel?.providerId === "fal" ? batchModel.model : undefined, onRemoteTask: (remoteTask) => jobs.update(job!.id, { status: "in_progress", result: { remoteTask, requestedAspectRatio: batch.aspectRatio, actualSize: size, batchId, variantId: item.id } }) });
+                : await generateWithResult(batch.providerId, { prompt: item.prompt, size, seed: batch.seed, quality: batch.qualityTier === "draft" ? "medium" : batch.qualityTier ? "high" : undefined, falModel: batchModel?.providerId === "fal" ? batchModel.model : undefined, onRemoteTask: (remoteTask) => jobs.update(job!.id, { status: "in_progress", result: { remoteTask, requestedAspectRatio: batch.aspectRatio, actualSize: size, batchId, variantId: item.id } }) });
               const asset = writeGeneratedAsset(generated.image, {
                 type: "image",
                 mediaType: "image/png",
@@ -798,6 +802,7 @@ export const createStudioRuntime = (
                   aspectRatio: batch.aspectRatio,
                   requestedSize: size,
                   referenceCount: references.length,
+                  seed: batch.seed,
                 },
               });
               const actualImageSize = nativeImage.createFromBuffer(Buffer.from(generated.image)).getSize();
