@@ -52,3 +52,41 @@ export const jobRemoteSummary = (job: StudioJob) => {
   if (typeof job.result?.assetId === "string") return `资产 ${job.result.assetId.slice(0, 10)}`;
   return "尚无远程或资产编号";
 };
+
+export const jobModelSummary = (job: StudioJob) => {
+  const label = typeof job.request.modelLabel === "string" ? job.request.modelLabel : "";
+  const providerModel = typeof job.request.providerModel === "string" ? job.request.providerModel : "";
+  const modelId = typeof job.request.modelId === "string" ? job.request.modelId : "";
+  if (label) return providerModel ? `${label} · ${providerModel}` : label;
+  return modelId || providerModel || "未记录模型";
+};
+
+export const jobCostSummary = (job: StudioJob) => {
+  const cost = job.request.estimatedCostUsd;
+  return typeof cost === "number" && Number.isFinite(cost) ? `预计 $${cost.toFixed(3)}` : "";
+};
+
+export const jobSeedSummary = (job: StudioJob) => {
+  const seed = job.request.seed;
+  return typeof seed === "number" && Number.isInteger(seed) ? `种子 ${seed}` : "";
+};
+
+
+const PROGRESS_STAGES: Record<string, string> = {
+  submitted: "已提交给模型",
+  remote: "模型处理中",
+  downloaded: "已收到结果",
+  completed: "已完成",
+  failed: "生成失败",
+};
+
+export const jobProgressSummary = (job: StudioJob) => {
+  if (job.status === "completed") return PROGRESS_STAGES.completed;
+  if (job.status === "failed") return PROGRESS_STAGES.failed;
+  if (job.status === "unknown") return "结果待确认";
+  const stage = job.result?.progressStage;
+  if (typeof stage === "string" && PROGRESS_STAGES[stage]) return PROGRESS_STAGES[stage];
+  const progress = job.result?.progress;
+  if (typeof progress === "number" && Number.isFinite(progress)) return `${Math.round(progress)}%`;
+  return job.status === "queued" ? "排队中" : job.status === "in_progress" ? "生成中" : "等待更新";
+};

@@ -188,6 +188,9 @@ type VisualCharacterCreatorProps = {
   onSeriesPlanChange?: (value: CandidateVariation[]) => void;
   qualityTier: GenerationQualityTier;
   onQualityTierChange: (value: GenerationQualityTier) => void;
+  generationSeed?: number;
+  onGenerationSeedChange?: (value: number | undefined) => void;
+  generationSettings?: ReactNode;
   aspectRatio?: CreativeAspectRatio;
   onAspectRatioChange?: (value: CreativeAspectRatio) => void;
   onCreate: () => void;
@@ -898,6 +901,7 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
         </div>
       </div>
     </div>}
+    {props.generationSettings}
     <div className="creator-ready-card ready">
       <span>{creationKind === "character" ? "角色资产已就绪" : "方案已就绪"}</span>
       <strong>{creationKind === "character" ? "人物设定将沉淀为可复用角色" : "进入创作台后继续挑选与调整"}</strong>
@@ -1116,6 +1120,7 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
         </div>
       </div>
     </div>}
+    {props.generationSettings}
     <div className="creator-ready-card ready">
       <span>{flow.readyLabel}</span>
       <strong>{flow.readyTitle}</strong>
@@ -1164,8 +1169,23 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
               {([1, 2, 4] as const).map((count) => <button type="button" key={count} aria-pressed={props.candidateCount === count} className={props.candidateCount === count ? "selected" : ""} onClick={() => props.onCandidateCountChange(count)}>{count} 张</button>)}
             </div>
           </div>
+          <div>
+            <div className="visual-choice-heading"><strong>随机种子</strong><span>留空随机；相同种子可复现</span></div>
+            <input
+              className="creator-seed-input"
+              type="number"
+              min={0}
+              max={4294967295}
+              inputMode="numeric"
+              placeholder="留空则随机"
+              aria-label="随机种子"
+              value={props.generationSeed ?? ""}
+              onChange={(event) => props.onGenerationSeedChange?.(event.target.value === "" ? undefined : Number(event.target.value))}
+            />
+          </div>
         </div>
       </details>
+      {props.generationSettings}
       <div className="creator-ready-card ready">
         <span>{flow.readyLabel}</span>
         <strong>{flow.readyTitle}</strong>

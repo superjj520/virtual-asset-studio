@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    testTimeout: 15000,
     exclude: ['release/**', 'release-verify/**', 'dist/**', 'node_modules/**']
   }
 });

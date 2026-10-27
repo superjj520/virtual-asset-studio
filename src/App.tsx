@@ -11,7 +11,16 @@ import { ReferenceBindingsPanel } from "./creation/ReferenceBindingsPanel";
 import { CreationCandidateGallery } from "./creation/CreationCandidateGallery";
 import { LocalDirectionCandidateGallery } from "./creation/LocalDirectionCandidateGallery";
 import { SeriesDirectionComparison } from "./creation/SeriesDirectionComparison";
+import { GenerationModelPicker } from "./creation/GenerationModelPicker";
+import { GenerationModelCatalog } from "./settings/GenerationModelCatalog";
+import { readGenerationModelPreference, writeGenerationModelPreference } from "./creation/generation-model-preference";
+import { findGenerationModel, generationTaskFor, preflightGeneration } from "./shared/generation-models";
+import { classifyGenerationError } from "./shared/generation-errors";
 import { SeriesPlanOverview } from "./creation/SeriesPlanOverview";
+import { orderSeriesCandidates, seriesCandidateLabel, seriesShotPosition } from "./creation/series-candidate-order";
+import { SeriesShotReview, approvedSeriesShotLabels as selectApprovedSeriesShotLabels, type SeriesShotReviewRow } from "./creation/SeriesShotReview";
+import { productionShotVariableLines, selectProductionShots } from "./creation/series-production";
+import { buildBatchVariables } from "./creation/batch-variants";
 import { CreationStudioJourney, type CreationStudioStage } from "./creation/CreationStudioJourney";
 import { CreationLaunchpad, type CreationLaunchKind } from "./creation/CreationLaunchpad";
 import { CREATION_PRESET_ARTWORKS, SCENE_ARTWORKS, VisualCharacterCreator } from "./creation/VisualCharacterCreator";
@@ -106,12 +115,12 @@ import {
 } from "./project/project-brief-options";
 import { GenerationQueuePanel } from "./production/GenerationQueuePanel";
 import { CandidateComparePanel } from "./production/CandidateComparePanel";
-import { jobAspectSummary, jobReferenceSummary } from "./production/job-presentation";
+import { jobAspectSummary, jobCostSummary, jobModelSummary, jobReferenceSummary } from "./production/job-presentation";
 import { CollectionAssetFilterBar, filterCollectionAssets, type CollectionAssetFilters } from "./assets/CollectionAssetFilterBar";
 import { composeCharacterCard, evaluateCharacterCoverage, type CharacterUseCase, type CharacterVariantSelection } from "./shared/character-slots";
 import { collectUsableReferenceAssetIds, getAssetCollectionBlueprint } from "./shared/asset-collection-blueprints";
 import { normalizeReferenceBindings } from "./shared/reference-bindings";
-import { CREATIVE_ASPECT_RATIOS, normalizeCreativeAspectRatio, aspectRatioForImageSize } from "./shared/types";
+import { CREATIVE_ASPECT_RATIOS, normalizeCreativeAspectRatio, aspectRatioForImageSize, imageSizeForAspectRatio } from "./shared/types";
 import type {
   Asset,
   AssetCollection,
@@ -330,6 +339,9 @@ const normalizeCreativeCard = (card: CreativeCard): CreativeCard => {
   return {
     ...card,
     aspectRatio: normalizeCreativeAspectRatio(card.aspectRatio),
+    productionShotLabels: Array.isArray(card.productionShotLabels)
+      ? [...new Set(card.productionShotLabels.filter(Boolean))]
+      : [],
     ...references,
   };
 };
@@ -531,6 +543,8 @@ export default function App() {
   const [creationCandidateCount, setCreationCandidateCount] = useState<1 | 2 | 4>(2);
   const [seriesCandidatePlan, setSeriesCandidatePlan] = useState<CandidateVariation[]>(createDefaultSeriesPlan);
   const [isGeneratingCandidates, setIsGeneratingCandidates] = useState(false);
+  const [candidateProgress, setCandidateProgress] = useState<{ current: number; total: number; label: string; model?: string } | null>(null);
+  const [candidateBatchIssue, setCandidateBatchIssue] = useState<string>();
   const [selectedCreationCandidateId, setSelectedCreationCandidateId] = useState("");
   const [selectedLocalDirectionId, setSelectedLocalDirectionId] = useState("");
   const [selectedSeriesDirectionId, setSelectedSeriesDirectionId] = useState("");
@@ -575,6 +589,12 @@ export default function App() {
   }>({ name: "", role: "世界观与气质", description: "", promptModule: "" });
   const [qualityTier, setQualityTier] =
     useState<GenerationQualityTier>("premium");
+  const [generationSeed, setGenerationSeed] = useState<number | undefined>(undefined);
+  const [generationModelId, setGenerationModelId] = useState<string | undefined>(() => readGenerationModelPreference());
+  const selectGenerationModel = useCallback((modelId: string | undefined) => {
+    setGenerationModelId(modelId);
+    writeGenerationModelPreference(modelId);
+  }, []);
   const [translation, setTranslation] = useState<PromptTranslation>();
   const [provider, setProvider] = useState<ProviderStatus>();
   const [providerVerifications, setProviderVerifications] = useState<Partial<Record<ProviderId, ProviderVerificationResult>>>({});
@@ -589,6 +609,7 @@ export default function App() {
   const [budget, setBudget] = useState<BudgetStatus>({ plannedSpendUsd: 0 });
   const [budgetInput, setBudgetInput] = useState("");
   const [selectedAssetId, setSelectedAssetId] = useState("");
+  const [focusedJobId, setFocusedJobId] = useState<string | undefined>(undefined);
   const [compareAssetIds, setCompareAssetIds] = useState<string[]>([]);
   const [lineage, setLineage] = useState<AssetLineageItem[]>([]);
   const [assetUsage, setAssetUsage] = useState<AssetUsageReference[]>([]);
@@ -1085,6 +1106,8 @@ export default function App() {
             aspectRatio,
             ...retryReferences,
             qualityTier: job.request.qualityTier === "draft" || job.request.qualityTier === "standard" || job.request.qualityTier === "premium" ? job.request.qualityTier : "standard",
+            modelId: typeof job.request.modelId === "string" ? job.request.modelId : undefined,
+            seed: typeof job.request.seed === "number" ? job.request.seed : undefined,
           });
         }
       } else if (job.kind === "image_to_video" && typeof job.request.prompt === "string") {
@@ -1229,6 +1252,14 @@ export default function App() {
   const updateCard = (key: keyof CreativeCard, value: string) =>
     setCard((current) => ({ ...current, [key]: value }));
 
+  const updateCreationAspectRatio = async (value: CreativeAspectRatio) => {
+    const nextCard = { ...card, aspectRatio: value };
+    setCard(nextCard);
+    setTranslation(undefined);
+    const build = await window.studio.creation.compilePrompt(nextCard);
+    setPromptBuild(build);
+  };
+
   const learnPrompt = async () => {
     if (!learningInput.trim()) {
       setNotice("请先粘贴一条需要学习的提示词。");
@@ -1350,6 +1381,12 @@ export default function App() {
   };
 
   const selectedAsset = assets.find((asset) => asset.id === selectedAssetId);
+  const selectedGeneration = (() => {
+    const value = selectedAsset?.metadata.generation;
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : undefined;
+  })();
   const selectedCollectionBlueprint = selectedCollection ? getAssetCollectionBlueprint(selectedCollection.kind) : undefined;
   const filteredCollectionAssets = useMemo(
     () => selectedCollection ? filterCollectionAssets(selectedCollection.assets, collectionAssetFilters) : [],
@@ -1418,12 +1455,52 @@ export default function App() {
     };
   }), [activeTaskCandidates, batches, jobs]);
   const activeTaskCandidateDetails = useMemo(() => Object.fromEntries(activeTaskCandidateItems.map(({ asset, label, job }) => [asset.id, {
-    variationLabel: label,
+    variationLabel: resolveCreationKind(card) === "series" ? seriesCandidateLabel(label, card.candidatePlan ?? []) : label,
     providerLabel: job ? providerLabel(job.providerId as ProviderId) : undefined,
     aspectLabel: job ? `画幅 ${jobAspectSummary(job)}` : undefined,
     referenceLabel: job ? jobReferenceSummary(job) : undefined,
     versionLabel: job ? `版本 ${job.id.slice(0, 8)}` : undefined,
-  }])), [activeTaskCandidateItems]);
+  }])), [activeTaskCandidateItems, card]);
+  const selectedCandidateProvenance = activeTaskCandidateItems.find((item) => item.asset.id === selectedCreationCandidateId);
+  const orderedTaskCandidates = useMemo(() => {
+    const shotPlan = card.candidatePlan ?? [];
+    if (resolveCreationKind(card) !== "series" || !shotPlan.length) return activeTaskCandidates;
+    const labelByAsset = new Map(activeTaskCandidateItems.map((item) => [item.asset.id, item.label]));
+    return orderSeriesCandidates(activeTaskCandidates, shotPlan, (asset) => labelByAsset.get(asset.id) ?? asset.name);
+  }, [activeTaskCandidates, activeTaskCandidateItems, card]);
+  const selectedSeriesShotIndex = (() => {
+    const label = activeTaskCandidateItems.find((item) => item.asset.id === selectedCreationCandidateId)?.label;
+    return label ? seriesShotPosition(label, card.candidatePlan ?? []) : undefined;
+  })();
+  const seriesShotReviewRows = useMemo<SeriesShotReviewRow[]>(() => {
+    const shotPlan = card.candidatePlan ?? [];
+    if (resolveCreationKind(card) !== "series" || !shotPlan.length) return [];
+    return shotPlan.map((shot, index) => {
+      const assets = activeTaskCandidateItems
+        .filter((item) => item.label === shot.label)
+        .map((item) => item.asset)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+      const latest = assets[0];
+      return {
+        index,
+        label: shot.label,
+        assetId: latest?.id,
+        assetName: latest?.name,
+        confirmation: latest?.confirmation,
+        versions: assets.length,
+        selected: latest?.id === selectedCreationCandidateId,
+      };
+    });
+  }, [activeTaskCandidateItems, card, selectedCreationCandidateId]);
+  const approvedSeriesShotLabels = useMemo(
+    () => selectApprovedSeriesShotLabels(seriesShotReviewRows),
+    [seriesShotReviewRows],
+  );
+  const productionShots = useMemo(
+    () => selectProductionShots(card.candidatePlan ?? [], activeTask?.card.productionShotLabels ?? card.productionShotLabels),
+    [activeTask?.card.productionShotLabels, card.candidatePlan, card.productionShotLabels],
+  );
+  const isSeriesProductionTask = activeTask?.card.deliveryMode === "series_pack";
   const activeTaskComparisonIds = compareAssetIds.filter((assetId) => activeTaskCandidates.some((asset) => asset.id === assetId));
   useEffect(() => {
     if (!activeTaskCandidates.length) {
@@ -1464,7 +1541,31 @@ export default function App() {
     );
   };
   const currentImageCapability: ProviderCapability = card.referenceAssetIds.length ? "image_edit" : "image";
-  const canGenerateCurrentImage = canUse(currentImageCapability);
+  const currentGenerationTask = generationTaskFor({
+    hasReferences: card.referenceAssetIds.length > 0,
+    textLayout: card.deliveryMode === "cover",
+    series: resolveCreationKind(card) === "series",
+  });
+  const generationPreflight = preflightGeneration({
+    task: currentGenerationTask,
+    referenceCount: card.referenceAssetIds.length,
+    preferredModelId: generationModelId,
+    providers: provider?.providers,
+    size: imageSizeForAspectRatio(card.aspectRatio),
+    aspectRatio: card.aspectRatio,
+  });
+  const effectiveGenerationModelId = generationModelId ?? generationPreflight.model?.id;
+  const effectiveGenerationModel = findGenerationModel(effectiveGenerationModelId);
+  const displayGenerationModel = generationPreflight.model ?? effectiveGenerationModel;
+  const estimatedBatchCostUsd = generationPreflight.estimatedCostUsd === undefined
+    ? undefined
+    : Number((generationPreflight.estimatedCostUsd * creationCandidateCount).toFixed(3));
+  const generationBudgetExceeded = Boolean(
+    budget.monthlyBudgetUsd !== undefined &&
+    estimatedBatchCostUsd !== undefined &&
+    budget.plannedSpendUsd + estimatedBatchCostUsd > budget.monthlyBudgetUsd,
+  );
+  const canGenerateCurrentImage = generationPreflight.ok && !generationBudgetExceeded;
   const saveProviderKey = async (providerId: ProviderId) => {
     try {
       const key = providerKeys[providerId];
@@ -1793,10 +1894,10 @@ export default function App() {
         mode: normalizedCard.referenceAssetIds.length ? "image_edit" : "text_to_image",
         prompt,
         negativePrompt: activeTranslation?.negative ?? activeBuild.negative,
-        providerId: normalizedCard.referenceAssetIds.length ? provider?.routes.image_edit : provider?.routes.image,
+        providerId: effectiveGenerationModel?.providerId ?? (normalizedCard.referenceAssetIds.length ? provider?.routes.image_edit : provider?.routes.image),
         aspectRatio: normalizedCard.aspectRatio,
         referenceAssetIds: normalizedCard.referenceAssetIds,
-        settings: { qualityTier, referenceBindings: normalizedCard.referenceBindings, deliveryMode: normalizedCard.deliveryMode, candidateLabel: prepared?.candidateLabel, candidateIndex: prepared?.candidateIndex, candidateCount: prepared?.candidateCount },
+        settings: { qualityTier, generationModelId: effectiveGenerationModelId, referenceBindings: normalizedCard.referenceBindings, deliveryMode: normalizedCard.deliveryMode, candidateLabel: prepared?.candidateLabel, candidateIndex: prepared?.candidateIndex, candidateCount: prepared?.candidateCount },
       }) : undefined;
       const job = await window.studio.generation.image({
         prompt,
@@ -1808,6 +1909,8 @@ export default function App() {
         referenceAssetIds: normalizedCard.referenceAssetIds,
         referenceBindings: normalizedCard.referenceBindings,
         qualityTier,
+        modelId: effectiveGenerationModelId,
+        seed: generationSeed,
         candidateLabel: prepared?.candidateLabel,
         candidateIndex: prepared?.candidateIndex,
         candidateCount: prepared?.candidateCount,
@@ -1854,11 +1957,13 @@ export default function App() {
     taskId = activeTaskId,
     characterProfileId,
     sceneProfileId,
+    skipExisting = false,
   }: {
     targetCard: CreativeCard;
     taskId?: string;
     characterProfileId?: string;
     sceneProfileId?: string;
+    skipExisting?: boolean;
   }) => {
     if (characterReferenceIssues) {
       setNotice(characterReferenceIssues);
@@ -1866,6 +1971,7 @@ export default function App() {
     }
     if (isGeneratingCandidates) return;
     setIsGeneratingCandidates(true);
+    setCandidateBatchIssue(undefined);
     try {
       const normalizedCard = normalizeCreativeCard(targetCard);
       setCard(normalizedCard);
@@ -1873,9 +1979,9 @@ export default function App() {
       const build = await window.studio.creation.compilePrompt(normalizedCard);
       setPromptBuild(build);
       let translated: PromptTranslation | undefined;
-      const imageProvider = normalizedCard.referenceAssetIds.length
+      const imageProvider = effectiveGenerationModel?.providerId ?? (normalizedCard.referenceAssetIds.length
         ? provider?.routes.image_edit
-        : provider?.routes.image;
+        : provider?.routes.image);
       if (canUse("text") && (imageProvider === "openai" || imageProvider === "flux" || imageProvider === "fal" || imageProvider === "gemini")) {
         try {
           translated = await window.studio.creation.translatePrompt({
@@ -1890,14 +1996,34 @@ export default function App() {
         }
       }
       const generatedIds: string[] = [];
-      const candidateVariations = buildCandidateVariations(
+      const allCandidateVariations = buildCandidateVariations(
         creationCandidateCount,
         normalizedCard.deliveryMode ?? guideDirection,
         normalizedCard.candidatePlan,
       );
-      for (let index = 0; index < candidateVariations.length; index += 1) {
-        const variation = candidateVariations[index];
-        setNotice(`正在生成候选 ${index + 1}/${creationCandidateCount}…`);
+      const existingCandidateLabels = new Set(activeTaskCandidateItems.map((item) => item.label));
+      const pendingVariations = allCandidateVariations
+        .map((variation, index) => ({ variation, index }))
+        .filter(({ variation }) => !skipExisting || !existingCandidateLabels.has(variation.label));
+      if (!pendingVariations.length) {
+        setNotice("本批候选已齐全，无需重试。");
+        setCandidateBatchIssue(undefined);
+        return;
+      }
+      const perImageCostUsd = generationPreflight.estimatedCostUsd;
+      setCandidateProgress({ current: 0, total: pendingVariations.length, label: "准备提示词", model: displayGenerationModel?.label });
+      let remainingBudgetUsd = budget.monthlyBudgetUsd === undefined
+        ? undefined
+        : Math.max(0, budget.monthlyBudgetUsd - budget.plannedSpendUsd);
+      let stopReason = "";
+      for (let position = 0; position < pendingVariations.length; position += 1) {
+        const { variation, index } = pendingVariations[position];
+        if (perImageCostUsd !== undefined && remainingBudgetUsd !== undefined && perImageCostUsd > remainingBudgetUsd) {
+          stopReason = `本批已生成 ${generatedIds.length} 张；剩余预算不足以继续第 ${index + 1} 张（约 $${perImageCostUsd}）。`;
+          break;
+        }
+        setCandidateProgress({ current: position + 1, total: pendingVariations.length, label: variation.label, model: displayGenerationModel?.label });
+        setNotice(`正在生成候选 ${index + 1}/${allCandidateVariations.length}…`);
         const candidateBuild = { ...build, positive: `${build.positive}\n候选策略：${variation.directive}` };
         const candidateTranslation = translated ? { ...translated, positive: `${translated.positive}\nCandidate variation: ${variation.directive}` } : undefined;
         const assetId = await generateImage({
@@ -1909,9 +2035,14 @@ export default function App() {
           sceneProfileId,
           candidateLabel: variation.label,
           candidateIndex: index + 1,
-          candidateCount: candidateVariations.length,
+          candidateCount: allCandidateVariations.length,
         });
-        if (assetId) generatedIds.push(assetId);
+        if (!assetId) {
+          stopReason = `候选 ${index + 1} 生成失败；本批已停止，已生成 ${generatedIds.length} 张。未完成部分可点“重试未完成”或在生成队列按原请求重试。`;
+          break;
+        }
+        generatedIds.push(assetId);
+        if (remainingBudgetUsd !== undefined && perImageCostUsd !== undefined) remainingBudgetUsd -= perImageCostUsd;
       }
       if (taskId && generatedIds.length) {
         const updated = await window.studio.tasks.update(taskId, {
@@ -1920,17 +2051,140 @@ export default function App() {
         });
         setCreativeTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
       }
-      setNotice(generatedIds.length
+      setCandidateBatchIssue(stopReason || undefined);
+      setNotice(stopReason || (generatedIds.length
         ? `已生成 ${generatedIds.length} 张候选，直接在当前页面选择最佳版本。`
-        : "本轮没有生成可用候选，请检查模型连接或到生成队列重试。");
+        : "本轮没有生成可用候选，请检查模型连接或到生成队列重试。"));
       if (generatedIds.length) setCreationStudioStage("candidates");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "准备首版成图失败。");
     } finally {
       setIsGeneratingCandidates(false);
+      setCandidateProgress(null);
     }
   };
   const generateFirstVersion = async () => generatePreparedCandidateSet({ targetCard: card });
+  const generateSeriesPlanShots = async () => {
+    if (!canGenerateCurrentImage || isGeneratingCandidates) {
+      if (!canGenerateCurrentImage) setNotice("当前没有可用的图像模型；请先在设置里配置模型。");
+      return;
+    }
+    if (!seriesPlan.length) {
+      setNotice("当前没有可生成的镜头计划。");
+      return;
+    }
+    setIsGeneratingCandidates(true);
+    setCandidateBatchIssue(undefined);
+    try {
+      const build = await window.studio.creation.compilePrompt(card);
+      const perImageCostUsd = generationPreflight.estimatedCostUsd;
+      let remainingBudgetUsd = budget.monthlyBudgetUsd === undefined
+        ? undefined
+        : Math.max(0, budget.monthlyBudgetUsd - budget.plannedSpendUsd);
+      const existingShotLabels = new Set(activeTaskCandidateItems.map((item) => item.label));
+      const pendingShots = seriesPlan
+        .map((shot, index) => ({ shot, index }))
+        .filter(({ shot }) => !existingShotLabels.has(shot.label));
+      if (!pendingShots.length) {
+        setNotice("本组镜头已全部生成，无需重复生成。");
+        return;
+      }
+      const generatedIds: string[] = [];
+      let stopReason = "";
+      for (let position = 0; position < pendingShots.length; position += 1) {
+        const { shot, index } = pendingShots[position];
+        if (perImageCostUsd !== undefined && remainingBudgetUsd !== undefined && perImageCostUsd > remainingBudgetUsd) {
+          stopReason = `本组已生成 ${generatedIds.length} 张；剩余预算不足以继续第 ${index + 1} 镜。`;
+          break;
+        }
+        setCandidateProgress({
+          current: position + 1,
+          total: pendingShots.length,
+          label: `第 ${index + 1} 镜 · ${shot.label}`,
+          model: displayGenerationModel?.label,
+        });
+        setNotice(`正在生成第 ${index + 1}/${seriesPlan.length} 镜：${shot.label}…`);
+        const shotBuild = {
+          ...build,
+          positive: `${build.positive}\n镜头 ${index + 1}/${seriesPlan.length}：${shot.directive}`,
+        };
+        const assetId = await generateImage({
+          build: shotBuild,
+          card,
+          taskId: activeTaskId,
+          candidateLabel: shot.label,
+          candidateIndex: index + 1,
+          candidateCount: seriesPlan.length,
+        });
+        if (!assetId) {
+          stopReason = `第 ${index + 1} 镜生成失败；本组已停止，已生成 ${generatedIds.length} 张。`;
+          break;
+        }
+        generatedIds.push(assetId);
+        if (remainingBudgetUsd !== undefined && perImageCostUsd !== undefined) remainingBudgetUsd -= perImageCostUsd;
+      }
+      setCandidateBatchIssue(stopReason || undefined);
+      setNotice(stopReason || (generatedIds.length
+        ? `已生成 ${generatedIds.length} 张镜头图；可逐镜审片或继续补拍未完成镜头。`
+        : "本轮没有生成可用的镜头图，请检查模型连接。"));
+      if (generatedIds.length) setCreationStudioStage("candidates");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "生成整组镜头失败。");
+    } finally {
+      setIsGeneratingCandidates(false);
+      setCandidateProgress(null);
+    }
+  };
+  const regenerateSeriesShot = async (shotIndex: number) => {
+    const shot = seriesPlan[shotIndex];
+    if (!shot || isGeneratingCandidates) return;
+    if (!canGenerateCurrentImage) {
+      setNotice("当前没有可用的图像模型；请先在设置里配置模型。");
+      return;
+    }
+    setIsGeneratingCandidates(true);
+    setCandidateBatchIssue(undefined);
+    try {
+      const build = await window.studio.creation.compilePrompt(card);
+      const shotBuild = {
+        ...build,
+        positive: `${build.positive}\n镜头 ${shotIndex + 1}/${seriesPlan.length}：${shot.directive}`,
+      };
+      setCandidateProgress({ current: 1, total: 1, label: `第 ${shotIndex + 1} 镜 · ${shot.label}`, model: displayGenerationModel?.label });
+      setNotice(`正在重生成第 ${shotIndex + 1} 镜：${shot.label}…`);
+      const assetId = await generateImage({
+        build: shotBuild,
+        card,
+        taskId: activeTaskId,
+        candidateLabel: shot.label,
+        candidateIndex: shotIndex + 1,
+        candidateCount: seriesPlan.length,
+      });
+      if (assetId) setNotice(`已重生成第 ${shotIndex + 1} 镜：${shot.label}；可继续比较或淘汰旧版本。`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "重生成该镜头失败。");
+    } finally {
+      setIsGeneratingCandidates(false);
+      setCandidateProgress(null);
+    }
+  };
+  const loadProductionShots = () => {
+    if (!productionShots.length) return;
+    setBatchName(`${activeTask?.name ?? "系列镜头"} · 采用 ${productionShots.length} 镜`);
+    setBatchVariables(productionShotVariableLines(productionShots));
+    setNotice(`已把 ${productionShots.length} 个采用镜头写入批次变量；未采用镜头不会进入本批。`);
+  };
+  const saveSeriesProductionSelection = async () => {
+    const nextCard = normalizeCreativeCard({ ...card, productionShotLabels: approvedSeriesShotLabels });
+    setCard(nextCard);
+    if (activeTaskId) {
+      const updated = await window.studio.tasks.update(activeTaskId, { card: nextCard });
+      setCreativeTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
+    }
+    setNotice(approvedSeriesShotLabels.length
+      ? `已记录 ${approvedSeriesShotLabels.length} 个可进入生产的镜头；生产准备只会使用这组镜头。`
+      : "当前没有已采用镜头；请先在逐镜审片中采用至少一镜。");
+  };
   const applyRefinementToPlan = async () => {
     const preset = getCreationRefinements(card.deliveryMode).find((item) => item.id === creationRefinementId);
     const nextCard = normalizeCreativeCard(applyCreationRefinement(card, creationRefinementId));
@@ -2264,13 +2518,16 @@ export default function App() {
         name: batchName,
         projectId: selectedProjectId || undefined,
         creativeTaskId: activeTaskId,
+        modelId: effectiveGenerationModelId,
         aspectRatio: card.aspectRatio,
         referenceAssetIds: card.referenceAssetIds,
         referenceBindings: card.referenceBindings,
-        variants: variables.map((scene, index) => ({
-          label: `变体 ${index + 1}：${scene}`,
-          prompt: `${promptBuild.positive}${promptBuild.negative ? `\n避免：${promptBuild.negative}` : ""}\n本轮唯一变化：场景为${scene}。其余人物身份、服装、构图与限制保持不变。`,
-        })),
+        variants: buildBatchVariables({
+          values: variables,
+          positive: promptBuild.positive,
+          negative: promptBuild.negative,
+          series: card.deliveryMode === "series_pack",
+        }),
       });
       setBatches((current) => [batch, ...current]);
       setNotice(
@@ -2288,7 +2545,9 @@ export default function App() {
       );
       await refresh();
       setNotice(
-        `批量任务「${batch.name}」已完成，请在资产库逐张确认主版本或淘汰。`,
+        batch.status === "partially_failed"
+          ? `批量任务「${batch.name}」在首个失败候选处停止；剩余候选未执行，核对原因后再重试。`
+          : `批量任务「${batch.name}」已完成，请在资产库逐张确认主版本或淘汰。`,
       );
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "批量任务执行失败。");
@@ -2899,7 +3158,9 @@ export default function App() {
           ? "镜头计划已保存"
           : creationLaunchKind === "scene"
             ? "剧情场景与场景资产已建立"
-            : "创作方案已建立；可继续编辑或在生产区创建候选。");
+            : canGenerateCurrentImage
+              ? "创作方案已建立；确认模型与候选数后点击“生成候选”。"
+              : "创作方案已建立；可继续编辑，配置模型后生成候选。");
       }
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "建立创作方案失败。");
@@ -3796,6 +4057,9 @@ export default function App() {
           onSeriesPlanChange={setSeriesCandidatePlan}
           qualityTier={qualityTier}
           onQualityTierChange={(value) => { setQualityTier(value); setTranslation(undefined); }}
+          generationSeed={generationSeed}
+          onGenerationSeedChange={setGenerationSeed}
+          generationSettings={<div className="creator-generation-settings" aria-label="生成模型设置"><GenerationModelPicker providers={provider?.providers} task={generationTaskFor({ hasReferences: guideMode !== "new", series: creationLaunchKind === "series", textLayout: card.deliveryMode === "cover" })} referenceCount={guideMode === "new" ? 0 : 1} value={generationModelId} onChange={selectGenerationModel} size={imageSizeForAspectRatio(guideAspectRatio)} aspectRatio={guideAspectRatio} qualityTier={qualityTier} /></div>}
           aspectRatio={guideAspectRatio}
           onAspectRatioChange={setGuideAspectRatio}
           onCreate={() => void beginGuidedCreation(false)}
@@ -4536,6 +4800,17 @@ export default function App() {
                   ))}</ul> : <small>尚未被项目、资产包、角色、场景、任务或配方引用。</small>}
                 </div>
               </div>
+              {selectedGeneration && <details className="asset-generation-summary" aria-label="生成来源">
+                <summary>生成来源</summary>
+                <dl>
+                  {typeof selectedGeneration.providerModel === "string" && <div><dt>模型</dt><dd>{selectedGeneration.providerModel}</dd></div>}
+                  {typeof selectedGeneration.aspectRatio === "string" && <div><dt>画幅</dt><dd>{selectedGeneration.aspectRatio}</dd></div>}
+                  {typeof selectedGeneration.seed === "number" && <div><dt>随机种子</dt><dd>{selectedGeneration.seed}</dd></div>}
+                  {typeof selectedGeneration.referenceCount === "number" && <div><dt>参考图</dt><dd>{selectedGeneration.referenceCount} 张</dd></div>}
+                </dl>
+                {typeof selectedGeneration.prompt === "string" && <pre>{selectedGeneration.prompt}</pre>}
+                {typeof selectedAsset.metadata.generatedFromJobId === "string" && <button type="button" className="subtle-button asset-generation-job-link" onClick={() => { setFocusedJobId(String(selectedAsset.metadata.generatedFromJobId)); setActiveDomain("production"); setScreen("jobs"); }}>查看生成队列</button>}
+              </details>}
               {selectedCollection && <div className="collection-attach-controls"><label>归档到模块<select value={selectedCollectionModuleKey} onChange={(event) => setSelectedCollectionModuleKey(event.target.value)}>{getAssetCollectionBlueprint(selectedCollection.kind).modules.map((module) => <option value={module.key} key={module.key}>{module.required ? "必需 · " : "可选 · "}{module.label}</option>)}</select></label><label>本素材说明（可选）<input value={selectedCollectionMemberNotes} onChange={(event) => setSelectedCollectionMemberNotes(event.target.value)} placeholder="例如：只作为正面脸部证据，不作为最终母版" /></label></div>}
               <div className="form-actions">
                 <button onClick={() => void reviewAsset("confirmed")}>
@@ -5070,20 +5345,71 @@ export default function App() {
             </>}
           </section>}
           {creationStudioStage !== "plan" && <>
-          {creationStudioStage === "candidates" && (activeTaskCandidates.length > 0 || isGeneratingCandidates) && <section className="creation-control-bar creation-candidate-controls" aria-label="候选生成设置">
+          {creationStudioStage === "candidates" && <section className="creation-control-bar creation-candidate-controls" aria-label="候选生成设置">
             <div className="compact-control">
-              <label>画幅<select value={normalizeCreativeAspectRatio(card.aspectRatio)} onChange={(event) => updateCard("aspectRatio", event.target.value)}>{CREATIVE_ASPECT_RATIOS.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
+              <label>画幅<select value={normalizeCreativeAspectRatio(card.aspectRatio)} onChange={(event) => void updateCreationAspectRatio(normalizeCreativeAspectRatio(event.target.value))}>{CREATIVE_ASPECT_RATIOS.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
               <label>候选数<select value={creationCandidateCount} onChange={(event) => setCreationCandidateCount(Number(event.target.value) as 1 | 2 | 4)}><option value="1">1 张</option><option value="2">2 张</option><option value="4">4 张</option></select></label>
               <span className="creation-context-count">{card.referenceAssetIds.length ? `${card.referenceAssetIds.length} 张参考图` : "当前方案"}</span>
+              <GenerationModelPicker
+                providers={provider?.providers}
+                task={generationTaskFor({
+                  hasReferences: card.referenceAssetIds.length > 0,
+                  series: creationStudioKind === "series",
+                  textLayout: card.deliveryMode === "cover",
+                })}
+                referenceCount={card.referenceAssetIds.length}
+                value={generationModelId}
+                qualityTier={qualityTier}
+                onChange={selectGenerationModel}
+                size={imageSizeForAspectRatio(card.aspectRatio)}
+                aspectRatio={card.aspectRatio}
+              />
+              {estimatedBatchCostUsd !== undefined && <span className="creation-batch-estimate">本批约 ${estimatedBatchCostUsd} / {creationCandidateCount} 张</span>}
             </div>
             {canGenerateCurrentImage
               ? <button className="primary-button creation-generate-button" disabled={Boolean(characterReferenceIssues) || isGeneratingCandidates} onClick={() => void generateFirstVersion()}>{isGeneratingCandidates ? "正在生成…" : activeTaskCandidates.length ? "再生成一组" : "生成候选"}</button>
-              : <span className="creation-service-note">方案可继续编辑；需要出图时再连接生成服务。</span>}
+              : <span className="creation-service-note">{generationPreflight.ok && generationBudgetExceeded ? `本批预计 $${estimatedBatchCostUsd}，会超过本月预算 $${budget.monthlyBudgetUsd}；请减少候选数或调整预算。` : "方案可继续编辑；需要出图时再连接生成服务。"}</span>}
           </section>}
+          {creationStudioStage === "candidates" && <details className="generation-request-preview">
+            <summary>查看本次发送给模型</summary>
+            <div className="generation-request-meta">
+              <span>{generationPreflight.model?.label ?? displayGenerationModel?.label ?? "自动选择"}</span>
+              <span>{imageSizeForAspectRatio(card.aspectRatio)}</span>
+              <span>{card.referenceAssetIds.length ? `${card.referenceAssetIds.length} 张参考图` : "无参考图"}</span>
+              <span>{generationSeed === undefined ? "随机种子" : `种子 ${generationSeed}`}</span>
+            </div>
+            <p className="generation-request-label">正向提示词</p>
+            <pre>{promptBuild?.positive?.trim() || "尚未编译提示词。"}</pre>
+            <p className="generation-request-label">负面提示词</p>
+            <pre>{promptBuild?.negative?.trim() || "无负面提示词"}</pre>
+          </details>}
+          {creationStudioStage === "candidates" && isGeneratingCandidates && candidateProgress && <div className="candidate-generation-progress" role="status" aria-live="polite">
+            <div><strong>正在生成 {candidateProgress.current || 1}/{candidateProgress.total}</strong><span>{candidateProgress.label}</span>{candidateProgress.model && <small>{candidateProgress.model}</small>}</div>
+            <progress max={candidateProgress.total} value={Math.max(0, candidateProgress.current - 1)} />
+            <small>单张失败会停止本批，已生成的结果会保留。</small>
+          </div>}
+          {creationStudioStage === "candidates" && candidateBatchIssue && canGenerateCurrentImage && <div className="candidate-batch-issue" role="status">
+            <span>本批未完成；重试只补缺失候选，不会重复已生成的图片。</span>
+            <button type="button" className="subtle-button" disabled={isGeneratingCandidates} onClick={() => void generatePreparedCandidateSet({ targetCard: card, skipExisting: true })}>重试未完成</button>
+          </div>}
+          {creationStudioStage === "candidates" && canGenerateCurrentImage && <div className="creation-mobile-action" role="group" aria-label="生成候选操作">
+            <span>{displayGenerationModel?.label ?? "自动选择"}{estimatedBatchCostUsd !== undefined ? ` · ${creationCandidateCount} 张 · 约 $${estimatedBatchCostUsd}` : ""}</span>
+            <button className="primary-button" aria-label={`${isGeneratingCandidates ? "正在生成" : activeTaskCandidates.length ? "再生成一组" : "生成候选"}（移动端）`} disabled={Boolean(characterReferenceIssues) || isGeneratingCandidates} onClick={() => void generateFirstVersion()}>{isGeneratingCandidates ? "正在生成…" : activeTaskCandidates.length ? "再生成一组" : "生成候选"}</button>
+          </div>}
+          {creationStudioStage === "candidates" && creationStudioKind === "series" && seriesShotReviewRows.length > 0 && <SeriesShotReview
+            rows={seriesShotReviewRows}
+            isGenerating={isGeneratingCandidates}
+            onSelect={(assetId) => {
+              setSelectedCreationCandidateId(assetId);
+              setSelectedAssetId(assetId);
+            }}
+            onRegenerate={(index) => void regenerateSeriesShot(index)}
+            onReview={(assetId, decision) => void reviewAsset(decision, assetId)}
+          />}
           <section className={`creation-studio-grid stage-${creationStudioStage}`} aria-label="候选与继续创作">
             {activeTaskCandidates.length || isGeneratingCandidates
               ? <CreationCandidateGallery
-                candidates={activeTaskCandidates}
+                candidates={orderedTaskCandidates}
                 selectedId={selectedCreationCandidate?.id}
                 generating={isGeneratingCandidates}
                 comparisonIds={activeTaskComparisonIds}
@@ -5138,12 +5464,20 @@ export default function App() {
                   <strong>{selectedCreationCandidate.name}</strong>
                   <span>{selectedCreationCandidate.confirmation === "confirmed" ? "已确认" : selectedCreationCandidate.confirmation === "rejected" ? "已淘汰" : "待确认"} · {selectedCreationCandidate.rightsStatus === "original" ? "原创" : selectedCreationCandidate.rightsStatus === "authorized" ? "已授权" : "权利待复核"}</span>
                 </div>
+                {creationStudioStage === "candidates" && selectedCandidateProvenance?.job && <details className="candidate-provenance">
+                  <summary>生成来源</summary>
+                  <p>{jobModelSummary(selectedCandidateProvenance.job)} · {jobAspectSummary(selectedCandidateProvenance.job)}</p>
+                  <p>{jobReferenceSummary(selectedCandidateProvenance.job)}{jobCostSummary(selectedCandidateProvenance.job) ? ` · ${jobCostSummary(selectedCandidateProvenance.job)}` : ""}</p>
+                  <p>提示词</p>
+                  <pre>{selectedCandidateProvenance.prompt}</pre>
+                </details>}
                 {creationStudioStage === "candidates" && <>
                 <div className="candidate-decision-actions">
                   {selectedCreationCandidate.confirmation === "draft" && <>
                     <button type="button" onClick={() => void reviewAsset("confirmed", selectedCreationCandidate.id)}>确认候选</button>
                     <button type="button" onClick={() => void reviewAsset("rejected", selectedCreationCandidate.id)}>淘汰</button>
                   </>}
+                  {selectedSeriesShotIndex !== undefined && <button type="button" disabled={isGeneratingCandidates} onClick={() => void regenerateSeriesShot(selectedSeriesShotIndex)}>{isGeneratingCandidates ? "正在重生成…" : `重生成第 ${selectedSeriesShotIndex + 1} 镜`}</button>}
                   <button type="button" onClick={() => { setSelectedAssetId(selectedCreationCandidate.id); setScreen("review"); }}>完整审片</button>
                 </div>
                 <button type="button" className="primary-button creation-stage-next" onClick={() => setCreationStudioStage("refine")}>下一步 · 局部调整</button>
@@ -5266,12 +5600,15 @@ export default function App() {
                   <div><span>镜头</span><strong>{seriesPlan.length} 镜</strong></div>
                   <div><span>顺序</span><strong>01→{String(seriesPlan.length).padStart(2, "0")} 已锁定</strong></div>
                   <div><span>调整</span><strong>{localRefinementApplied ? "已写入" : confirmedLocalDirectionId ? "沿用所选方向" : "逐镜自定义"}</strong></div>
+                  <div><span>可进入生产</span><strong>{approvedSeriesShotLabels.length ? `${approvedSeriesShotLabels.length} 镜` : "尚未采用"}</strong></div>
                 </div>
                 <div className="creation-output-actions local-output-actions">
-                  <button type="button" className="primary-button" onClick={() => { setActiveDomain("production"); setScreen("production"); }}>进入生产准备</button>
+                  {canGenerateCurrentImage && <button type="button" className="primary-button" disabled={isGeneratingCandidates} onClick={() => void generateSeriesPlanShots()}>{isGeneratingCandidates ? "正在生成本组…" : `生成本组 ${seriesPlan.length} 镜`}</button>}
+                  <button type="button" onClick={() => void saveSeriesProductionSelection()}>记录采用镜头集</button>
+                  <button type="button" className={canGenerateCurrentImage ? "" : "primary-button"} onClick={() => { setActiveDomain("production"); setScreen("production"); }}>进入生产准备</button>
                   <button type="button" onClick={() => void saveCurrentTask()}>保存创作任务</button>
                 </div>
-                <small>整组镜头顺序、角色与连续性约束已保存在当前任务中。</small>
+                <small>{canGenerateCurrentImage && generationPreflight.estimatedCostUsd !== undefined ? `本组约 $${(generationPreflight.estimatedCostUsd * seriesPlan.length).toFixed(3)}；` : ""}整组镜头顺序、角色与连续性约束已保存在当前任务中。</small>
               </div> : creationStudioStage === "asset" && confirmedLocalDirectionId ? <div className="creation-local-asset-panel">
                 <span className="creation-local-badge">方案资产</span>
                 <h3>{creationAssetCopy.title}</h3>
@@ -5428,6 +5765,22 @@ export default function App() {
               <h2>固定角色，批量测试</h2>
             </div>
           </header>
+          {isSeriesProductionTask && productionShots.length === 0 && <section className="production-shot-selection empty" aria-label="尚未记录采用镜头">
+            <div>
+              <p className="eyebrow">本批只生产采用镜头</p>
+              <strong>尚未记录采用镜头</strong>
+              <p>回创作台逐镜审片，采用至少一镜后再进入生产。</p>
+            </div>
+            <button type="button" onClick={() => { setActiveDomain("creation"); setScreen("creation"); }}>回到逐镜审片</button>
+          </section>}
+          {productionShots.length > 0 && <section className="production-shot-selection" aria-label="本批采用镜头">
+            <div>
+              <p className="eyebrow">本批只生产采用镜头</p>
+              <strong>{productionShots.length} 镜已采用</strong>
+              <p>{productionShots.map((shot) => shot.label).join(" · ")}</p>
+            </div>
+            <button type="button" className="primary-button" onClick={loadProductionShots}>用采用镜头建立批次变量</button>
+          </section>}
           <section className="form-panel">
             <p className="result-note">
               先编译提示词；每行只改一个变量。
@@ -5475,11 +5828,12 @@ export default function App() {
                 <div>
                   <h3>{batch.name}</h3>
                   <p>
-                    {providerLabel(batch.providerId)} ·{" "}
+                    {findGenerationModel(batch.modelId)?.label ?? providerLabel(batch.providerId)} ·{" "}
                     {batch.variants.length} 个候选 ·{" "}
                     {batch.estimatedCostUsd
                       ? `预计 $${batch.estimatedCostUsd}`
                       : "费用按模型账单结算"}
+                    {batch.actualCostUsd ? ` · 实际 $${batch.actualCostUsd}` : ""}
                   </p>
                   <p className="batch-task-link">
                     {batch.creativeTaskId
@@ -5490,7 +5844,7 @@ export default function App() {
                     {batch.variants
                       .map(
                         (item) =>
-                          `${item.label}：${item.status === "completed" ? "已入库" : item.status === "failed" ? "失败" : "待生成"}`,
+                          `${item.label}：${item.status === "completed" ? "已入库" : item.status === "failed" ? classifyGenerationError(item.error).title : "待生成"}`,
                       )
                       .join("；")}
                   </p>
@@ -5501,6 +5855,14 @@ export default function App() {
                         onClick={() => void runBatch(batch.id)}
                       >
                         执行这批候选
+                      </button>
+                    )}
+                    {batch.status === "partially_failed" && batch.variants.some((item) => item.status === "planned") && (
+                      <button
+                        className="primary-button"
+                        onClick={() => void runBatch(batch.id)}
+                      >
+                        重试未完成候选
                       </button>
                     )}
                     {batch.creativeTaskId && (
@@ -6125,6 +6487,7 @@ export default function App() {
               </div>;
             })}
           </section>
+          <GenerationModelCatalog providers={provider?.providers} selectedModelId={generationModelId} onSelect={selectGenerationModel} />
           <section className="form-panel">
             <p className="eyebrow">能力路由</p>
             {(
