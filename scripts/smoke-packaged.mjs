@@ -77,6 +77,6 @@ try {
 } finally {
   try { ws?.close(); } catch {}
   child.kill("SIGTERM");
-  await sleep(800);
-  if (!process.env.SMOKE_USERDATA) rmSync(userData, { recursive: true, force: true });
+  await sleep(2000);
+  if (!process.env.SMOKE_USERDATA) rmSync(userData, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
