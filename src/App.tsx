@@ -15,6 +15,7 @@ import { GenerationModelPicker } from "./creation/GenerationModelPicker";
 import { GenerationModelCatalog } from "./settings/GenerationModelCatalog";
 import { readGenerationModelPreference, writeGenerationModelPreference } from "./creation/generation-model-preference";
 import { findGenerationModel, generationTaskFor, preflightGeneration } from "./shared/generation-models";
+import { resolveGenerationReadiness } from "./creation/generation-readiness";
 import { classifyGenerationError } from "./shared/generation-errors";
 import { SeriesPlanOverview } from "./creation/SeriesPlanOverview";
 import { orderSeriesCandidates, seriesCandidateLabel, seriesShotPosition } from "./creation/series-candidate-order";
@@ -1617,7 +1618,12 @@ export default function App() {
     estimatedBatchCostUsd !== undefined &&
     budget.plannedSpendUsd + estimatedBatchCostUsd > budget.monthlyBudgetUsd,
   );
-  const canGenerateCurrentImage = generationPreflight.ok && !generationBudgetExceeded;
+  const generationReadiness = resolveGenerationReadiness({
+    preflight: generationPreflight,
+    budgetExceeded: generationBudgetExceeded,
+    isGenerating: isGeneratingCandidates,
+  });
+  const canGenerateCurrentImage = generationReadiness.canGenerate;
   const saveProviderKey = async (providerId: ProviderId) => {
     try {
       const key = providerKeys[providerId];
@@ -2118,7 +2124,7 @@ export default function App() {
   const generateFirstVersion = async () => generatePreparedCandidateSet({ targetCard: card });
   const generateSeriesPlanShots = async () => {
     if (!canGenerateCurrentImage || isGeneratingCandidates) {
-      if (!canGenerateCurrentImage) setNotice("当前没有可用的图像模型；请先在设置里配置模型。");
+      if (!canGenerateCurrentImage) setNotice(generationReadiness.primaryIssue ?? generationReadiness.actionHint);
       return;
     }
     if (!seriesPlan.length) {
@@ -2191,7 +2197,7 @@ export default function App() {
     const shot = seriesPlan[shotIndex];
     if (!shot || isGeneratingCandidates) return;
     if (!canGenerateCurrentImage) {
-      setNotice("当前没有可用的图像模型；请先在设置里配置模型。");
+      setNotice(generationReadiness.primaryIssue ?? generationReadiness.actionHint);
       return;
     }
     setIsGeneratingCandidates(true);
