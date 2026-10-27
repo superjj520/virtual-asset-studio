@@ -9,12 +9,15 @@ import {
 } from "./generation-models";
 import type { ProviderStatus } from "./types";
 
-const providers = (configured: Partial<Record<"fal" | "gemini" | "openai" | "flux", boolean>>) =>
+const providers = (
+  configured: Partial<Record<"fal" | "gemini" | "openai" | "flux" | "local", boolean>>,
+) =>
   [
     { id: "fal", configured: configured.fal ?? false, capabilities: ["image", "image_edit"] },
     { id: "gemini", configured: configured.gemini ?? false, capabilities: ["image", "image_edit"] },
     { id: "openai", configured: configured.openai ?? false, capabilities: ["image", "image_edit"] },
     { id: "flux", configured: configured.flux ?? false, capabilities: ["image"] },
+    { id: "local", configured: configured.local ?? false, capabilities: ["image"] },
   ] as ProviderStatus["providers"];
 
 describe("generation model registry", () => {
@@ -116,5 +119,62 @@ describe("真实画幅与模型能力", () => {
     });
     expect(openAiPreflight.ok).toBe(false);
     expect(openAiPreflight.issues.join(" ")).toContain("不支持 16:9");
+  });
+});
+
+describe("本地图像服务模型", () => {
+  it("注册为纯文生图、零成本，并支持全部真实画幅", () => {
+    const local = findGenerationModel("local-moss-image");
+    expect(local).toBeDefined();
+    expect(local).toMatchObject({
+      providerId: "local",
+      model: "moss-image",
+      supportsReference: false,
+      maxReferences: 0,
+      estimatedCostUsd: 0,
+      qualityMode: "tiered",
+    });
+    expect(local!.supportedAspectRatios).toEqual(["1:1", "2:3", "3:2", "4:3", "9:16", "16:9"]);
+    expect(estimateGenerationCostUsd(local!, { width: 1536, height: 864 })).toBe(0);
+  });
+
+  it("未填写服务地址时不可用，并说明是地址未配置而不是缺密钥", () => {
+    const option = listGenerationModels(providers({})).find(
+      (model) => model.id === "local-moss-image",
+    );
+    expect(option?.available).toBe(false);
+    expect(option?.unavailableReason).toBe("尚未配置本地图像服务地址。");
+  });
+
+  it("填好地址后不需要任何密钥即可在创作页选中，并保留 9:16 真实画幅", () => {
+    const selection = selectGenerationModel({
+      task: "portrait",
+      aspectRatio: "9:16",
+      preferredModelId: "local-moss-image",
+      providers: providers({ local: true }),
+    });
+    expect(selection.model?.id).toBe("local-moss-image");
+    expect(selection.issues).toEqual([]);
+
+    const preflight = preflightGeneration({
+      task: "series",
+      aspectRatio: "16:9",
+      size: "1536x864",
+      providers: providers({ local: true }),
+    });
+    expect(preflight.ok).toBe(true);
+    expect(preflight.model?.id).toBe("local-moss-image");
+    expect(preflight.estimatedCostUsd).toBe(0);
+  });
+
+  it("参考图任务不会被本地纯文生图模型顶替", () => {
+    const selection = selectGenerationModel({
+      task: "edit",
+      referenceCount: 1,
+      preferredModelId: "local-moss-image",
+      providers: providers({ local: true }),
+    });
+    expect(selection.model).toBeUndefined();
+    expect(selection.issues.join("")).toContain("参考图");
   });
 });

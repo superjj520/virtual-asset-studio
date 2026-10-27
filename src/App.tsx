@@ -339,7 +339,7 @@ const EMPTY_CARD: CreativeCard = {
 };
 
 const providerLabel = (providerId?: ProviderId) =>
-  providerId === "flux" ? "FLUX" : providerId === "fal" ? "fal" : providerId === "deepseek" ? "DeepSeek" : providerId === "gemini" ? "Gemini" : providerId === "openai" ? "OpenAI" : "当前绘图模型";
+  providerId === "flux" ? "FLUX" : providerId === "fal" ? "fal" : providerId === "deepseek" ? "DeepSeek" : providerId === "gemini" ? "Gemini" : providerId === "local" ? "本地图像服务" : providerId === "openai" ? "OpenAI" : "当前绘图模型";
 
 const taskStatusLabel = (status: CreativeTask["status"]) =>
   status === "review" ? "待审片" : status === "completed" ? "已完成" : status === "producing" ? "生成中" : status === "blocked" ? "生成阻塞" : "准备中";
@@ -616,7 +616,11 @@ export default function App() {
     fal: "",
     deepseek: "",
     gemini: "",
+    local: "",
   });
+  // 本地图像服务不需要密钥，但要记住地址与模型名，重启后仍然可用。
+  const [localImageBaseUrl, setLocalImageBaseUrl] = useState("");
+  const [localImageModel, setLocalImageModel] = useState("");
   const [budget, setBudget] = useState<BudgetStatus>({ plannedSpendUsd: 0 });
   const [budgetInput, setBudgetInput] = useState("");
   const [selectedAssetId, setSelectedAssetId] = useState("");
@@ -729,7 +733,11 @@ export default function App() {
   useEffect(() => {
     window.studio.settings
       .providerStatus()
-      .then(setProvider)
+      .then((status) => {
+        setProvider(status);
+        setLocalImageBaseUrl(status.localImage?.baseUrl ?? "");
+        setLocalImageModel(status.localImage?.model ?? "");
+      })
       .catch(() => undefined);
   }, []);
   useEffect(() => {
@@ -1636,10 +1644,28 @@ export default function App() {
       setProviderKeys((current) => ({ ...current, [providerId]: "" }));
       setProviderVerifications((current) => ({ ...current, [providerId]: undefined }));
       setNotice(
-        `${providerId === "flux" ? "FLUX" : providerId === "fal" ? "fal" : providerId === "deepseek" ? "DeepSeek" : providerId === "gemini" ? "Gemini" : "OpenAI"} 已连接；密钥已使用本机系统加密保存。`,
+        `${providerLabel(providerId)} 已连接；密钥已使用本机系统加密保存。`,
       );
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "保存连接配置失败。");
+    }
+  };
+  const saveLocalImage = async () => {
+    try {
+      const status = await window.studio.settings.saveLocalImage({
+        baseUrl: localImageBaseUrl,
+        model: localImageModel,
+      });
+      setProvider(status);
+      setLocalImageBaseUrl(status.localImage?.baseUrl ?? "");
+      setLocalImageModel(status.localImage?.model ?? "");
+      setNotice(
+        status.localImage?.baseUrl
+          ? "本地图像服务已保存；创作页可直接选择“本地 MOSS-Image”，不需要云端密钥。"
+          : "地址为空，本地图像服务已关闭；不会向本机发起任何请求。",
+      );
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "保存本地图像服务失败。");
     }
   };
   const verifyProviderConnection = async (providerId: ProviderId) => {
@@ -6627,6 +6653,37 @@ export default function App() {
               </div>;
             })}
           </section>
+          <section className="form-panel">
+            <p className="eyebrow">本地图像服务 / 不需要云端密钥</p>
+            <p className="result-note">
+              填写本机 OpenAI 兼容服务的地址（POST /v1/images/generations）后，创作页与批量生产就能直接选择“本地 MOSS-Image”。地址留空即关闭，App 不会发起本地请求。
+            </p>
+            <div className="provider-row">
+              <div>
+                <strong>本地图像服务</strong>
+                <p className="result-note">
+                  {provider?.localImage?.baseUrl
+                    ? `已配置：${provider.localImage.baseUrl} · 模型 ${provider.localImage.model || "moss-image"}`
+                    : "未配置：填写地址后即可用本机服务出图。"}
+                </p>
+              </div>
+              <input
+                value={localImageBaseUrl}
+                onChange={(event) => setLocalImageBaseUrl(event.target.value)}
+                placeholder="服务地址，例如 http://127.0.0.1:7860"
+                aria-label="本地图像服务地址"
+              />
+              <input
+                value={localImageModel}
+                onChange={(event) => setLocalImageModel(event.target.value)}
+                placeholder="模型名，留空使用 moss-image"
+                aria-label="本地图像服务模型名"
+              />
+              <button aria-label="保存本地图像服务" onClick={() => void saveLocalImage()}>
+                保存
+              </button>
+            </div>
+          </section>
           <GenerationModelCatalog providers={provider?.providers} selectedModelId={generationModelId} onSelect={selectGenerationModel} />
           <section className="form-panel">
             <p className="eyebrow">能力路由</p>
@@ -6654,15 +6711,7 @@ export default function App() {
                     ) ?? []
                   ).map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.id === "flux"
-                        ? "FLUX"
-                        : item.id === "fal"
-                          ? "fal"
-                        : item.id === "deepseek"
-                          ? "DeepSeek"
-                          : item.id === "gemini"
-                            ? "Gemini"
-                            : "OpenAI"}
+                      {providerLabel(item.id)}
                       {item.configured ? "" : "（未配置）"}
                     </option>
                   ))}

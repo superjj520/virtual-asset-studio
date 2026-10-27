@@ -13,7 +13,7 @@ export type GenerationTaskKind =
 
 export type GenerationModel = {
   id: string;
-  providerId: Extract<ProviderId, "openai" | "flux" | "fal" | "gemini">;
+  providerId: Extract<ProviderId, "openai" | "flux" | "fal" | "gemini" | "local">;
   model: string;
   label: string;
   description: string;
@@ -122,6 +122,20 @@ const MODEL_LIST: GenerationModel[] = [
     qualityMode: "tiered",
     supportedAspectRatios: OPENAI_RATIOS,
   },
+  {
+    id: "local-moss-image",
+    providerId: "local",
+    model: "moss-image",
+    label: "本地 MOSS-Image",
+    description: "调用本机 OpenAI 兼容图像服务，不需要云端密钥；实际模型名可在模型连接页覆盖。",
+    tasks: ["portrait", "scene", "series", "text_layout"],
+    supportsReference: false,
+    maxReferences: 0,
+    estimatedCostUsd: 0,
+    costNote: "本机服务，不计费",
+    qualityMode: "tiered",
+    supportedAspectRatios: ALL_RATIOS,
+  },
 ];
 
 export const GENERATION_MODELS: readonly GenerationModel[] = MODEL_LIST;
@@ -157,7 +171,10 @@ export const generationModelAvailability = (
     return {
       ...model,
       available: false,
-      unavailableReason: `尚未配置 ${model.providerId} 密钥。`,
+      unavailableReason:
+        model.providerId === "local"
+          ? "尚未配置本地图像服务地址。"
+          : `尚未配置 ${model.providerId} 密钥。`,
     };
   }
   if (!provider.capabilities.includes(model.supportsReference ? "image_edit" : "image")) {

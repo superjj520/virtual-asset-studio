@@ -308,6 +308,10 @@ interface Window {
         providerId: import("./shared/types").ProviderId,
         key: string,
       ) => Promise<import("./shared/types").ProviderStatus>;
+      saveLocalImage: (input: {
+        baseUrl: string;
+        model: string;
+      }) => Promise<import("./shared/types").ProviderStatus>;
       saveRoute: (
         capability: import("./shared/types").ProviderCapability,
         providerId: import("./shared/types").ProviderId,

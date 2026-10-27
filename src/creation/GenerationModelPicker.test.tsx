@@ -23,7 +23,8 @@ describe("GenerationModelPicker", () => {
       />,
     );
     expect(screen.getByRole("combobox")).toHaveValue("fal-moss-image");
-    expect(screen.getByText(/MOSS-Image/)).toBeInTheDocument();
+    // 本地服务也提供 MOSS 模型，这里要确认选中的是 fal 的云端 MOSS。
+    expect(screen.getByText("MOSS-Image")).toBeInTheDocument();
     expect(screen.getByText(/\$0\.079/)).toBeInTheDocument();
   });
 
@@ -85,4 +86,36 @@ it("参考图任务不把 MOSS 当作已选模型，落到支持参考图的模�
   expect(screen.getByRole("combobox")).toHaveValue("");
   expect(screen.getByRole("option", { name: /MOSS-Image（不支持参考图）/ })).toBeDisabled();
   expect(screen.getByText(/自动：FLUX Kontext/)).toBeInTheDocument();
+});
+
+it("配置本地图像服务后创作页可以直接选本地模型，不支持参考图时给出说明", () => {
+  const withLocal: ProviderStatus["providers"] = [
+    ...providers,
+    { id: "local", configured: true, capabilities: ["image"] },
+  ];
+  render(
+    <GenerationModelPicker
+      providers={withLocal}
+      task="portrait"
+      referenceCount={0}
+      value="local-moss-image"
+      onChange={() => undefined}
+    />,
+  );
+  expect(screen.getByRole("combobox")).toHaveValue("local-moss-image");
+  expect(screen.getByRole("option", { name: "本地 MOSS-Image" })).toBeEnabled();
+  expect(screen.getByText(/本机服务，不计费/)).toBeInTheDocument();
+
+  cleanup();
+  render(
+    <GenerationModelPicker
+      providers={withLocal}
+      task="series"
+      referenceCount={1}
+      value="local-moss-image"
+      onChange={() => undefined}
+    />,
+  );
+  expect(screen.getByRole("combobox")).toHaveValue("");
+  expect(screen.getByRole("option", { name: /本地 MOSS-Image（不支持参考图）/ })).toBeDisabled();
 });

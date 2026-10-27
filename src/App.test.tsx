@@ -61,7 +61,7 @@ beforeEach(() => {
     shots: { create: vi.fn(), list: vi.fn().mockResolvedValue([]) },
     learning: { ingestPrompt: vi.fn(), list: vi.fn().mockResolvedValue([]), importGitHubSource: vi.fn(), importWebSource: vi.fn(), listSources: vi.fn().mockResolvedValue([]), searchEntries: vi.fn().mockResolvedValue([]), entryCategories: vi.fn().mockResolvedValue([]), entryCount: vi.fn().mockResolvedValue(0), updateStatus: vi.fn() },
     paradigms: { list: vi.fn().mockResolvedValue([]), compose: vi.fn().mockResolvedValue({ paradigms: [], acceptance: '', promptModule: '', warnings: [], canApply: false }), create: vi.fn() },
-    settings: { providerStatus: vi.fn().mockResolvedValue({ providers: [{ id: 'openai', configured: false, capabilities: ['vision', 'image', 'image_edit', 'video'] }, { id: 'flux', configured: false, capabilities: ['image'] }, { id: 'deepseek', configured: false, capabilities: ['text'] }], routes: { vision: 'openai', image: 'openai', image_edit: 'openai', video: 'openai', text: 'deepseek' } }), verifyProvider: vi.fn(), budgetStatus: vi.fn().mockResolvedValue({ plannedSpendUsd: 0 }), saveMonthlyBudget: vi.fn(), saveProviderKey: vi.fn(), saveRoute: vi.fn() },
+    settings: { providerStatus: vi.fn().mockResolvedValue({ providers: [{ id: 'openai', configured: false, capabilities: ['vision', 'image', 'image_edit', 'video'] }, { id: 'flux', configured: false, capabilities: ['image'] }, { id: 'deepseek', configured: false, capabilities: ['text'] }], routes: { vision: 'openai', image: 'openai', image_edit: 'openai', video: 'openai', text: 'deepseek' } }), verifyProvider: vi.fn(), budgetStatus: vi.fn().mockResolvedValue({ plannedSpendUsd: 0 }), saveMonthlyBudget: vi.fn(), saveProviderKey: vi.fn(), saveLocalImage: vi.fn(), saveRoute: vi.fn() },
     vision: { analyze: vi.fn(), buildReversePrompt: vi.fn() },
     generation: { image: vi.fn(), refineImage: vi.fn(), video: vi.fn(), pollVideo: vi.fn(), jobs: vi.fn().mockResolvedValue([]) },
   };
@@ -82,6 +82,44 @@ it('显示工作台标题与本地运行状态', async () => {
   render(<App />);
   expect(screen.getByRole('heading', { name: /虚拟资产.*创作工作台/ })).toBeInTheDocument();
   expect(await screen.findByText(/本地服务已连接/)).toBeInTheDocument();
+});
+
+it('设置页可以填写本地图像服务地址与模型名，重启后按已保存配置回填', async () => {
+  vi.mocked(window.studio.settings.saveLocalImage).mockResolvedValue({
+    providers: [{ id: 'local', configured: true, capabilities: ['image'] }],
+    routes: { image: 'local' },
+    localImage: { baseUrl: 'http://127.0.0.1:7860', model: 'moss-image' },
+  } as never);
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
+  fireEvent.change(await screen.findByLabelText('本地图像服务地址'), {
+    target: { value: 'http://127.0.0.1:7860' },
+  });
+  fireEvent.change(screen.getByLabelText('本地图像服务模型名'), {
+    target: { value: 'moss-image' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '保存本地图像服务' }));
+
+  expect(window.studio.settings.saveLocalImage).toHaveBeenCalledWith({
+    baseUrl: 'http://127.0.0.1:7860',
+    model: 'moss-image',
+  });
+  expect(
+    await screen.findByText('已配置：http://127.0.0.1:7860 · 模型 moss-image'),
+  ).toBeInTheDocument();
+
+  // 重新挂载等于重启应用：输入框直接回填数据库里的地址与模型名。
+  cleanup();
+  vi.mocked(window.studio.settings.providerStatus).mockResolvedValue({
+    providers: [{ id: 'local', configured: true, capabilities: ['image'] }],
+    routes: { image: 'local' },
+    localImage: { baseUrl: 'http://127.0.0.1:7860', model: 'moss-image' },
+  } as never);
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
+  expect(await screen.findByLabelText('本地图像服务地址')).toHaveValue('http://127.0.0.1:7860');
+  expect(screen.getByLabelText('本地图像服务模型名')).toHaveValue('moss-image');
 });
 
 it('Gemini 配置与真实连通状态分开显示，并保留失败原因', async () => {

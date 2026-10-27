@@ -34,6 +34,7 @@ import { FluxProvider } from "./services/providers/flux-provider";
 import { FalProvider, FalRemoteTaskError, type FalRemoteTask } from "./services/providers/fal-provider";
 import { GeminiProvider } from "./services/providers/gemini-provider";
 import { DeepSeekProvider } from "./services/providers/deepseek-provider";
+import { LocalImageProvider } from "./services/providers/local-image-provider";
 import { GenerationBatchRepository } from "./services/batches/repository";
 import { JobRepository } from "./services/jobs/repository";
 import { hashBuffer } from "./services/files/hash";
@@ -135,18 +136,25 @@ export const createStudioRuntime = (
   const deepseek = new DeepSeekProvider({
     apiKey: () => apiKeyFor("deepseek"),
   });
+  // 本地图像服务只读设置页里的地址与模型名，不涉及密钥，也不会触发钥匙串授权。
+  const local = new LocalImageProvider({
+    baseUrl: () => settings.get("local_image_base_url"),
+    model: () => settings.get("local_image_model"),
+  });
   const imageProviders: Partial<
     Record<
       ProviderId,
       {
         generateImage: (input: {
           prompt: string;
+          negative?: string;
           size: ImageGenerationSize;
           quality?: "medium" | "high";
+          seed?: number;
         }) => Promise<Buffer>;
       }
     >
-  > = { openai, flux, fal, gemini };
+  > = { openai, flux, fal, gemini, local };
   const imageEditProviders: Partial<Record<ProviderId, {
     refineImage: (input: {
       prompt: string;
@@ -169,8 +177,10 @@ export const createStudioRuntime = (
     providerId: ProviderId,
     input: {
       prompt: string;
+      negative?: string;
       size: ImageGenerationSize;
       quality?: "medium" | "high";
+      seed?: number;
     },
   ) => {
     const provider = imageProviders[providerId];
@@ -186,7 +196,16 @@ export const createStudioRuntime = (
       const result = await fal.generateImageWithTask({ ...input, model: input.falModel });
       return { image: result.image, remoteTask: result.remoteTask };
     }
-    return { image: await generateWith(providerId, input) };
+    // 画幅、种子与画质一路透传，本地服务才能按当前创作选择真实出图。
+    return {
+      image: await generateWith(providerId, {
+        prompt: input.prompt,
+        negative: input.negative,
+        size: input.size,
+        quality: input.quality,
+        seed: input.seed,
+      }),
+    };
   };
   const refineWithResult = async (
     providerId: ProviderId,
@@ -215,6 +234,11 @@ export const createStudioRuntime = (
       { id: "fal", configured: hasStoredApiKey("fal"), capabilities: ["image", "image_edit"] },
       { id: "gemini", configured: hasStoredApiKey("gemini"), capabilities: ["image", "image_edit"] },
       {
+        id: "local",
+        configured: local.isConfigured(),
+        capabilities: ["image"],
+      },
+      {
         id: "deepseek",
         configured: hasStoredApiKey("deepseek"),
         capabilities: ["text"],
@@ -227,7 +251,8 @@ export const createStudioRuntime = (
     const priorities: Record<ProviderCapability, ProviderId[]> = {
       text: ["deepseek", "gemini", "openai"],
       vision: ["openai"],
-      image: ["fal", "gemini", "openai", "flux"],
+      // 本地服务排在最后：已经配好云端服务时保持原有路由，一家都没配密钥时才用本机服务出图。
+      image: ["fal", "gemini", "openai", "flux", "local"],
       image_edit: ["fal", "gemini", "openai"],
       video: ["openai"],
     };
@@ -235,7 +260,8 @@ export const createStudioRuntime = (
       (provider) => provider.id === providerId && provider.capabilities.includes(capability),
     );
     return priorities[capability].find((providerId) => compatible(providerId)?.configured)
-      ?? priorities[capability].find((providerId) => compatible(providerId))
+      // 谁都没配置时不要把本地服务当作默认路由：本机不一定装了模型服务。
+      ?? priorities[capability].find((providerId) => providerId !== "local" && compatible(providerId))
       ?? undefined;
   };
   const providerStatus = (): ProviderStatus => {
@@ -252,6 +278,10 @@ export const createStudioRuntime = (
       network: process.env.NODE_USE_ENV_PROXY === "1" && (process.env.HTTPS_PROXY || process.env.HTTP_PROXY)
         ? "system_proxy"
         : "direct",
+      localImage: {
+        baseUrl: local.baseUrl() ?? "",
+        model: settings.get("local_image_model") ?? "",
+      },
     };
   };
   const routeFor = (capability: ProviderCapability): ProviderId => {
@@ -720,7 +750,11 @@ export const createStudioRuntime = (
           if (requestedModel) {
             const provider = providerStatus().providers.find((item) => item.id === requestedModel.providerId);
             if (!provider?.configured)
-              throw new Error(`模型 ${requestedModel.label} 的 ${requestedModel.providerId} 密钥尚未配置。`);
+              throw new Error(
+                requestedModel.providerId === "local"
+                  ? `模型 ${requestedModel.label} 还没有填写本地图像服务地址，请先在模型连接页配置。`
+                  : `模型 ${requestedModel.label} 的 ${requestedModel.providerId} 密钥尚未配置。`,
+              );
           }
           const providerId = requestedModel?.providerId ?? routeFor(references.length ? "image_edit" : "image");
           if (!requestedModel && input.aspectRatio && providerId === "openai" && !["1:1", "2:3", "3:2"].includes(input.aspectRatio))
@@ -999,6 +1033,30 @@ export const createStudioRuntime = (
         },
       );
       ipcMain.handle(
+        "settings:save-local-image",
+        (_event, input: { baseUrl?: string; model?: string }) => {
+          if (!input || typeof input !== "object")
+            throw new Error("本地图像服务配置格式不正确。");
+          const baseUrl = (typeof input.baseUrl === "string" ? input.baseUrl : "")
+            .trim()
+            .replace(/\/+$/, "");
+          if (baseUrl) {
+            let parsed: URL;
+            try {
+              parsed = new URL(baseUrl);
+            } catch {
+              throw new Error("本地图像服务地址需要是完整地址，例如 http://127.0.0.1:7860。");
+            }
+            if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+              throw new Error("本地图像服务只支持 http 或 https 地址。");
+          }
+          const model = typeof input.model === "string" ? input.model.trim() : "";
+          settings.set("local_image_base_url", baseUrl);
+          settings.set("local_image_model", model);
+          return providerStatus();
+        },
+      );
+      ipcMain.handle(
         "settings:save-route",
         (_event, capability: ProviderCapability, providerId: ProviderId) => {
           const connection = providerStatus().providers.find(
@@ -1007,7 +1065,11 @@ export const createStudioRuntime = (
           if (!connection?.capabilities.includes(capability))
             throw new Error("该模型不支持此能力。");
           if (!connection.configured)
-            throw new Error("请先保存该模型的 API 密钥，再把它设为能力路由。");
+            throw new Error(
+              providerId === "local"
+                ? "请先在模型连接页填写本地图像服务地址，再把它设为能力路由。"
+                : "请先保存该模型的 API 密钥，再把它设为能力路由。",
+            );
           settings.set(`route_${capability}`, providerId);
           return providerStatus();
         },
@@ -1106,7 +1168,11 @@ export const createStudioRuntime = (
               (provider) => provider.id === requestedModel.providerId,
             );
             if (!connection?.configured)
-              throw new Error(`“${requestedModel.label}”尚未配置密钥，请先在模型连接页保存。`);
+              throw new Error(
+                requestedModel.providerId === "local"
+                  ? `“${requestedModel.label}”尚未配置本地图像服务地址，请先在模型连接页填写。`
+                  : `“${requestedModel.label}”尚未配置密钥，请先在模型连接页保存。`,
+              );
             if (!connection.capabilities.includes(references.length ? "image_edit" : "image"))
               throw new Error(`“${requestedModel.label}”当前连接没有该图像能力。`);
             if (references.length && !requestedModel.supportsReference)
@@ -1174,7 +1240,8 @@ export const createStudioRuntime = (
                     onRemoteTask: (remoteTask) => jobs.update(job.id, { status: "in_progress", result: { remoteTask, progressStage: "remote", requestedAspectRatio: input.aspectRatio, actualSize: size } }),
                   })
                 : await generateWithResult(providerId, {
-                    prompt: `${input.prompt}${input.negative && requestedModel?.id !== "fal-moss-image" ? `\n避免：${input.negative}` : ""}`,
+                    // fal 的 MOSS 与本地适配器各自消费 negative，避免在提示词里重复追加。
+                    prompt: `${input.prompt}${input.negative && requestedModel?.id !== "fal-moss-image" && providerId !== "local" ? `\n避免：${input.negative}` : ""}`,
                     negative: input.negative,
                     size,
                     quality,

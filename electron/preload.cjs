@@ -133,6 +133,8 @@ contextBridge.exposeInMainWorld("studio", {
       ipcRenderer.invoke("settings:save-monthly-budget", value),
     saveProviderKey: (providerId, key) =>
       ipcRenderer.invoke("settings:save-provider-key", providerId, key),
+    saveLocalImage: (input) =>
+      ipcRenderer.invoke("settings:save-local-image", input),
     saveRoute: (capability, providerId) =>
       ipcRenderer.invoke("settings:save-route", capability, providerId),
   },
