@@ -3565,3 +3565,6 @@ button:active { transform: translateY(1px); }
 @media (max-width: 700px) { .batch-generation-settings { grid-template-columns: 1fr; } .batch-generation-settings select, .batch-generation-settings input { min-height: 44px; } }
 .creation-launchpad-links { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .creation-launchpad-links button { min-height: 44px; }
+.creator-advanced-generation { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--surface); }
+.creator-advanced-generation > summary { cursor: pointer; color: var(--ink-muted); font-size: 11px; font-weight: 600; }
+.creator-advanced-generation[open] > summary { margin-bottom: 8px; }

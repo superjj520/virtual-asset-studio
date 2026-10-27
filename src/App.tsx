@@ -4168,7 +4168,7 @@ export default function App() {
           onQualityTierChange={(value) => { setQualityTier(value); setTranslation(undefined); }}
           generationSeed={generationSeed}
           onGenerationSeedChange={setGenerationSeed}
-          generationSettings={<div className="creator-generation-settings" aria-label="生成模型设置"><GenerationModelPicker providers={provider?.providers} task={generationTaskFor({ hasReferences: guideMode !== "new", series: creationLaunchKind === "series", textLayout: card.deliveryMode === "cover" })} referenceCount={guideMode === "new" ? 0 : 1} value={generationModelId} onChange={selectGenerationModel} size={imageSizeForAspectRatio(guideAspectRatio)} aspectRatio={guideAspectRatio} qualityTier={qualityTier} /></div>}
+          generationSettings={<details className="creator-advanced-generation"><summary>高级设置：模型与候选</summary><div className="creator-generation-settings" aria-label="生成模型设置"><GenerationModelPicker providers={provider?.providers} task={generationTaskFor({ hasReferences: guideMode !== "new", series: creationLaunchKind === "series", textLayout: card.deliveryMode === "cover" })} referenceCount={guideMode === "new" ? 0 : 1} value={generationModelId} onChange={selectGenerationModel} size={imageSizeForAspectRatio(guideAspectRatio)} aspectRatio={guideAspectRatio} qualityTier={qualityTier} /></div></details>}
           aspectRatio={guideAspectRatio}
           onAspectRatioChange={setGuideAspectRatio}
           onCreate={() => void beginGuidedCreation(false)}
