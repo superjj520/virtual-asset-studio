@@ -21,6 +21,7 @@ import { orderSeriesCandidates, seriesCandidateLabel, seriesShotPosition } from 
 import { SeriesShotReview, approvedSeriesShotLabels as selectApprovedSeriesShotLabels, type SeriesShotReviewRow } from "./creation/SeriesShotReview";
 import { productionShotVariableLines, selectProductionShots } from "./creation/series-production";
 import { buildBatchVariables } from "./creation/batch-variants";
+import { buildAssetReusePlan } from "./creation/asset-reuse";
 import { CreationStudioJourney, type CreationStudioStage } from "./creation/CreationStudioJourney";
 import { CreationLaunchpad, type CreationLaunchKind } from "./creation/CreationLaunchpad";
 import { CREATION_PRESET_ARTWORKS, SCENE_ARTWORKS, VisualCharacterCreator } from "./creation/VisualCharacterCreator";
@@ -1418,27 +1419,17 @@ export default function App() {
   const selectedAsset = assets.find((asset) => asset.id === selectedAssetId);
   const startCreationFromSelectedAsset = () => {
     if (!selectedAsset) return;
-    const width = Number(selectedAsset.metadata.width);
-    const height = Number(selectedAsset.metadata.height);
+    const plan = buildAssetReusePlan(selectedAsset);
+    if (!plan) return;
     clearCreationSession();
     setResumableSession(undefined);
     setCreationLaunchKind("image");
     setGuideMode("reference");
-    setGuideReferenceAssetId(selectedAsset.id);
+    setGuideReferenceAssetId(plan.assetId);
     setGuideDirection("portrait");
-    const generationMeta = selectedAsset.metadata.generation && typeof selectedAsset.metadata.generation === "object"
-      ? selectedAsset.metadata.generation as Record<string, unknown>
-      : undefined;
-    const rememberedAspect = generationMeta?.aspectRatio;
-    setGuideAspectRatio(
-      rememberedAspect === "1:1" || rememberedAspect === "2:3" || rememberedAspect === "3:2" || rememberedAspect === "4:3" || rememberedAspect === "9:16" || rememberedAspect === "16:9"
-        ? rememberedAspect
-        : width && height
-          ? width === height ? "1:1" : width > height ? "16:9" : "2:3"
-          : "2:3",
-    );
-    setGenerationSeed(typeof generationMeta?.seed === "number" ? generationMeta.seed : undefined);
-    if (typeof generationMeta?.modelId === "string" && findGenerationModel(generationMeta.modelId)) setGenerationModelId(generationMeta.modelId);
+    setGuideAspectRatio(plan.aspectRatio);
+    setGenerationSeed(plan.seed);
+    if (plan.modelId) setGenerationModelId(plan.modelId);
     setScreen("start");
     setNotice(`已用「${selectedAsset.name}」作为参考图开始新创作。`);
   };
