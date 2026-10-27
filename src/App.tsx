@@ -1426,11 +1426,19 @@ export default function App() {
     setGuideMode("reference");
     setGuideReferenceAssetId(selectedAsset.id);
     setGuideDirection("portrait");
+    const generationMeta = selectedAsset.metadata.generation && typeof selectedAsset.metadata.generation === "object"
+      ? selectedAsset.metadata.generation as Record<string, unknown>
+      : undefined;
+    const rememberedAspect = generationMeta?.aspectRatio;
     setGuideAspectRatio(
-      width && height
-        ? width === height ? "1:1" : width > height ? "16:9" : "2:3"
-        : "2:3",
+      rememberedAspect === "1:1" || rememberedAspect === "2:3" || rememberedAspect === "3:2" || rememberedAspect === "4:3" || rememberedAspect === "9:16" || rememberedAspect === "16:9"
+        ? rememberedAspect
+        : width && height
+          ? width === height ? "1:1" : width > height ? "16:9" : "2:3"
+          : "2:3",
     );
+    setGenerationSeed(typeof generationMeta?.seed === "number" ? generationMeta.seed : undefined);
+    if (typeof generationMeta?.modelId === "string" && findGenerationModel(generationMeta.modelId)) setGenerationModelId(generationMeta.modelId);
     setScreen("start");
     setNotice(`已用「${selectedAsset.name}」作为参考图开始新创作。`);
   };
@@ -4907,7 +4915,7 @@ export default function App() {
               </details>}
               {selectedCollection && <div className="collection-attach-controls"><label>归档到模块<select value={selectedCollectionModuleKey} onChange={(event) => setSelectedCollectionModuleKey(event.target.value)}>{getAssetCollectionBlueprint(selectedCollection.kind).modules.map((module) => <option value={module.key} key={module.key}>{module.required ? "必需 · " : "可选 · "}{module.label}</option>)}</select></label><label>本素材说明（可选）<input value={selectedCollectionMemberNotes} onChange={(event) => setSelectedCollectionMemberNotes(event.target.value)} placeholder="例如：只作为正面脸部证据，不作为最终母版" /></label></div>}
               <div className="form-actions">
-                <button onClick={startCreationFromSelectedAsset}>用此资产开始创作</button>
+                <button onClick={startCreationFromSelectedAsset} disabled={!selectedAsset.mediaType.startsWith("image/")}>用此资产开始创作</button>
                 <button onClick={() => void reviewAsset("confirmed")}>
                   确认画面
                 </button>
