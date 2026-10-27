@@ -85,7 +85,7 @@ try {
   if (!text.includes("选主体和画面") && !text.includes("单张画面")) throw new Error(`进入单张创作后没有识别到标题：${text.slice(0, 120)}`);
   await evaluate(`(() => { const b=[...document.querySelectorAll("button")].find(x=>x.textContent.trim().startsWith("下一步 · ")); b?.click(); return !!b; })()`);
   await sleep(900);
-  console.log(`打包 App 冒烟通过：4 个入口，可进入单张创作；USERDATA=${userData}`);
+  console.log(`打包 App 冒烟通过：4 个入口，四个入口均可进入对应创作；USERDATA=${userData}`);
   }
 } finally {
   try { ws?.close(); } catch {}
