@@ -4550,6 +4550,7 @@ export default function App() {
             sceneCount={scenes.length}
             referenceCount={selectableImages.length}
             onSelect={startCreationFlow}
+            onOpenAssets={() => setScreen("assets")}
             onExit={() => document.getElementById("creation-projects")?.scrollIntoView({ behavior: "smooth", block: "start" })}
           />
           <section id="creation-projects" className="creation-home-management" aria-label="项目与历史">

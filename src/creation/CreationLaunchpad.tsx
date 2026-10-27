@@ -11,6 +11,7 @@ type CreationLaunchpadProps = {
   referenceCount: number;
   onSelect: (kind: CreationLaunchKind) => void;
   onExit: () => void;
+  onOpenAssets?: () => void;
   embedded?: boolean;
   resume?: { kindLabel: string; updatedAt: string; onResume: () => void };
 };
@@ -52,7 +53,7 @@ const LAUNCH_OPTIONS: Array<{
   },
 ];
 
-export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, onSelect, onExit, embedded = false, resume }: CreationLaunchpadProps) {
+export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, onSelect, onExit, onOpenAssets, embedded = false, resume }: CreationLaunchpadProps) {
   return <section className={`creation-launchpad${embedded ? " creation-launchpad-embedded" : ""}`} aria-label="新建创作">
     <header className="creation-launchpad-header">
       {!embedded && <button type="button" className="creator-exit" onClick={onExit} aria-label="退出新建创作">←</button>}
@@ -93,9 +94,10 @@ export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, 
     </div>
     <footer className="creation-launchpad-footer">
       <span>已有角色、场景和参考图会在下一步自动出现。</span>
-      {embedded && <div>
-        <button type="button" className="creation-launchpad-manage" onClick={onExit}>项目与历史</button>
-      </div>}
+      <div className="creation-launchpad-links">
+        {onOpenAssets && <button type="button" className="creation-launchpad-manage" onClick={onOpenAssets}>从资产开始</button>}
+        {embedded && <button type="button" className="creation-launchpad-manage" onClick={onExit}>项目与历史</button>}
+      </div>
     </footer>
   </section>;
 }

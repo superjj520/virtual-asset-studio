@@ -3563,3 +3563,5 @@ button:active { transform: translateY(1px); }
 .batch-generation-settings { display: grid; grid-template-columns: 160px minmax(0, 220px); gap: 10px; margin: 4px 0 12px; }
 .batch-generation-settings label { display: grid; gap: 5px; color: var(--ink-muted); font-size: 10px; }
 @media (max-width: 700px) { .batch-generation-settings { grid-template-columns: 1fr; } .batch-generation-settings select, .batch-generation-settings input { min-height: 44px; } }
+.creation-launchpad-links { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.creation-launchpad-links button { min-height: 44px; }
