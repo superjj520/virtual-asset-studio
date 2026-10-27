@@ -5470,7 +5470,7 @@ export default function App() {
             </div>
             {canGenerateCurrentImage
               ? <button className="primary-button creation-generate-button" disabled={Boolean(characterReferenceIssues) || isGeneratingCandidates} onClick={() => void generateFirstVersion()}>{isGeneratingCandidates ? "正在生成…" : activeTaskCandidates.length ? "再生成一组" : "生成候选"}</button>
-              : <span className="creation-service-note">{generationPreflight.ok && generationBudgetExceeded ? `本批预计 $${estimatedBatchCostUsd}，会超过本月预算 $${budget.monthlyBudgetUsd}；请减少候选数或调整预算。` : "方案可继续编辑；需要出图时再连接生成服务。"}</span>}
+              : <span className="creation-service-note" role="status">{generationReadiness.primaryIssue ?? "当前不可生成。"} {generationReadiness.actionHint}</span>}
           </section>}
           {creationStudioStage === "candidates" && <details className="generation-request-preview">
             <summary>查看本次发送给模型</summary>
