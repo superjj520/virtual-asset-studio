@@ -238,6 +238,7 @@ export const applySchema = (database: Database.Database) => {
       creative_task_id TEXT REFERENCES creative_tasks(id) ON DELETE SET NULL,
       name TEXT NOT NULL,
       provider_id TEXT NOT NULL,
+      model_id TEXT,
       aspect_ratio TEXT NOT NULL,
       reference_asset_ids_json TEXT NOT NULL DEFAULT '[]',
       reference_bindings_json TEXT NOT NULL DEFAULT '[]',
@@ -255,6 +256,9 @@ export const applySchema = (database: Database.Database) => {
       job_id TEXT REFERENCES jobs(id) ON DELETE SET NULL,
       asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
       error TEXT,
+      actual_cost_usd REAL,
+      actual_width INTEGER,
+      actual_height INTEGER,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -514,6 +518,8 @@ export const applySchema = (database: Database.Database) => {
     database.exec("ALTER TABLE generation_batches ADD COLUMN reference_asset_ids_json TEXT NOT NULL DEFAULT '[]'");
   if (!batchColumns.some((column) => column.name === "reference_bindings_json"))
     database.exec("ALTER TABLE generation_batches ADD COLUMN reference_bindings_json TEXT NOT NULL DEFAULT '[]'");
+  if (!batchColumns.some((column) => column.name === "model_id"))
+    database.exec("ALTER TABLE generation_batches ADD COLUMN model_id TEXT");
   const recipeColumns = database
     .prepare("PRAGMA table_info(creative_recipes)")
     .all() as Array<{ name: string }>;
@@ -622,6 +628,10 @@ export const applySchema = (database: Database.Database) => {
   if (!memberColumns.some((column) => column.name === "module_key")) database.exec("ALTER TABLE asset_collection_members ADD COLUMN module_key TEXT NOT NULL DEFAULT ''");
   if (!memberColumns.some((column) => column.name === "notes")) database.exec("ALTER TABLE asset_collection_members ADD COLUMN notes TEXT NOT NULL DEFAULT ''");
   if (!memberColumns.some((column) => column.name === "sort_order")) database.exec("ALTER TABLE asset_collection_members ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0");
+  const variantColumns = database.prepare("PRAGMA table_info(generation_variants)").all() as Array<{ name: string }>;
+  if (!variantColumns.some((column) => column.name === "actual_cost_usd")) database.exec("ALTER TABLE generation_variants ADD COLUMN actual_cost_usd REAL");
+  if (!variantColumns.some((column) => column.name === "actual_width")) database.exec("ALTER TABLE generation_variants ADD COLUMN actual_width INTEGER");
+  if (!variantColumns.some((column) => column.name === "actual_height")) database.exec("ALTER TABLE generation_variants ADD COLUMN actual_height INTEGER");
   const characterStateColumns = database.prepare("PRAGMA table_info(character_states)").all() as Array<{ name: string }>;
   if (!characterStateColumns.some((column) => column.name === "trackers_json"))
     database.exec("ALTER TABLE character_states ADD COLUMN trackers_json TEXT NOT NULL DEFAULT '[]'");

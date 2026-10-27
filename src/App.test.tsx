@@ -197,6 +197,49 @@ it('单张画面用独立选择流程建立方案并保留用户画幅', async (
   expect(window.studio.generation.image).not.toHaveBeenCalled();
 });
 
+it('单张方案进入候选阶段后可直接生成首版并显示模型成本', async () => {
+  vi.mocked(window.studio.settings.providerStatus).mockResolvedValue({
+    providers: [{ id: 'fal', configured: true, capabilities: ['image', 'image_edit'] }],
+    routes: { vision: 'none', image: 'fal', image_edit: 'fal', video: 'none', text: 'none' },
+  } as never);
+  vi.mocked(window.studio.tasks.create).mockImplementation(async (input) => ({
+    id: 'task-image-generate', status: 'draft', createdAt: '', updatedAt: '', ...input,
+  }) as never);
+  vi.mocked(window.studio.creation.compilePrompt).mockResolvedValue({ positive: '单张画面方案', negative: '', modules: [] });
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '单张画面' }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /确认/ }));
+  fireEvent.click(screen.getByRole('button', { name: '建立单张画面方案' }));
+  await screen.findByRole('heading', { name: '单张创作台' });
+  fireEvent.click(screen.getByRole('button', { name: '下一步 · 选择方向' }));
+
+  expect(await screen.findByRole('button', { name: '生成候选' })).toBeEnabled();
+  expect(screen.getByLabelText('图像模型')).toBeInTheDocument();
+  expect(screen.getByText((content) => content.startsWith('本批约 $'))).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('图像模型'), { target: { value: 'fal-moss-image' } });
+  fireEvent.change(screen.getByLabelText('画幅'), { target: { value: '1:1' } });
+  expect(await screen.findByText((content) => content.includes('$0.052/张'))).toBeInTheDocument();
+  expect(await screen.findByText((content) => content.includes('本批约 $0.104 / 2 张'))).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('图像模型'), { target: { value: '' } });
+  fireEvent.change(screen.getByLabelText('画幅'), { target: { value: '2:3' } });
+  expect(window.studio.generation.image).not.toHaveBeenCalled();
+
+  vi.mocked(window.studio.tasks.update).mockImplementation(async (id, patch) => ({ id, status: 'producing', createdAt: '', updatedAt: '', ...patch }) as never);
+  let rejectImage!: (error: Error) => void;
+  vi.mocked(window.studio.generation.image).mockImplementation(() => new Promise((_, reject) => { rejectImage = reject; }) as never);
+  fireEvent.click(screen.getByRole('button', { name: '生成候选' }));
+  expect(await screen.findByText('正在生成 1/2')).toBeInTheDocument();
+  await waitFor(() => expect(rejectImage).toBeTypeOf('function'));
+  rejectImage(new Error('网络中断'));
+  await waitFor(() => expect(window.studio.generation.image).toHaveBeenCalledTimes(1));
+  expect((await screen.findAllByText(/候选 1 生成失败；本批已停止，已生成 0 张/)).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole('button', { name: '重试未完成' }));
+  await waitFor(() => expect(window.studio.generation.image).toHaveBeenCalledTimes(2));
+  expect(await screen.findByText('正在生成 1/2')).toBeInTheDocument();
+});
+
 it('角色选择完成后可直接沉淀为角色资产并进入角色中枢', async () => {
   const profile = characterFixture('guided-character', '世界探索者 · 动漫女主');
   const collection = {
@@ -339,6 +382,114 @@ it('系列镜头选择与顺序写入创作卡并控制后续候选', async () =
   fireEvent.click(screen.getByRole('button', { name: '返回调整' }));
   fireEvent.click(within(await screen.findByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /分镜/ }));
   expect(await screen.findByRole('button', { name: '第 3 镜头：动作瞬间' })).toBeInTheDocument();
+});
+
+it('系列方向按整组四镜比较并保留顺序进入逐镜调整', async () => {
+  vi.mocked(window.studio.settings.providerStatus).mockResolvedValue({
+    providers: [{ id: 'fal', configured: true, capabilities: ['image', 'image_edit'] }],
+    routes: { vision: 'none', image: 'fal', image_edit: 'fal', video: 'none', text: 'none' },
+  } as never);
+  vi.mocked(window.studio.tasks.create).mockImplementation(async (input) => ({
+    id: 'task-series-direction', status: 'draft', createdAt: '', updatedAt: '', ...input,
+  }) as never);
+  vi.mocked(window.studio.tasks.update).mockImplementation(async (id, input) => ({
+    id, status: 'draft', createdAt: '', updatedAt: '', ...input,
+  }) as never);
+  vi.mocked(window.studio.creation.compilePrompt).mockResolvedValue({
+    positive: '同一角色连续镜头', negative: '角色漂移', modules: [],
+  });
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '系列镜头' }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /分镜/ }));
+  fireEvent.click(screen.getByRole('button', { name: '下一步 · 交付' }));
+  fireEvent.click(screen.getByRole('button', { name: '建立系列镜头方案' }));
+
+  expect(await screen.findByRole('heading', { name: '系列镜头台' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '下一步 · 选择方向' }));
+  const comparison = within(await screen.findByRole('region', { name: '系列方向比较' }));
+  const directions = within(comparison.getByRole('group', { name: '系列方向候选' }));
+  expect(directions.getByRole('button', { name: /叙事递进方向/ })).toBeInTheDocument();
+  expect(directions.getByRole('button', { name: /情绪递进方向/ })).toBeInTheDocument();
+  expect(directions.getByRole('button', { name: /动作递进方向/ })).toBeInTheDocument();
+  expect(directions.getByRole('button', { name: /空间递进方向/ })).toBeInTheDocument();
+  expect(comparison.getByRole('group', { name: '当前序列与所选方向对比' })).toBeInTheDocument();
+
+  fireEvent.click(directions.getByRole('button', { name: /动作递进方向/ }));
+  expect(screen.getByText('4 镜 · 顺序锁定')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /确认整组方向/ }));
+
+  expect(await screen.findByRole('button', { name: '下一步 · 归档镜头计划' })).toBeInTheDocument();
+  const shotSelects = screen.getAllByRole('combobox', { name: '镜头类型' });
+  expect(shotSelects).toHaveLength(4);
+  fireEvent.change(shotSelects[0], { target: { value: 'wide_scene' } });
+
+  await waitFor(() => expect(screen.getByText(/已把第 1 镜头替换/)).toBeInTheDocument());
+  await waitFor(() => expect(window.studio.tasks.update).toHaveBeenCalledWith('task-series-direction', expect.objectContaining({
+    card: expect.objectContaining({
+      candidatePlan: [
+        expect.objectContaining({ id: 'wide_scene' }),
+        expect.objectContaining({ id: 'action_moment' }),
+        expect.objectContaining({ id: 'over_shoulder' }),
+        expect.objectContaining({ id: 'wide_scene' }),
+      ],
+    }),
+  })));
+
+  fireEvent.click(screen.getAllByText('本镜细项 · 场景 / 造型 / 情绪')[0]);
+  fireEvent.change(screen.getByRole('combobox', { name: '第 1 镜头场景' }), { target: { value: 'new_space' } });
+  await waitFor(() => expect(screen.getByText(/已调整第 1 镜头的场景/)).toBeInTheDocument());
+  expect(window.studio.tasks.update).toHaveBeenLastCalledWith('task-series-direction', expect.objectContaining({
+    card: expect.objectContaining({
+      candidatePlan: expect.arrayContaining([
+        expect.objectContaining({ id: 'wide_scene', scene: 'new_space', directive: expect.stringContaining('新空间') }),
+      ]),
+    }),
+  }));
+
+  fireEvent.click(screen.getByRole('button', { name: '下一步 · 归档镜头计划' }));
+  expect(screen.getByText('系列镜头计划')).toBeInTheDocument();
+  expect(screen.getByText('01→04 已锁定')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '进入生产准备' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: /连续性调整/ }));
+  expect(await screen.findByText('4 / 6 镜')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '新增镜头' }));
+  await waitFor(() => expect(screen.getByText('5 / 6 镜')).toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: '复制当前镜头' }));
+  await waitFor(() => expect(screen.getByText('6 / 6 镜')).toBeInTheDocument());
+  expect(screen.getByRole('button', { name: '新增镜头' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: /系列归档/ }));
+  expect(await screen.findByText('01→06 已锁定')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /连续性调整/ }));
+  await screen.findByText('6 / 6 镜');
+  fireEvent.click(screen.getByRole('button', { name: '删除当前镜头' }));
+  await waitFor(() => expect(screen.getByText('5 / 6 镜')).toBeInTheDocument());
+
+  fireEvent.click(screen.getByRole('button', { name: /镜头方向/ }));
+  const mismatchedDirections = within(await screen.findByRole('region', { name: '系列方向比较' }));
+  fireEvent.click(within(mismatchedDirections.getByRole('group', { name: '系列方向候选' })).getByRole('button', { name: /动作递进方向/ }));
+  fireEvent.click(screen.getByRole('button', { name: /确认整组方向/ }));
+  expect(await screen.findByText(/是 4 镜方向模板；当前是 5 镜/)).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: '系列方向比较' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: /连续性调整/ }));
+  expect(await screen.findByText('5 / 6 镜')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '删除当前镜头' }));
+  await waitFor(() => expect(screen.getByText('4 / 6 镜')).toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: /镜头方向/ }));
+  fireEvent.click(within(screen.getByRole('group', { name: '系列方向候选' })).getByRole('button', { name: /动作递进方向/ }));
+  fireEvent.click(screen.getByRole('button', { name: /确认整组方向/ }));
+  await screen.findByRole('button', { name: '下一步 · 归档镜头计划' });
+  fireEvent.click(screen.getByRole('button', { name: '下一步 · 归档镜头计划' }));
+  expect(screen.getByText('01→04 已锁定')).toBeInTheDocument();
+  const seriesGenerate = screen.getByRole('button', { name: '生成本组 4 镜' });
+  expect(seriesGenerate).toBeEnabled();
+  vi.mocked(window.studio.generation.image).mockImplementation(() => new Promise(() => {}) as never);
+  fireEvent.click(seriesGenerate);
+  await waitFor(() => expect(window.studio.generation.image).toHaveBeenCalledTimes(1));
+  expect(screen.getByText('正在生成第 1/4 镜：系列基准…')).toBeInTheDocument();
 });
 
 it('剧情场景选择形成可回溯叙事骨架并进入场景创作台', async () => {
@@ -511,6 +662,25 @@ it('没有图片模型时也能沿创作进度进入局部调整并保存本地�
   expect(window.studio.generation.image).not.toHaveBeenCalled();
 });
 
+it('切换画幅后重新编译提示词，避免请求尺寸与提示词里的画幅不一致', async () => {
+  const task = { id: 'task-aspect-recompile', status: 'draft', createdAt: '', updatedAt: '' };
+  vi.mocked(window.studio.tasks.create).mockImplementation(async (input) => ({ ...task, ...input }) as never);
+  vi.mocked(window.studio.tasks.update).mockImplementation(async (_id, patch) => ({ ...task, ...patch }) as never);
+  vi.mocked(window.studio.creation.compilePrompt).mockResolvedValue({ positive: '画幅已更新', negative: '', modules: [] });
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建创作任务' }));
+  fireEvent.click(screen.getByRole('button', { name: '单张画面' }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: '快速创作步骤' })).getByRole('button', { name: /确认/ }));
+  fireEvent.click(screen.getByRole('button', { name: '建立单张画面方案' }));
+  await screen.findByRole('heading', { name: '单张创作台' });
+  fireEvent.click(screen.getByRole('button', { name: '下一步 · 选择方向' }));
+  await screen.findByRole('region', { name: '方案方向候选' });
+
+  fireEvent.change(screen.getByRole('combobox', { name: '画幅' }), { target: { value: '9:16' } });
+  await waitFor(() => expect(window.studio.creation.compilePrompt).toHaveBeenCalledWith(expect.objectContaining({ aspectRatio: '9:16' })));
+});
+
 it('没有图片模型时可完成方向比较、局部调整和方案资产保存', async () => {
   vi.mocked(window.studio.settings.providerStatus).mockResolvedValue({
     providers: [], routes: { vision: 'none', image: 'none', image_edit: 'none', video: 'none', text: 'none' },
@@ -549,7 +719,7 @@ it('已确认候选可沉淀为角色资产并回写当前创作任务', async (
   const project = { id: 'project-character', name: '角色项目', medium: 'image', brief: { goal: '', audience: '', visualWorld: '', delivery: '', acceptance: '' } };
   const candidate = {
     id: 'candidate-character', type: 'image', name: '角色候选', managedPath: '/tmp/character.png', sha256: 'character', mediaType: 'image/png',
-    rightsStatus: 'original', confirmation: 'confirmed', metadata: {}, createdAt: '2026-01-01', updatedAt: '2026-01-01',
+    rightsStatus: 'original', confirmation: 'confirmed', metadata: { generatedFromJobId: 'job-character', generation: { providerModel: 'fal-ai/moss-image', aspectRatio: '2:3', seed: 246810, referenceCount: 1, prompt: '月下东方海报' } }, createdAt: '2026-01-01', updatedAt: '2026-01-01',
   };
   const task = {
     id: 'task-character', projectId: project.id, name: '月下角色定妆', objective: '建立长期角色', status: 'review', collectionIds: [],
@@ -569,6 +739,14 @@ it('已确认候选可沉淀为角色资产并回写当前创作任务', async (
 
   render(<App />);
   fireEvent.change(await screen.findByRole('combobox', { name: '当前项目' }), { target: { value: project.id } });
+  fireEvent.click(screen.getByRole('button', { name: '资产' }));
+  fireEvent.click(await screen.findByRole('button', { name: '素材库' }));
+  fireEvent.click(await screen.findByRole('heading', { name: '角色候选' }));
+  expect(await screen.findByText('生成来源')).toBeInTheDocument();
+  expect(screen.getByText('fal-ai/moss-image')).toBeInTheDocument();
+  expect(screen.getByText('246810')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '查看生成队列' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '创作' }));
   fireEvent.click(await screen.findByRole('button', { name: /月下角色定妆/ }));
   expect(await screen.findByRole('button', { name: '沉淀为角色资产' })).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: '沉淀为角色资产' }));
@@ -685,7 +863,7 @@ it('审片与母版独立承接图片候选，并保留来源与晋级入口', a
 it('重启中断的图片任务可在队列确认重试，并在新任务关联后隐藏重复入口', async () => {
   const interrupted = {
     id: 'job-interrupted', projectId: 'asset-library', kind: 'image_generation', providerId: 'gemini',
-    status: 'queued', request: { prompt: '同一角色', size: '1024x1536', referenceAssetIds: ['ref-1'], qualityTier: 'premium' },
+    status: 'queued', request: { prompt: '同一角色', size: '1024x1536', referenceAssetIds: ['ref-1'], qualityTier: 'premium', seed: 246810 },
     error: '应用关闭前任务中断，可由用户确认后重试。', retryCount: 1, createdAt: '', updatedAt: '',
   };
   const retried = {
@@ -709,6 +887,7 @@ it('重启中断的图片任务可在队列确认重试，并在新任务关联�
   await waitFor(() => expect(window.studio.generation.image).toHaveBeenCalledWith(expect.objectContaining({
     retryOfJobId: interrupted.id,
     referenceAssetIds: ['ref-1'],
+    seed: 246810,
   })));
   await waitFor(() => expect(screen.queryByRole('button', { name: '确认重试' })).not.toBeInTheDocument());
 });

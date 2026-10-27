@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
-import type { ImageUnderstandingReport } from "../../../src/shared/types";
+import type { ImageGenerationSize, ImageUnderstandingReport } from "../../../src/shared/types";
 import { parseImageUnderstanding } from "../understanding/image-understanding";
 import { fetchProvider } from "./request";
 
@@ -34,6 +34,12 @@ const extractResponseText = (payload: ResponsesPayload): string => {
 
 const toDataUrl = (filePath: string, mediaType: string) =>
   `data:${mediaType};base64,${readFileSync(filePath).toString("base64")}`;
+
+const OPENAI_IMAGE_SIZES: ImageGenerationSize[] = ["1024x1024", "1024x1536", "1536x1024"];
+const assertOpenAISize = (size: ImageGenerationSize) => {
+  if (!OPENAI_IMAGE_SIZES.includes(size))
+    throw new Error(`OpenAI 图像接口不支持 ${size} 画幅；请改用 1:1、2:3 或 3:2。`);
+};
 
 export class OpenAIProvider {
   readonly id = "openai";
@@ -95,9 +101,10 @@ export class OpenAIProvider {
 
   async generateImage(input: {
     prompt: string;
-    size: "1024x1024" | "1024x1536" | "1536x1024";
+    size: ImageGenerationSize;
     quality?: "medium" | "high";
   }): Promise<Buffer> {
+    assertOpenAISize(input.size);
     const response = await this.request("/images/generations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -118,10 +125,11 @@ export class OpenAIProvider {
 
   async refineImage(input: {
     prompt: string;
-    size: "1024x1024" | "1024x1536" | "1536x1024";
+    size: ImageGenerationSize;
     referencePath: string;
     referenceMediaType: string;
   }): Promise<Buffer> {
+    assertOpenAISize(input.size);
     const form = new FormData();
     form.set("model", "gpt-image-2");
     form.set("prompt", input.prompt);

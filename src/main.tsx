@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { AppErrorBoundary } from './components/AppErrorBoundary';
 import './styles.css';
 import './styles/design-system.css';
 
@@ -11,7 +12,9 @@ if (!root) throw new Error('未找到应用挂载节点。');
 try {
   createRoot(root).render(
     <StrictMode>
-      <App />
+      <AppErrorBoundary>
+        <App />
+      </AppErrorBoundary>
     </StrictMode>
   );
 } catch (error) {

@@ -15,6 +15,7 @@ describe("CreationLaunchpad", () => {
     expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("8")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "直接做一张图" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "系列镜头" }));
     expect(onSelect).toHaveBeenCalledWith("series");

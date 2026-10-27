@@ -12,6 +12,7 @@ type CreationLaunchpadProps = {
   onSelect: (kind: CreationLaunchKind) => void;
   onExit: () => void;
   embedded?: boolean;
+  resume?: { kindLabel: string; updatedAt: string; onResume: () => void };
 };
 
 const LAUNCH_OPTIONS: Array<{
@@ -51,7 +52,7 @@ const LAUNCH_OPTIONS: Array<{
   },
 ];
 
-export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, onSelect, onExit, embedded = false }: CreationLaunchpadProps) {
+export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, onSelect, onExit, embedded = false, resume }: CreationLaunchpadProps) {
   return <section className={`creation-launchpad${embedded ? " creation-launchpad-embedded" : ""}`} aria-label="新建创作">
     <header className="creation-launchpad-header">
       {!embedded && <button type="button" className="creator-exit" onClick={onExit} aria-label="退出新建创作">←</button>}
@@ -66,6 +67,12 @@ export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, 
         <span><b>{referenceCount}</b> 参考</span>
       </div>
     </header>
+    {resume && <div className="creation-resume-banner" role="status">
+      <span className="creation-resume-pill">继续上次创作</span>
+      <strong>{resume.kindLabel}</strong>
+      <span>上次保存在 {new Date(resume.updatedAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+      <button type="button" onClick={resume.onResume}>继续</button>
+    </div>}
     <div className="creation-launch-grid">
       {LAUNCH_OPTIONS.map((option, index) => <button
         type="button"
@@ -86,10 +93,9 @@ export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, 
     </div>
     <footer className="creation-launchpad-footer">
       <span>已有角色、场景和参考图会在下一步自动出现。</span>
-      <div>
-        {embedded && <button type="button" className="creation-launchpad-manage" onClick={onExit}>项目与历史</button>}
-        <button type="button" onClick={() => onSelect("image")}>直接做一张图</button>
-      </div>
+      {embedded && <div>
+        <button type="button" className="creation-launchpad-manage" onClick={onExit}>项目与历史</button>
+      </div>}
     </footer>
   </section>;
 }

@@ -36,3 +36,34 @@ it("远程状态未知时只查询原任务，不创建新请求", () => {
   expect(refresh).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole("button", { name: "按原请求重试" })).not.toBeInTheDocument();
 });
+
+it("展示生成模型与预计成本", () => {
+  render(<GenerationQueuePanel jobs={[job({ request: { ...job().request, modelId: "fal-moss-image", modelLabel: "MOSS-Image", providerModel: "fal-ai/moss-image", estimatedCostUsd: 0.079, seed: 123456 } })]} retryingJobIds={new Set()} onRefresh={vi.fn()} onRetry={vi.fn()} />);
+  expect(screen.getAllByText("MOSS-Image · fal-ai/moss-image").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("预计 $0.079").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("种子 123456").length).toBeGreaterThan(0);
+});
+
+it("可定位到指定生成任务", () => {
+  render(<GenerationQueuePanel jobs={[job()]} retryingJobIds={new Set()} onRefresh={vi.fn()} onRetry={vi.fn()} focusedJobId="job-1" />);
+  expect(screen.getByRole("article")).toHaveAttribute("aria-current", "true");
+});
+
+it("按实际阶段显示进度，而不是固定 0%", () => {
+  render(<GenerationQueuePanel jobs={[job({ status: "in_progress", error: undefined, result: { progressStage: "remote" } })]} retryingJobIds={new Set()} onRefresh={vi.fn()} onRetry={vi.fn()} />);
+  expect(screen.getByText("模型处理中 · 正在更新")).toBeInTheDocument();
+  expect(screen.queryByText("0% · 正在更新")).not.toBeInTheDocument();
+});
+
+it("模型未配置时不提供一键重试", () => {
+  render(<GenerationQueuePanel jobs={[job({ error: "尚未配置 fal API 密钥" })]} retryingJobIds={new Set()} onRefresh={vi.fn()} onRetry={vi.fn()} />);
+  expect(screen.getByText(/模型未配置/)).toBeInTheDocument();
+  expect(screen.getByText(/不会提供一键重试/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "按原请求重试" })).not.toBeInTheDocument();
+});
+
+it("队列处理中通过 aria-busy 与状态区播报", () => {
+  render(<GenerationQueuePanel jobs={[job({ status: "in_progress" })]} retryingJobIds={new Set()} onRefresh={vi.fn()} onRetry={vi.fn()} />);
+  expect(screen.getByLabelText("生成任务列表")).toHaveAttribute("aria-busy", "true");
+  expect(screen.getAllByRole("status").some((node) => node.textContent === "队列中还有 1 个任务正在处理")).toBe(true);
+});

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
+import { aspectRatioForImageSize, type ImageGenerationSize } from '../../../src/shared/types';
 import { fetchProvider } from './request';
 
 export type GeminiProviderOptions = { apiKey: () => string | undefined };
@@ -14,8 +15,7 @@ type GeminiResponse = {
 const primaryImageModel = 'gemini-3.1-flash-image';
 const freeTierImageModel = 'gemini-3.1-flash-lite-image';
 
-const aspectRatioFor = (size: '1024x1024' | '1024x1536' | '1536x1024') =>
-  size === '1024x1024' ? '1:1' : size === '1536x1024' ? '3:2' : '2:3';
+const aspectRatioFor = (size: ImageGenerationSize) => aspectRatioForImageSize(size);
 
 const extractImage = (payload: GeminiResponse): Buffer => {
   const interactionImage = payload.interaction?.output_image?.data;
@@ -75,7 +75,7 @@ export class GeminiProvider {
     }
   }
 
-  async generateImage(input: { prompt: string; size: '1024x1024' | '1024x1536' | '1536x1024'; quality?: 'medium' | 'high' }): Promise<Buffer> {
+  async generateImage(input: { prompt: string; size: ImageGenerationSize; quality?: 'medium' | 'high' }): Promise<Buffer> {
     const payload = await this.requestImage({
       model: primaryImageModel,
       input: input.prompt,
@@ -84,7 +84,7 @@ export class GeminiProvider {
     return extractImage(payload);
   }
 
-  async refineImage(input: { prompt: string; size: '1024x1024' | '1024x1536' | '1536x1024'; referencePath: string; referenceMediaType: string }): Promise<Buffer> {
+  async refineImage(input: { prompt: string; size: ImageGenerationSize; referencePath: string; referenceMediaType: string }): Promise<Buffer> {
     const payload = await this.requestImage({
       model: primaryImageModel,
       input: [

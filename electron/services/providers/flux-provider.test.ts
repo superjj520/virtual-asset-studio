@@ -13,5 +13,5 @@ it('FLUX 提交任务、轮询完成状态并下载成图', async () => {
   const provider = new FluxProvider({ apiKey: () => 'flux-test-key-with-enough-length' });
   await expect(provider.generateImage({ prompt: '夜色中的东方人像', size: '1024x1536' })).resolves.toEqual(Buffer.from('flux-image'));
   expect(fetchMock.mock.calls[0]?.[0]).toBe('https://api.bfl.ai/v1/flux-pro-1.1');
-  expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({ width: 960, height: 1440, output_format: 'png' });
+  expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({ width: 1024, height: 1536, output_format: 'png' });
 });

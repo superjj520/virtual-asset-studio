@@ -94,10 +94,20 @@ import {
 import {
   createDefaultSeriesPlan,
   moveCandidateVariation,
-  replaceCandidateVariation,
   SERIES_VARIATION_LIBRARY,
   type CandidateVariation,
 } from "./candidate-variations";
+import {
+  addSeriesShot,
+  describeSeriesShotAdjustments,
+  duplicateSeriesShot,
+  removeSeriesShot,
+  replaceSeriesShot,
+  SERIES_SHOT_MAX,
+  SERIES_SHOT_MIN,
+  setSeriesShotAdjustment,
+} from "./series-direction";
+import { SeriesShotAdjustmentFields } from "./SeriesShotAdjustmentFields";
 import {
   CHARACTER_TRACKER_PRESETS,
   DEFAULT_CHARACTER_TRACKER_IDS,
@@ -178,6 +188,9 @@ type VisualCharacterCreatorProps = {
   onSeriesPlanChange?: (value: CandidateVariation[]) => void;
   qualityTier: GenerationQualityTier;
   onQualityTierChange: (value: GenerationQualityTier) => void;
+  generationSeed?: number;
+  onGenerationSeedChange?: (value: number | undefined) => void;
+  generationSettings?: ReactNode;
   aspectRatio?: CreativeAspectRatio;
   onAspectRatioChange?: (value: CreativeAspectRatio) => void;
   onCreate: () => void;
@@ -586,6 +599,8 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
   const [quickStage, setQuickStage] = useState<CreationQuickStage>(initialProgress.current?.quickStage ?? "direction");
   const [characterCorePanel, setCharacterCorePanel] = useState<CharacterCorePanel>(initialProgress.current?.corePanel ?? "identity");
   const [showSavedAssets, setShowSavedAssets] = useState(false);
+  const [showFaceDetails, setShowFaceDetails] = useState(false);
+  const [showBodyDetails, setShowBodyDetails] = useState(false);
   const [activeSeriesShotIndex, setActiveSeriesShotIndex] = useState(0);
   const availableCharacters = props.characters.filter((item) => item.lifecycle !== "archived");
   const visualCharacters = availableCharacters.filter((item) => item.masterAssetId);
@@ -753,9 +768,21 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
   </>;
 
   const renderCharacterAppearance = () => <>
-    {renderFace()}
-    <div className="character-step-divider" aria-hidden="true" />
-    {renderHair()}
+    <div className="character-disclosure-bar">
+      <span>先定轮廓，进阶细节不阻塞下一步</span>
+      <button type="button" className="creator-more-button" aria-expanded={showFaceDetails} onClick={() => setShowFaceDetails((value) => !value)}>
+        {showFaceDetails ? "收起面部细节" : "更多细节：眼神、瞳孔颜色、发色"}
+      </button>
+    </div>
+    <BoardChoiceGrid label="脸部轮廓" options={GUIDED_FACES} value={props.appearance.face} onChange={(value) => props.onAppearanceChange("face", value)} artwork={faceReferenceBoard} hint="同一身份对比" />
+    <BoardChoiceGrid label="发型轮廓" options={GUIDED_HAIR} value={props.appearance.hair} onChange={(value) => props.onAppearanceChange("hair", value)} artwork={hairReferenceBoard} hint="同一身份对比" />
+    {showFaceDetails && (
+      <div className="creator-progressive-details">
+        <BoardChoiceGrid label="眼神方向" options={GUIDED_EYES} value={props.appearance.eyes} onChange={(value) => props.onAppearanceChange("eyes", value)} artwork={eyesReferenceBoard} hint="同一身份对比" />
+        <ColorChoiceGrid label="瞳孔颜色" options={GUIDED_EYE_COLORS} value={props.appearance.eyeColor} onChange={(value) => props.onAppearanceChange("eyeColor", value)} colors={EYE_COLORS} />
+        <ColorChoiceGrid label="发色" options={GUIDED_HAIR_COLORS} value={props.appearance.hairColor} onChange={(value) => props.onAppearanceChange("hairColor", value)} colors={HAIR_COLORS} />
+      </div>
+    )}
   </>;
 
   const renderBody = () => <>
@@ -764,6 +791,24 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
     <VisualChoiceGrid label="体态比例" options={GUIDED_PROPORTIONS} value={props.appearance.proportion} onChange={(value) => props.onAppearanceChange("proportion", value)} />
     <VisualChoiceGrid label="上身量感" options={GUIDED_UPPER_VOLUMES} value={props.appearance.upperVolume} onChange={(value) => props.onAppearanceChange("upperVolume", value)} />
     <VisualChoiceGrid label="下身轮廓" options={GUIDED_LOWER_SHAPES} value={props.appearance.lowerShape} onChange={(value) => props.onAppearanceChange("lowerShape", value)} />
+  </>;
+
+  const renderQuickBody = () => <>
+    <div className="character-disclosure-bar">
+      <span>先定比例，进阶细节不阻塞下一步</span>
+      <button type="button" className="creator-more-button" aria-expanded={showBodyDetails} onClick={() => setShowBodyDetails((value) => !value)}>
+        {showBodyDetails ? "收起体型细节" : "更多细节：体态比例、上身量感、下身轮廓"}
+      </button>
+    </div>
+    <BoardChoiceGrid label="身体比例" options={GUIDED_BODIES} value={props.appearance.body} onChange={(value) => props.onAppearanceChange("body", value)} artwork={bodyReferenceBoard} hint="真实成年比例" layout="full-body" />
+    <VisualChoiceGrid label="身高" options={GUIDED_HEIGHTS} value={props.appearance.height} onChange={(value) => props.onAppearanceChange("height", value)} />
+    {showBodyDetails && (
+      <div className="creator-progressive-details">
+        <VisualChoiceGrid label="体态比例" options={GUIDED_PROPORTIONS} value={props.appearance.proportion} onChange={(value) => props.onAppearanceChange("proportion", value)} />
+        <VisualChoiceGrid label="上身量感" options={GUIDED_UPPER_VOLUMES} value={props.appearance.upperVolume} onChange={(value) => props.onAppearanceChange("upperVolume", value)} />
+        <VisualChoiceGrid label="下身轮廓" options={GUIDED_LOWER_SHAPES} value={props.appearance.lowerShape} onChange={(value) => props.onAppearanceChange("lowerShape", value)} />
+      </div>
+    )}
   </>;
 
   const renderWorld = () => <>
@@ -856,6 +901,7 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
         </div>
       </div>
     </div>}
+    {props.generationSettings}
     <div className="creator-ready-card ready">
       <span>{creationKind === "character" ? "角色资产已就绪" : "方案已就绪"}</span>
       <strong>{creationKind === "character" ? "人物设定将沉淀为可复用角色" : "进入创作台后继续挑选与调整"}</strong>
@@ -966,7 +1012,7 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
               props.onSeriesPlanChange?.(createDefaultSeriesPlan());
               setActiveSeriesShotIndex(0);
             }}>恢复推荐序列</button>
-            <b>{seriesPlan.length} 镜头</b>
+            <b>{seriesPlan.length} / {SERIES_SHOT_MAX} 镜头</b>
           </div>
         </header>
         <div className="series-shot-list">{seriesPlan.map((item, index) => <button
@@ -987,6 +1033,24 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
           <div className="series-shot-editor-heading">
             <div><span>正在编辑</span><strong>第 {activeSeriesShotIndex + 1} 镜头</strong></div>
             <div className="series-shot-order-actions" role="group" aria-label="调整镜头顺序">
+              <button type="button" aria-label="新增镜头" disabled={seriesPlan.length >= SERIES_SHOT_MAX} onClick={() => {
+                const next = addSeriesShot(seriesPlan, activeSeriesShotIndex);
+                if (next === seriesPlan) return;
+                props.onSeriesPlanChange?.(next);
+                setActiveSeriesShotIndex(Math.min(activeSeriesShotIndex + 1, next.length - 1));
+              }}>新增</button>
+              <button type="button" aria-label="复制当前镜头" disabled={seriesPlan.length >= SERIES_SHOT_MAX} onClick={() => {
+                const next = duplicateSeriesShot(seriesPlan, activeSeriesShotIndex);
+                if (next === seriesPlan) return;
+                props.onSeriesPlanChange?.(next);
+                setActiveSeriesShotIndex(Math.min(activeSeriesShotIndex + 1, next.length - 1));
+              }}>复制</button>
+              <button type="button" aria-label="删除当前镜头" disabled={seriesPlan.length <= SERIES_SHOT_MIN} onClick={() => {
+                const next = removeSeriesShot(seriesPlan, activeSeriesShotIndex);
+                if (next === seriesPlan) return;
+                props.onSeriesPlanChange?.(next);
+                setActiveSeriesShotIndex(Math.min(activeSeriesShotIndex, next.length - 1));
+              }}>删除</button>
               <button type="button" disabled={activeSeriesShotIndex === 0} onClick={() => {
                 props.onSeriesPlanChange?.(moveCandidateVariation(seriesPlan, activeSeriesShotIndex, -1));
                 setActiveSeriesShotIndex((current) => Math.max(0, current - 1));
@@ -999,7 +1063,9 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
           </div>
           {activeSeriesShot && <div className="series-shot-active-preview" aria-live="polite">
             <SeriesShotArtwork variationId={activeSeriesShot.id} label={activeSeriesShot.label} presetArtwork={CREATION_PRESET_ARTWORKS[selectedPreset.id]} sceneArtwork={activeSceneArtwork} />
-            <div><span>当前镜头</span><strong>{activeSeriesShot.label}</strong><small>{activeSeriesShot.directive}</small></div>
+            <div><span>当前镜头</span><strong>{activeSeriesShot.label}</strong><small>{activeSeriesShot.directive}</small>
+              {describeSeriesShotAdjustments(activeSeriesShot).length > 0 && <em className="series-shot-adjustment-summary">{describeSeriesShotAdjustments(activeSeriesShot).join(" · ")}</em>}
+            </div>
           </div>}
           <div className="visual-choice-heading series-shot-choice-heading"><strong>替换镜头类型</strong><span>角色、造型和世界保持不变</span></div>
           <div className="series-shot-type-grid" role="group" aria-label="镜头类型">
@@ -1008,12 +1074,17 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
               key={item.id}
               aria-pressed={seriesPlan[activeSeriesShotIndex]?.id === item.id}
               className={seriesPlan[activeSeriesShotIndex]?.id === item.id ? "selected" : ""}
-              onClick={() => props.onSeriesPlanChange?.(replaceCandidateVariation(seriesPlan, activeSeriesShotIndex, item.id))}
+              onClick={() => props.onSeriesPlanChange?.(replaceSeriesShot(seriesPlan, activeSeriesShotIndex, item.id))}
             >
               <SeriesShotArtwork variationId={item.id} label={item.label} presetArtwork={CREATION_PRESET_ARTWORKS[selectedPreset.id]} sceneArtwork={activeSceneArtwork} />
               <span><strong>{item.label}</strong></span>
             </button>)}
           </div>
+          {activeSeriesShot && <SeriesShotAdjustmentFields
+            index={activeSeriesShotIndex}
+            shot={activeSeriesShot}
+            onChange={(index, kind, optionId) => props.onSeriesPlanChange?.(setSeriesShotAdjustment(seriesPlan, index, kind, optionId))}
+          />}
         </div>
       </section>}
       {(creationKind === "image" || creationKind === "series") && <>
@@ -1049,6 +1120,7 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
         </div>
       </div>
     </div>}
+    {props.generationSettings}
     <div className="creator-ready-card ready">
       <span>{flow.readyLabel}</span>
       <strong>{flow.readyTitle}</strong>
@@ -1097,8 +1169,23 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
               {([1, 2, 4] as const).map((count) => <button type="button" key={count} aria-pressed={props.candidateCount === count} className={props.candidateCount === count ? "selected" : ""} onClick={() => props.onCandidateCountChange(count)}>{count} 张</button>)}
             </div>
           </div>
+          <div>
+            <div className="visual-choice-heading"><strong>随机种子</strong><span>留空随机；相同种子可复现</span></div>
+            <input
+              className="creator-seed-input"
+              type="number"
+              min={0}
+              max={4294967295}
+              inputMode="numeric"
+              placeholder="留空则随机"
+              aria-label="随机种子"
+              value={props.generationSeed ?? ""}
+              onChange={(event) => props.onGenerationSeedChange?.(event.target.value === "" ? undefined : Number(event.target.value))}
+            />
+          </div>
         </div>
       </details>
+      {props.generationSettings}
       <div className="creator-ready-card ready">
         <span>{flow.readyLabel}</span>
         <strong>{flow.readyTitle}</strong>
@@ -1364,12 +1451,12 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
       if (section === "direction") return renderDirection();
       if (section === "identity") return renderIdentity();
       if (section === "face") return renderCharacterAppearance();
-      if (section === "body") return renderBody();
+      if (section === "body") return renderQuickBody();
       if (section === "details") return renderCharacterCore();
       return renderCharacterQuickReview();
     };
 
-    return <section className="character-visual-flow" aria-label="角色视觉创作">
+    return <section className="character-visual-flow quick-mode" aria-label="角色视觉创作">
       <header className="character-flow-header">
         <div className="creator-title-row">
           {props.onExit && <button type="button" className="creator-exit" onClick={props.onExit} aria-label="退出创作">←</button>}
