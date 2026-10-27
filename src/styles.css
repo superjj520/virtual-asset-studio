@@ -3568,3 +3568,7 @@ button:active { transform: translateY(1px); }
 .creator-advanced-generation { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--surface); }
 .creator-advanced-generation > summary { cursor: pointer; color: var(--ink-muted); font-size: 11px; font-weight: 600; }
 .creator-advanced-generation[open] > summary { margin-bottom: 8px; }
+@media (max-width: 700px) {
+  .creation-launchpad-links { width: 100%; flex-direction: column; align-items: stretch; }
+  .creation-launchpad-links button { width: 100%; }
+}
