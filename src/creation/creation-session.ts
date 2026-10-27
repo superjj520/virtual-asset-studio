@@ -2,6 +2,7 @@ import type { CharacterCreationDraft } from "./character-creation-draft";
 import type { CreationLaunchKind } from "./CreationLaunchpad";
 import type { CandidateVariation } from "./candidate-variations";
 import type { GuidedStoryPlan } from "./creative-plan";
+import type { CreationStudioStage } from "./CreationStudioJourney";
 
 const CREATION_SESSION_KEY = "virtual-asset-studio.creation-session.v1";
 
@@ -11,7 +12,10 @@ export type CreationSession = {
   version: 1;
   updatedAt: string;
   kind: CreationLaunchKind;
-  draft: CreationSessionDraft;
+  phase: "creator" | "studio";
+  draft?: CreationSessionDraft;
+  taskId?: string;
+  studioStage?: CreationStudioStage;
   candidateCount: 1 | 2 | 4;
   seriesPlan: CandidateVariation[];
   storyPlan: GuidedStoryPlan;
@@ -38,10 +42,12 @@ export function loadCreationSession(): CreationSession | undefined {
     const value = parsed as Record<string, unknown>;
     if (value.version !== 1 || typeof value.updatedAt !== "string") return undefined;
     if (!KINDS.has(value.kind as CreationLaunchKind)) return undefined;
-    if (!value.draft || typeof value.draft !== "object" || Array.isArray(value.draft)) return undefined;
+    const phase = value.phase === "studio" ? "studio" : "creator";
+    if (phase === "creator" && (!value.draft || typeof value.draft !== "object" || Array.isArray(value.draft))) return undefined;
+    if (phase === "studio" && (typeof value.taskId !== "string" || !value.taskId)) return undefined;
     if (![1, 2, 4].includes(Number(value.candidateCount))) return undefined;
     if (!Array.isArray(value.seriesPlan) || !value.storyPlan || typeof value.storyPlan !== "object") return undefined;
-    return value as unknown as CreationSession;
+    return { ...value, phase } as unknown as CreationSession;
   } catch {
     return undefined;
   }

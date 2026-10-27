@@ -918,6 +918,7 @@ export default function App() {
     };
     if (creationLaunchKind === "character") saveCharacterCreationDraft(draftPayload);
     setResumableSession(saveCreationSession({
+      phase: "creator",
       kind: creationLaunchKind,
       draft: draftPayload,
       candidateCount: creationCandidateCount,
@@ -953,6 +954,19 @@ export default function App() {
     qualityTier,
     screen,
   ]);
+  useEffect(() => {
+    if (screen !== "creation" || !activeTaskId) return;
+    setResumableSession(saveCreationSession({
+      phase: "studio",
+      kind: creationLaunchKind,
+      taskId: activeTaskId,
+      studioStage: creationStudioStage,
+      candidateCount: creationCandidateCount,
+      seriesPlan: seriesCandidatePlan.map((item) => ({ ...item })),
+      storyPlan: { ...guideStoryPlan },
+      generationSeed,
+    }));
+  }, [activeTaskId, creationLaunchKind, creationStudioStage, creationCandidateCount, generationSeed, guideStoryPlan, screen, seriesCandidatePlan]);
   useEffect(() => {
     let current = true;
     window.studio.collections
@@ -3336,7 +3350,7 @@ export default function App() {
       setNotice(error instanceof Error ? error.message : "保存创作任务失败。\n");
     }
   };
-  const openCreativeTask = async (task: CreativeTask) => {
+  const openCreativeTask = async (task: CreativeTask, preferredStage?: CreationStudioStage) => {
     const requestId = ++creativeTaskOpenRequestRef.current;
     const nextCard = normalizeCreativeCard(task.card);
     const nextKind = resolveCreationKind(nextCard);
@@ -3356,7 +3370,7 @@ export default function App() {
     setActiveRefineShotIndex(0);
     setConfirmedLocalDirectionId("");
     setLocalRefinementApplied(false);
-    setCreationStudioStage(task.resultAssetId ? "asset" : "plan");
+    setCreationStudioStage(preferredStage ?? (task.resultAssetId ? "asset" : "plan"));
     setActiveDomain("creation");
     setScreen("creation");
 
@@ -3934,7 +3948,7 @@ export default function App() {
 
   const startCreationFlow = (kind: CreationLaunchKind) => {
     const session = loadCreationSession();
-    if (session?.kind === kind) {
+    if (session?.phase === "creator" && session.draft && session.kind === kind) {
       applyCharacterCreationDraft(session.draft, kind);
       setCreationCandidateCount(session.candidateCount);
       setSeriesCandidatePlan(session.seriesPlan.map((item) => ({ ...item })));
@@ -3985,6 +3999,28 @@ export default function App() {
     setScreen("start");
   };
 
+  const resumeCreationSession = async (session: CreationSession) => {
+    if (session.phase === "studio" && session.taskId) {
+      const task = creativeTasks.find((item) => item.id === session.taskId)
+        ?? (await window.studio.tasks.list(selectedProjectId || undefined)).find((item) => item.id === session.taskId);
+      if (task) {
+        await openCreativeTask(task, session.studioStage);
+        setNotice(`已恢复“${creationKindLabel[session.kind]}”的${session.studioStage === "plan" ? "方案" : session.studioStage === "candidates" ? "候选" : session.studioStage === "refine" ? "调整" : "归档"}阶段。`);
+        return;
+      }
+    }
+    if (session.phase === "creator" && session.draft) {
+      applyCharacterCreationDraft(session.draft, session.kind);
+      setCreationCandidateCount(session.candidateCount);
+      setSeriesCandidatePlan(session.seriesPlan.map((item) => ({ ...item })));
+      setGuideStoryPlan({ ...session.storyPlan });
+      setGenerationSeed(session.generationSeed);
+      setNotice(`已恢复“${creationKindLabel[session.kind]}”的上次选择。`);
+      return;
+    }
+    startCreationFlow(session.kind);
+  };
+
   return (
     <div className={`app-shell ${screen === "start" || screen === "launch" ? "creator-focus-shell" : ""}`}>
       {screen !== "start" && screen !== "launch" && <AdaptiveDomainNavigation
@@ -4026,7 +4062,7 @@ export default function App() {
           resume={resumableSession ? {
             kindLabel: creationKindLabel[resumableSession.kind],
             updatedAt: resumableSession.updatedAt,
-            onResume: () => startCreationFlow(resumableSession.kind),
+            onResume: () => { void resumeCreationSession(resumableSession); },
           } : undefined}
         />
       )}
