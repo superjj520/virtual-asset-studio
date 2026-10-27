@@ -44,6 +44,10 @@ try {
     await sleep(500);
   }
   if (cards !== 4) throw new Error(`创作中心入口卡数量应为 4，实际 ${cards}；页面：${await evaluate("location.href")}`);
+  const labels = await evaluate(`[...document.querySelectorAll(".creation-launch-card")].map((x) => x.getAttribute("aria-label"))`);
+  for (const expected of ["角色塑造", "单张画面", "剧情场景", "系列镜头"]) {
+    if (!labels.includes(expected)) throw new Error(`缺少创作入口：${expected}`);
+  }
   if (phase === "verify") {
     await evaluate(`(() => { const b=[...document.querySelectorAll("button")].find(x=>x.textContent.includes("新建创作任务")); b?.click(); return !!b; })()`);
     await sleep(600);
