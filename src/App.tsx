@@ -36,6 +36,13 @@ import {
   type CharacterCreationDraft,
 } from "./creation/character-creation-draft";
 import {
+  clearCreationSession,
+  creationKindLabel,
+  loadCreationSession,
+  saveCreationSession,
+  type CreationSession,
+} from "./creation/creation-session";
+import {
   buildCreativePlan,
   composeGuidedCreation,
   CREATION_PRESETS,
@@ -531,6 +538,7 @@ export default function App() {
   const [guideTrackerIds, setGuideTrackerIds] = useState<CharacterTrackerPresetId[]>(DEFAULT_CHARACTER_TRACKER_IDS);
   const [guideCustomTrackers, setGuideCustomTrackers] = useState<CharacterStateTracker[]>([]);
   const [restoredCharacterDraftAt, setRestoredCharacterDraftAt] = useState("");
+  const [resumableSession, setResumableSession] = useState<CreationSession | undefined>(() => loadCreationSession());
   const [guideSubject, setGuideSubject] = useState("");
   const [guideScene, setGuideScene] = useState("");
   const [guideReferenceAssetId, setGuideReferenceAssetId] = useState("");
@@ -885,8 +893,8 @@ export default function App() {
     return () => { current = false; };
   }, [guideMode, guideCharacterId]);
   useEffect(() => {
-    if (screen !== "start" || creationLaunchKind !== "character") return;
-    saveCharacterCreationDraft({
+    if (screen !== "start") return;
+    const draftPayload = {
       sourceMode: guideMode,
       presetId: guidePresetId,
       direction: guideDirection,
@@ -907,9 +915,22 @@ export default function App() {
       customTrackers: guideCustomTrackers,
       purpose: guidePurpose,
       qualityTier,
-    });
+    };
+    if (creationLaunchKind === "character") saveCharacterCreationDraft(draftPayload);
+    setResumableSession(saveCreationSession({
+      kind: creationLaunchKind,
+      draft: draftPayload,
+      candidateCount: creationCandidateCount,
+      seriesPlan: seriesCandidatePlan.map((item) => ({ ...item })),
+      storyPlan: { ...guideStoryPlan },
+      generationSeed,
+    }));
   }, [
     creationLaunchKind,
+    creationCandidateCount,
+    generationSeed,
+    guideStoryPlan,
+    seriesCandidatePlan,
     guideAppearance,
     guideAspectRatio,
     guideCharacterId,
@@ -3140,7 +3161,11 @@ export default function App() {
         setActiveSceneContext({ profileId: normalizedCard.sceneProfileId });
       } else setActiveSceneContext(undefined);
       if (normalizedCard.referenceAssetIds[0]) setSelectedAssetId(normalizedCard.referenceAssetIds[0]);
-      if (!stayInCreator) setScreen("creation");
+      if (!stayInCreator) {
+        clearCreationSession();
+        setResumableSession(undefined);
+        setScreen("creation");
+      }
       const missing = detail ? evaluateCharacterCoverage(detail, guidePurpose, selection).missingRequiredKeys.length : 0;
       if (stayInCreator) {
         setNotice("方案已保存，可继续调整；点击“进入创作台”后再创建候选。");
@@ -3852,8 +3877,8 @@ export default function App() {
     setScreen("start");
   };
 
-  const applyCharacterCreationDraft = (draft: CharacterCreationDraft) => {
-    setCreationLaunchKind("character");
+  const applyCharacterCreationDraft = (draft: Omit<CharacterCreationDraft, "version" | "updatedAt">, kind: CreationLaunchKind = "character") => {
+    setCreationLaunchKind(kind);
     setGuideMode(draft.sourceMode);
     setGuidePresetId(draft.presetId);
     setGuideDirection(draft.direction);
@@ -3875,7 +3900,7 @@ export default function App() {
     setGuideCustomTrackers(draft.customTrackers.map((tracker) => ({ ...tracker, options: [...tracker.options] })));
     setGuidePurpose(draft.purpose);
     setQualityTier(draft.qualityTier);
-    setRestoredCharacterDraftAt(draft.updatedAt);
+    setRestoredCharacterDraftAt("updatedAt" in draft && typeof draft.updatedAt === "string" ? draft.updatedAt : new Date().toISOString());
     setScreen("start");
     setNotice("");
   };
@@ -3908,6 +3933,16 @@ export default function App() {
   };
 
   const startCreationFlow = (kind: CreationLaunchKind) => {
+    const session = loadCreationSession();
+    if (session?.kind === kind) {
+      applyCharacterCreationDraft(session.draft, kind);
+      setCreationCandidateCount(session.candidateCount);
+      setSeriesCandidatePlan(session.seriesPlan.map((item) => ({ ...item })));
+      setGuideStoryPlan({ ...session.storyPlan });
+      setGenerationSeed(session.generationSeed);
+      setNotice(`已恢复“${creationKindLabel[kind]}”的上次选择。`);
+      return;
+    }
     if (kind === "character") {
       const draft = loadCharacterCreationDraft();
       if (draft) {
@@ -3988,6 +4023,11 @@ export default function App() {
           referenceCount={selectableImages.length}
           onSelect={startCreationFlow}
           onExit={() => setScreen("workspace")}
+          resume={resumableSession ? {
+            kindLabel: creationKindLabel[resumableSession.kind],
+            updatedAt: resumableSession.updatedAt,
+            onResume: () => startCreationFlow(resumableSession.kind),
+          } : undefined}
         />
       )}
       {screen === "start" && (

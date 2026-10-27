@@ -3536,3 +3536,14 @@ button:active { transform: translateY(1px); }
 .candidate-provenance summary { cursor: pointer; color: var(--ink-muted); font-size: 10px; font-weight: 700; }
 .candidate-provenance p { margin: 6px 0 2px; color: var(--ink-muted); font-size: 10px; line-height: 1.5; }
 .candidate-provenance pre { max-height: 120px; overflow: auto; margin: 2px 0 0; padding: 6px; border-radius: 5px; background: var(--surface); color: var(--ink); font-family: inherit; font-size: 10px; line-height: 1.5; white-space: pre-wrap; }
+
+.creation-resume-banner { display: flex; align-items: center; gap: 10px; margin: -6px 0 18px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink-muted); font-size: 11px; }
+.creation-resume-banner strong { color: var(--ink); font-size: 13px; }
+.creation-resume-banner > span:nth-of-type(2) { margin-right: auto; }
+.creation-resume-pill { padding: 3px 7px; border-radius: 5px; background: var(--accent-soft); color: var(--accent-strong); font-weight: 700; }
+.creation-resume-banner button { min-height: 36px; padding: 0 16px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+@media (max-width: 700px) {
+  .creation-resume-banner { flex-wrap: wrap; }
+  .creation-resume-banner > span:nth-of-type(2) { flex: 1 0 100%; margin-right: 0; }
+  .creation-resume-banner button { min-height: 44px; }
+}
