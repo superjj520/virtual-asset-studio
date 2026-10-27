@@ -5,7 +5,8 @@ import { join } from "node:path";
 
 const app = process.env.SMOKE_APP ?? "release/虚拟资产创作工作台-darwin-arm64/虚拟资产创作工作台.app/Contents/MacOS/虚拟资产创作工作台";
 const port = 9338;
-const userData = mkdtempSync(join(tmpdir(), "vas-smoke-"));
+const userData = process.env.SMOKE_USERDATA ?? mkdtempSync(join(tmpdir(), "vas-smoke-"));
+const phase = process.env.SMOKE_PHASE ?? "create";
 const child = spawn(app, [`--user-data-dir=${userData}`, `--remote-debugging-port=${port}`], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "" }, stdio: "ignore" });
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function target() {
@@ -43,6 +44,23 @@ try {
     await sleep(500);
   }
   if (cards !== 4) throw new Error(`创作中心入口卡数量应为 4，实际 ${cards}；页面：${await evaluate("location.href")}`);
+  if (phase === "verify") {
+    await evaluate(`(() => { const b=[...document.querySelectorAll("button")].find(x=>x.textContent.includes("新建创作任务")); b?.click(); return !!b; })()`);
+    await sleep(600);
+    let resumed = "";
+    for (let i = 0; i < 20; i++) {
+      resumed = await evaluate(`document.body.innerText.slice(0, 1600)`);
+      if (resumed.includes("继续上次创作")) break;
+      await sleep(400);
+    }
+    if (!resumed.includes("继续上次创作")) throw new Error("启动页没有继续上次创作入口：" + resumed.slice(0, 300));
+    const resumedClicked = await evaluate(`(() => { const b=[...document.querySelectorAll("button")].find(x=>x.textContent.trim()==="继续" || x.textContent.includes("继续上次创作")); b?.click(); return !!b; })()`);
+    if (!resumedClicked) throw new Error("继续上次创作入口不可点击");
+    await sleep(900);
+    const restored = await evaluate(`document.body.innerText.slice(0, 1600)`);
+    if (!restored.includes("已恢复上次进度") && !restored.includes("选主体和画面")) throw new Error("恢复后没有回到原创作阶段：" + restored.slice(0, 160));
+    console.log("打包 App 冒烟通过：4 个入口，重启后可恢复上次创作");
+  } else {
   const clicked = await evaluate(`(() => { const b=[...document.querySelectorAll(".creation-launch-card")].find(x=>x.getAttribute("aria-label")==="单张画面"); b?.click(); return !!b; })()`);
   if (!clicked) throw new Error("没有找到单张画面入口");
   let text = "";
@@ -52,10 +70,13 @@ try {
     await sleep(400);
   }
   if (!text.includes("选主体和画面") && !text.includes("单张画面")) throw new Error(`进入单张创作后没有识别到标题：${text.slice(0, 120)}`);
-  console.log("打包 App 冒烟通过：4 个入口，可进入单张创作");
+  await evaluate(`(() => { const b=[...document.querySelectorAll("button")].find(x=>x.textContent.trim().startsWith("下一步 · ")); b?.click(); return !!b; })()`);
+  await sleep(900);
+  console.log(`打包 App 冒烟通过：4 个入口，可进入单张创作；USERDATA=${userData}`);
+  }
 } finally {
   try { ws?.close(); } catch {}
   child.kill("SIGTERM");
   await sleep(800);
-  rmSync(userData, { recursive: true, force: true });
+  if (!process.env.SMOKE_USERDATA) rmSync(userData, { recursive: true, force: true });
 }
