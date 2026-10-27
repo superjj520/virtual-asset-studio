@@ -1416,6 +1416,24 @@ export default function App() {
   };
 
   const selectedAsset = assets.find((asset) => asset.id === selectedAssetId);
+  const startCreationFromSelectedAsset = () => {
+    if (!selectedAsset) return;
+    const width = Number(selectedAsset.metadata.width);
+    const height = Number(selectedAsset.metadata.height);
+    clearCreationSession();
+    setResumableSession(undefined);
+    setCreationLaunchKind("image");
+    setGuideMode("reference");
+    setGuideReferenceAssetId(selectedAsset.id);
+    setGuideDirection("portrait");
+    setGuideAspectRatio(
+      width && height
+        ? width === height ? "1:1" : width > height ? "16:9" : "2:3"
+        : "2:3",
+    );
+    setScreen("start");
+    setNotice(`已用「${selectedAsset.name}」作为参考图开始新创作。`);
+  };
   const selectedGeneration = (() => {
     const value = selectedAsset?.metadata.generation;
     return value && typeof value === "object" && !Array.isArray(value)
@@ -4889,6 +4907,7 @@ export default function App() {
               </details>}
               {selectedCollection && <div className="collection-attach-controls"><label>归档到模块<select value={selectedCollectionModuleKey} onChange={(event) => setSelectedCollectionModuleKey(event.target.value)}>{getAssetCollectionBlueprint(selectedCollection.kind).modules.map((module) => <option value={module.key} key={module.key}>{module.required ? "必需 · " : "可选 · "}{module.label}</option>)}</select></label><label>本素材说明（可选）<input value={selectedCollectionMemberNotes} onChange={(event) => setSelectedCollectionMemberNotes(event.target.value)} placeholder="例如：只作为正面脸部证据，不作为最终母版" /></label></div>}
               <div className="form-actions">
+                <button onClick={startCreationFromSelectedAsset}>用此资产开始创作</button>
                 <button onClick={() => void reviewAsset("confirmed")}>
                   确认画面
                 </button>
