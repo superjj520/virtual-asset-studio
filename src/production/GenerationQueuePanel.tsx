@@ -41,8 +41,10 @@ export function GenerationQueuePanel({ jobs, retryingJobIds, onRefresh, onRetry,
     const card = document.querySelector(`[data-job-id="${focusedJobId}"]`);
     card?.scrollIntoView?.({ block: "center" });
   }, [focusedJobId]);
+  const activeCount = jobs.filter((candidate) => candidate.status === "queued" || candidate.status === "in_progress").length;
   return (
-    <section className="generation-queue" aria-label="生成任务列表">
+    <section className="generation-queue" aria-label="生成任务列表" aria-busy={activeCount > 0}>
+      <span className="sr-only" role="status">{activeCount > 0 ? `队列中还有 ${activeCount} 个任务正在处理` : "生成队列已更新"}</span>
       {!jobs.length && (
         <div className="empty-state">
           <strong>没有生成任务</strong>

@@ -3558,3 +3558,5 @@ button:active { transform: translateY(1px); }
 .app-error-boundary strong { display: block; margin-bottom: 8px; font-size: 20px; }
 .app-error-boundary p { margin: 0 0 10px; color: var(--ink-muted); line-height: 1.7; }
 .app-error-boundary small { display: block; margin-bottom: 16px; color: var(--danger); word-break: break-word; }
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

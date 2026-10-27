@@ -61,3 +61,9 @@ it("模型未配置时不提供一键重试", () => {
   expect(screen.getByText(/不会提供一键重试/)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "按原请求重试" })).not.toBeInTheDocument();
 });
+
+it("队列处理中通过 aria-busy 与状态区播报", () => {
+  render(<GenerationQueuePanel jobs={[job({ status: "in_progress" })]} retryingJobIds={new Set()} onRefresh={vi.fn()} onRetry={vi.fn()} />);
+  expect(screen.getByLabelText("生成任务列表")).toHaveAttribute("aria-busy", "true");
+  expect(screen.getAllByRole("status").some((node) => node.textContent === "队列中还有 1 个任务正在处理")).toBe(true);
+});
