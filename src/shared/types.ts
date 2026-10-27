@@ -292,17 +292,36 @@ export const normalizeCreativeAspectRatio = (value: unknown): CreativeAspectRati
   return "1:1";
 };
 
-export type ImageGenerationSize = "1024x1024" | "1024x1536" | "1536x1024";
+export type ImageGenerationSize =
+  | "1024x1024"
+  | "1024x1536"
+  | "1536x1024"
+  | "1536x1152"
+  | "864x1536"
+  | "1536x864";
 
-/** 当前图片适配器统一支持的尺寸；请求仍保留用户选择的目标画幅，便于后续裁切或换模型。 */
+/** 每种画幅对应一个可被供应商识别的真实像素尺寸，不再把 9:16 / 4:3 偷换成 2:3 / 3:2。 */
 export const imageSizeForAspectRatio = (aspectRatio: CreativeAspectRatio): ImageGenerationSize => {
   if (aspectRatio === "1:1") return "1024x1024";
-  if (aspectRatio === "2:3" || aspectRatio === "9:16") return "1024x1536";
-  return "1536x1024";
+  if (aspectRatio === "2:3") return "1024x1536";
+  if (aspectRatio === "3:2") return "1536x1024";
+  if (aspectRatio === "4:3") return "1536x1152";
+  if (aspectRatio === "9:16") return "864x1536";
+  return "1536x864";
 };
 
-export const aspectRatioForImageSize = (size: ImageGenerationSize): "1:1" | "2:3" | "3:2" =>
-  size === "1024x1024" ? "1:1" : size === "1024x1536" ? "2:3" : "3:2";
+export const aspectRatioForImageSize = (size: ImageGenerationSize): CreativeAspectRatio => {
+  if (size === "1024x1024") return "1:1";
+  if (size === "1024x1536" || size === "864x1536") return size === "864x1536" ? "9:16" : "2:3";
+  if (size === "1536x1152") return "4:3";
+  if (size === "1536x864") return "16:9";
+  return "3:2";
+};
+
+export const dimensionsForImageSize = (size: ImageGenerationSize) => {
+  const [width, height] = size.split("x").map(Number);
+  return { width, height };
+};
 
 /** 参考图不是同一种用途：角色身份、服装与场景必须能被独立追踪。 */
 export type ReferenceAssetRole =
@@ -443,6 +462,8 @@ export type CreativeCard = {
   referenceBindings?: ReferenceAssetBinding[];
   /** 用户在系列规划中确认的镜头顺序与生成策略。 */
   candidatePlan?: CreativeCandidatePlanItem[];
+  /** 已采用、允许进入后续生产的系列镜头标签；仅 series_pack 使用。 */
+  productionShotLabels?: string[];
   /** 角色塑造入口确认的结构化人物内核。 */
   characterCore?: CreativeCharacterCore;
   /** 角色塑造入口确认的结构化外观选择。 */
@@ -792,6 +813,10 @@ export type GenerationVariant = {
   jobId?: string;
   assetId?: string;
   error?: string;
+  /** 模型实际返回图片后，按实际像素计费的对账金额。 */
+  actualCostUsd?: number;
+  actualWidth?: number;
+  actualHeight?: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -802,11 +827,15 @@ export type GenerationBatch = {
   creativeTaskId?: string;
   name: string;
   providerId: ProviderId;
+  /** 创建批次时显式选择的生成模型；为空表示沿用默认路由。 */
+  modelId?: string;
   aspectRatio: CreativeCard["aspectRatio"];
   /** 批量候选继承的参考链，所有变体都必须使用同一组身份锚点。 */
   referenceAssetIds: string[];
   referenceBindings: ReferenceAssetBinding[];
   estimatedCostUsd?: number;
+  /** 已完成变体的实际费用合计；未执行或未计费时为空。 */
+  actualCostUsd?: number;
   status: GenerationBatchStatus;
   variants: GenerationVariant[];
   createdAt: string;

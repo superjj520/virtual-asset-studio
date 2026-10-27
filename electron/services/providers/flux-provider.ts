@@ -1,3 +1,4 @@
+import { dimensionsForImageSize, type ImageGenerationSize } from "../../../src/shared/types";
 export type FluxProviderOptions = { apiKey: () => string | undefined };
 import { fetchProvider } from "./request";
 
@@ -18,8 +19,8 @@ export class FluxProvider {
     return response;
   }
 
-  async generateImage(input: { prompt: string; size: '1024x1024' | '1024x1536' | '1536x1024' }): Promise<Buffer> {
-    const [width, height] = input.size === '1024x1536' ? [960, 1440] : input.size === '1536x1024' ? [1440, 960] : [1024, 1024];
+  async generateImage(input: { prompt: string; size: ImageGenerationSize }): Promise<Buffer> {
+    const { width, height } = dimensionsForImageSize(input.size);
     const created = await this.call('/flux-pro-1.1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: input.prompt, width, height, output_format: 'png' }) });
     const task = await created.json() as FluxRequest;
     if (!task.polling_url) throw new Error('FLUX 未返回可查询的生成任务。');

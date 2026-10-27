@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { fetchProvider } from "./request";
+import { buildFalImageRequest, FAL_FLUX_SCHNELL_MODEL, type GenerationSize } from "../../../src/shared/generation-requests";
 
 type FalImage = { url?: string; content_type?: string; data?: string };
 type FalResponse = { images?: FalImage[]; image?: FalImage };
@@ -14,10 +15,8 @@ export class FalRemoteTaskError extends Error {
   constructor(message: string, readonly remoteTask: FalRemoteTask) { super(message); this.name = "FalRemoteTaskError"; }
 }
 
-const generationModel = "fal-ai/flux/schnell";
 const editModel = "fal-ai/flux-kontext/dev";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const dimensions = (size: "1024x1024" | "1024x1536" | "1536x1024") => size === "1024x1536" ? { width: 1024, height: 1536 } : size === "1536x1024" ? { width: 1536, height: 1024 } : { width: 1024, height: 1024 };
 
 export class FalProvider {
   readonly id = "fal" as const;
@@ -69,16 +68,17 @@ export class FalProvider {
 
   async pollImage(remoteTask: FalRemoteTask): Promise<Buffer> { return this.pollTask(remoteTask); }
 
-  async generateImageWithTask(input: { prompt: string; size: "1024x1024" | "1024x1536" | "1536x1024"; quality?: "medium" | "high"; onRemoteTask?: (task: FalRemoteTask) => void }): Promise<FalImageResult> {
-    return this.submit(generationModel, { prompt: input.prompt, image_size: dimensions(input.size), num_inference_steps: 4, num_images: 1, output_format: "png", enable_safety_checker: true }, input.onRemoteTask);
+  async generateImageWithTask(input: { prompt: string; negative?: string; size: GenerationSize; model?: string; seed?: number; quality?: "medium" | "high"; onRemoteTask?: (task: FalRemoteTask) => void }): Promise<FalImageResult> {
+    const model = input.model ?? FAL_FLUX_SCHNELL_MODEL;
+    return this.submit(model, buildFalImageRequest({ prompt: input.prompt, negative: input.negative, size: input.size, model, seed: input.seed }), input.onRemoteTask);
   }
-  async generateImage(input: { prompt: string; size: "1024x1024" | "1024x1536" | "1536x1024"; quality?: "medium" | "high" }): Promise<Buffer> { return (await this.generateImageWithTask(input)).image; }
+  async generateImage(input: { prompt: string; negative?: string; size: GenerationSize; model?: string; seed?: number; quality?: "medium" | "high" }): Promise<Buffer> { return (await this.generateImageWithTask(input)).image; }
 
-  async refineImageWithTask(input: { prompt: string; size: "1024x1024" | "1024x1536" | "1536x1024"; referencePath: string; referenceMediaType: string; onRemoteTask?: (task: FalRemoteTask) => void }): Promise<FalImageResult> {
+  async refineImageWithTask(input: { prompt: string; size: GenerationSize; referencePath: string; referenceMediaType: string; onRemoteTask?: (task: FalRemoteTask) => void }): Promise<FalImageResult> {
     const reference = await readFile(input.referencePath);
     return this.submit(editModel, { prompt: input.prompt, image_url: `data:${input.referenceMediaType};base64,${reference.toString("base64")}`, resolution_mode: "match_input", num_images: 1, output_format: "png", enable_safety_checker: true }, input.onRemoteTask);
   }
-  async refineImage(input: { prompt: string; size: "1024x1024" | "1024x1536" | "1536x1024"; referencePath: string; referenceMediaType: string }): Promise<Buffer> { return (await this.refineImageWithTask(input)).image; }
+  async refineImage(input: { prompt: string; size: GenerationSize; referencePath: string; referenceMediaType: string }): Promise<Buffer> { return (await this.refineImageWithTask(input)).image; }
 }
 
 const decodeDataUri = (value: string): Buffer => {
