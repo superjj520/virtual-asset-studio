@@ -21,6 +21,13 @@ if (!existsSync(executablePath) || !statSync(executablePath).isFile()) {
   throw new Error(`发布校验失败：Info.plist 指向的主程序不存在：${executablePath}`);
 }
 accessSync(executablePath, constants.X_OK);
+if (statSync(executablePath).size < 1024) throw new Error(`发布校验失败：主程序文件异常小：${executablePath}`);
+
+const frameworks = join(expectedApp, 'Contents', 'Frameworks');
+if (!existsSync(join(frameworks, 'Electron Framework.framework'))) throw new Error('发布校验失败：缺少 Electron Framework。');
+const resourcesApp = join(expectedApp, 'Contents', 'Resources', 'app');
+if (!existsSync(join(resourcesApp, 'package.json'))) throw new Error('发布校验失败：缺少 Resources/app/package.json。');
+if (!existsSync(join(resourcesApp, 'dist', 'renderer', 'index.html'))) throw new Error('发布校验失败：缺少渲染层入口。');
 
 const releaseEntries = readdirSync(releaseRoot, { withFileTypes: true });
 const parallelAppDirectories = releaseEntries
