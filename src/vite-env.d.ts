@@ -228,6 +228,8 @@ interface Window {
         creativeTaskId?: string;
         aspectRatio: import("./shared/types").CreativeCard["aspectRatio"];
         modelId?: string;
+        seed?: number;
+        qualityTier?: "draft" | "standard" | "high";
         referenceAssetIds?: string[];
         referenceBindings?: import("./shared/types").ReferenceAssetBinding[];
         variants: Array<{ label: string; prompt: string }>;

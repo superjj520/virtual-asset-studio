@@ -638,6 +638,8 @@ export default function App() {
   const [batchVariables, setBatchVariables] = useState(
     "夜晚城市街头\n清晨酒店走廊\n雨后玻璃温室",
   );
+  const [batchSeed, setBatchSeed] = useState("");
+  const [batchQualityTier, setBatchQualityTier] = useState<"draft" | "standard" | "high">("standard");
 
   const refresh = useCallback(async () => {
     const projectId = selectedProjectId;
@@ -2573,11 +2575,18 @@ export default function App() {
       return;
     }
     try {
+      const seedValue = batchSeed.trim() ? Number(batchSeed) : undefined;
+      if (seedValue !== undefined && (!Number.isInteger(seedValue) || seedValue < 0 || seedValue > 4294967295)) {
+        setNotice("随机种子必须是 0–4294967295 的整数。");
+        return;
+      }
       const batch = await window.studio.batches.create({
         name: batchName,
         projectId: selectedProjectId || undefined,
         creativeTaskId: activeTaskId,
         modelId: effectiveGenerationModelId,
+        seed: seedValue,
+        qualityTier: batchQualityTier,
         aspectRatio: card.aspectRatio,
         referenceAssetIds: card.referenceAssetIds,
         referenceBindings: card.referenceBindings,
@@ -5901,6 +5910,20 @@ export default function App() {
                 onChange={(event) => setBatchVariables(event.target.value)}
               />
             </label>
+            <div className="batch-generation-settings">
+              <label>
+                批次画质
+                <select value={batchQualityTier} onChange={(event) => setBatchQualityTier(event.target.value as "draft" | "standard" | "high")}>
+                  <option value="draft">快速</option>
+                  <option value="standard">标准</option>
+                  <option value="high">高质量</option>
+                </select>
+              </label>
+              <label>
+                批次种子
+                <input inputMode="numeric" placeholder="留空随机" value={batchSeed} onChange={(event) => setBatchSeed(event.target.value)} />
+              </label>
+            </div>
             <div className="form-actions">
               <button
                 className="primary-button"
