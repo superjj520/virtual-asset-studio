@@ -68,7 +68,20 @@ try {
     cpSync(staging, join(fallbackDirectory, appName, "Contents", "Resources", "app"), { recursive: true, dereference: true });
     console.warn(`未找到 Electron ${electronVersion} 缓存，已复用现有 Mac 外壳完成离线覆盖。`);
   } else {
-    throw new Error(`未找到 Electron ${electronVersion} 的本地 ZIP，且没有可复用的当前 App；请联网恢复 Electron 缓存后再打包。`);
+    const electronApp = join(root, "node_modules", "electron", "dist", "Electron.app");
+    if (!existsSync(electronApp)) {
+      throw new Error(`未找到 Electron ${electronVersion} 的本地 ZIP，也没有可复用的 Electron.app。`);
+    }
+    cpSync(electronApp, stagingApp, { recursive: true, dereference: true });
+    renameSync(join(stagingApp, "Contents", "MacOS", "Electron"), join(stagingApp, "Contents", "MacOS", "虚拟资产创作工作台"));
+    rmSync(join(stagingApp, "Contents", "Resources", "default_app.asar"), { force: true });
+    cpSync(staging, join(stagingApp, "Contents", "Resources", "app"), { recursive: true, dereference: true });
+    const plist = join(stagingApp, "Contents", "Info.plist");
+    run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleExecutable 虚拟资产创作工作台", plist]);
+    run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleName 虚拟资产创作工作台", plist]);
+    run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleDisplayName 虚拟资产创作工作台", plist]);
+    run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleIdentifier com.superjj.virtualassetstudio", plist]);
+    console.warn("未找到 Electron ZIP 缓存，已用 node_modules/electron/dist/Electron.app 组装正式 App。");
   }
   run("codesign", ["--force", "--deep", "--sign", "-", stagingApp]);
 
