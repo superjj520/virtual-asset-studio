@@ -3,11 +3,20 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { appendFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import net from 'node:net';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rendererPath = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 const rendererDirectoryUrl = pathToFileURL(path.dirname(rendererPath) + path.sep).href;
-const configureExistingMacProxy = () => {
+const canConnect = (host, port) => new Promise((resolve) => {
+  const socket = net.connect({ host, port });
+  const done = (value) => { socket.destroy(); resolve(value); };
+  socket.setTimeout(600);
+  socket.once('connect', () => done(true));
+  socket.once('timeout', () => done(false));
+  socket.once('error', () => done(false));
+});
+const configureExistingMacProxy = async () => {
   if (process.env.NODE_USE_ENV_PROXY === '1' || process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.ALL_PROXY)
     return;
   if (process.platform !== 'darwin') return;
@@ -17,6 +26,7 @@ const configureExistingMacProxy = () => {
     const host = proxy.match(/HTTPSProxy\s*:\s*(\S+)/)?.[1] ?? proxy.match(/HTTPProxy\s*:\s*(\S+)/)?.[1];
     const port = proxy.match(/HTTPSPort\s*:\s*(\d+)/)?.[1] ?? proxy.match(/HTTPPort\s*:\s*(\d+)/)?.[1];
     if (enabled && host && port) {
+      if (!(await canConnect(host, Number(port)))) return;
       const endpoint = `http://${host}:${port}`;
       process.env.HTTPS_PROXY = endpoint;
       process.env.HTTP_PROXY = endpoint;
@@ -26,7 +36,7 @@ const configureExistingMacProxy = () => {
     // 代理探测失败时保持直连，连接状态由设置页显示。
   }
 };
-configureExistingMacProxy();
+await configureExistingMacProxy();
 const startupLog = (message) => {
   try { appendFileSync(path.join(app.getPath('userData'), 'startup-diagnostics.log'), `[${new Date().toISOString()}] ${message}\n`, 'utf8'); } catch { /* 诊断失败不应阻断启动 */ }
 };
