@@ -17,7 +17,7 @@ type GenerationModelPickerProps = {
 };
 
 const formatCost = (value: number | undefined) =>
-  value === undefined ? "按量计费" : `约 $${value.toFixed(3)}/张`;
+  value === undefined ? "按量计费" : `官方估算 $${value.toFixed(3)}/张`;
 
 export function GenerationModelPicker({
   providers,
@@ -74,6 +74,9 @@ export function GenerationModelPicker({
       </small>
       {preflight.model?.qualityMode === "fixed" && <small className="generation-model-quality-note">
         固定输出：切换画质档不会改变请求像素。
+      </small>}
+      {preflight.model?.providerId === "fal" && <small className="generation-model-quality-note">
+        实际扣费以 fal 账单为准；当前只显示官方单价估算。
       </small>}
     </div>
   );
