@@ -1,5 +1,6 @@
 export type GenerationErrorKind =
   | "missing_configuration"
+  | "auth_failed"
   | "quota_exhausted"
   | "rate_limited"
   | "safety_blocked"
@@ -21,12 +22,23 @@ export type GenerationErrorInfo = {
 
 const RULES: Array<{ pattern: RegExp; info: GenerationErrorInfo }> = [
   {
-    pattern: /未配置|api key|api 密钥|unauthorized|401|invalid api key/i,
+    pattern: /未配置|api key 未配置|api 密钥未配置|not configured/i,
     info: {
       kind: "missing_configuration",
       title: "模型未配置",
       detail: "当前模型对应的服务还没有保存密钥。",
       action: "到设置 → 模型连接保存密钥后再试。",
+      retryable: false,
+      safeToRetry: true,
+    },
+  },
+  {
+    pattern: /401|unauthorized|forbidden|authentication required|invalid api key|permission|无权限|鉴权失败/i,
+    info: {
+      kind: "auth_failed",
+      title: "密钥无效或无权限",
+      detail: "服务拒绝了这次认证，通常不是模型未配置，而是密钥无效、被禁用或账号没有该模型权限。",
+      action: "到设置 → 模型连接重新保存该服务的 Key，并确认账号已开通对应模型权限；不要连续重试。",
       retryable: false,
       safeToRetry: true,
     },

@@ -23,7 +23,7 @@ describe("classifyGenerationError", () => {
 
   it("配置缺失可安全重试但不应自动重试", () => {
     const info = classifyGenerationError("401 unauthorized");
-    expect(info.kind).toBe("missing_configuration");
+    expect(info.kind).toBe("auth_failed");
     expect(info.retryable).toBe(false);
     expect(info.safeToRetry).toBe(true);
   });
