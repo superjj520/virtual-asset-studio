@@ -15,9 +15,10 @@ type Props = {
   onClear: () => void;
   onOpen: (assetId: string) => void;
   onSelect?: (assetId: string) => void;
+  selectedId?: string;
 };
 
-export function CandidateComparePanel({ items, renderAsset, onClear, onOpen, onSelect }: Props) {
+export function CandidateComparePanel({ items, renderAsset, onClear, onOpen, onSelect, selectedId }: Props) {
   if (items.length < 2) return null;
   return (
     <section className="candidate-compare" aria-label="候选横向比较">
@@ -27,10 +28,10 @@ export function CandidateComparePanel({ items, renderAsset, onClear, onOpen, onS
       </div>
       <div className="candidate-compare-grid">
         {items.map(({ asset, label, prompt, job }) => (
-          <article key={asset.id}>
+          <article key={asset.id} className={asset.id === selectedId ? "selected" : ""}>
             {renderAsset(asset)}
             <div className="candidate-compare-content">
-              <strong>{label}</strong>
+              <strong>{label}{asset.id === selectedId && <span className="candidate-current-badge">当前</span>}</strong>
               {job ? (
                 <div className="candidate-provenance" aria-label={`${label}的生成来源`}>
                   <span>{job.providerId}</span>

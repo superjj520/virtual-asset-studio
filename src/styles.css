@@ -3599,3 +3599,5 @@ button:active { transform: translateY(1px); }
   .candidate-compare-actions { grid-template-columns: minmax(0, 1fr); }
   .candidate-compare-actions button { width: 100%; min-height: 44px; }
 }
+.candidate-compare article.selected { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
+.candidate-current-badge { display: inline-flex; margin-left: 8px; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 9px; vertical-align: middle; }

@@ -51,6 +51,20 @@ it("可从对比结果直接选为当前候选", () => {
   expect(select).toHaveBeenCalledWith("b");
 });
 
+it("对比卡标记当前候选", () => {
+  render(<CandidateComparePanel
+    items={[
+      { asset: asset("a"), label: "候选 A", prompt: "暖光", job: job("job-a123456") },
+      { asset: asset("b"), label: "候选 B", prompt: "冷光", job: job("job-b123456") },
+    ]}
+    renderAsset={() => null}
+    onClear={vi.fn()}
+    onOpen={vi.fn()}
+    selectedId="b"
+  />);
+  expect(screen.getByText("当前")).toBeInTheDocument();
+});
+
 it("缺少生成作业时明确标记来源缺失", () => {
   render(<CandidateComparePanel
     items={[
