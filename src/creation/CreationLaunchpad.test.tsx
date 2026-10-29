@@ -21,6 +21,25 @@ describe("CreationLaunchpad", () => {
     expect(onSelect).toHaveBeenCalledWith("series");
   });
 
+  it("恢复条可以继续，也可以清除旧进度重新开始", () => {
+    const onResume = vi.fn();
+    const onDiscard = vi.fn();
+    render(<CreationLaunchpad
+      characterCount={0}
+      sceneCount={0}
+      referenceCount={0}
+      onSelect={vi.fn()}
+      onExit={vi.fn()}
+      resume={{ kindLabel: "单张画面", updatedAt: new Date().toISOString(), onResume }}
+      onDiscardResume={onDiscard}
+    />);
+    expect(screen.getByText("继续上次创作")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    expect(onResume).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "重新开始" }));
+    expect(onDiscard).toHaveBeenCalledTimes(1);
+  });
+
   it("嵌入创作首页时不显示退出按钮，并可进入项目与历史", () => {
     const onExit = vi.fn();
     const { container } = render(<CreationLaunchpad embedded characterCount={0} sceneCount={0} referenceCount={0} onSelect={vi.fn()} onExit={onExit} />);

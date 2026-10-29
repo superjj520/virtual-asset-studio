@@ -3591,3 +3591,5 @@ button:active { transform: translateY(1px); }
 }
 .candidate-compare-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .candidate-compare-actions button { min-height: 36px; }
+.creation-resume-discard { border: 1px solid var(--line); background: transparent; color: var(--ink-muted); }
+.creation-resume-discard:hover { color: var(--ink); border-color: var(--ink-muted); }

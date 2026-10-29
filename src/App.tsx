@@ -4129,6 +4129,7 @@ export default function App() {
             updatedAt: resumableSession.updatedAt,
             onResume: () => { void resumeCreationSession(resumableSession); },
           } : undefined}
+          onDiscardResume={() => { clearCreationSession(); setResumableSession(undefined); setNotice("已清除上次创作，请选择新的起点。"); }}
         />
       )}
       {screen === "start" && (

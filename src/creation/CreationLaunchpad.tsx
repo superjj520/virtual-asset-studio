@@ -13,6 +13,7 @@ type CreationLaunchpadProps = {
   onExit: () => void;
   onOpenAssets?: () => void;
   embedded?: boolean;
+  onDiscardResume?: () => void;
   resume?: { kindLabel: string; updatedAt: string; onResume: () => void };
 };
 
@@ -53,7 +54,7 @@ const LAUNCH_OPTIONS: Array<{
   },
 ];
 
-export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, onSelect, onExit, onOpenAssets, embedded = false, resume }: CreationLaunchpadProps) {
+export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, onSelect, onExit, onOpenAssets, embedded = false, resume, onDiscardResume }: CreationLaunchpadProps) {
   return <section className={`creation-launchpad${embedded ? " creation-launchpad-embedded" : ""}`} aria-label="新建创作">
     <header className="creation-launchpad-header">
       {!embedded && <button type="button" className="creator-exit" onClick={onExit} aria-label="退出新建创作">←</button>}
@@ -77,6 +78,7 @@ export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, 
       <strong>{resume.kindLabel}</strong>
       <span>上次保存在 {new Date(resume.updatedAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
       <button type="button" onClick={resume.onResume}>继续</button>
+      {onDiscardResume && <button type="button" className="creation-resume-discard" onClick={onDiscardResume}>重新开始</button>}
     </div>}
     <div className="creation-launch-grid">
       {LAUNCH_OPTIONS.map((option, index) => <button
