@@ -3593,3 +3593,9 @@ button:active { transform: translateY(1px); }
 .candidate-compare-actions button { min-height: 36px; }
 .creation-resume-discard { border: 1px solid var(--line); background: transparent; color: var(--ink-muted); }
 .creation-resume-discard:hover { color: var(--ink); border-color: var(--ink-muted); }
+@media (max-width: 700px) {
+  .candidate-compare { padding: 12px; }
+  .candidate-compare-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .candidate-compare-actions { grid-template-columns: minmax(0, 1fr); }
+  .candidate-compare-actions button { width: 100%; min-height: 44px; }
+}
