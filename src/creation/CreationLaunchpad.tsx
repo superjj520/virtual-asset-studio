@@ -68,6 +68,10 @@ export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, 
         <span><b>{referenceCount}</b> 参考</span>
       </div>
     </header>
+    {!resume && !characterCount && !sceneCount && !referenceCount && <div className="creation-first-run" role="note">
+      <strong>第一次使用</strong>
+      <span>先选一个结果；不需要先建项目，也不会自动上传素材。</span>
+    </div>}
     {resume && <div className="creation-resume-banner" role="status">
       <span className="creation-resume-pill">继续上次创作</span>
       <strong>{resume.kindLabel}</strong>

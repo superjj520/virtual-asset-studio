@@ -27,6 +27,8 @@ describe("CreationLaunchpad", () => {
 
     expect(screen.getByRole("heading", { name: "现在想做什么？" })).toBeInTheDocument();
     expect(container.querySelector('[aria-label="退出新建创作"]')).toBeNull();
+    expect(screen.getByText("第一次使用")).toBeInTheDocument();
+    expect(screen.getByText(/不需要先建项目/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "项目与历史" }));
     expect(onExit).toHaveBeenCalledTimes(1);
   });

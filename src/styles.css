@@ -3572,3 +3572,20 @@ button:active { transform: translateY(1px); }
   .creation-launchpad-links { width: 100%; flex-direction: column; align-items: stretch; }
   .creation-launchpad-links button { width: 100%; }
 }
+.creation-first-run {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  border: 1px solid rgba(47, 111, 237, .18);
+  border-radius: 10px;
+  background: rgba(47, 111, 237, .055);
+  color: #5b6272;
+  font-size: 11px;
+}
+.creation-first-run strong { color: #2f6fed; font-size: 11px; white-space: nowrap; }
+@media (max-width: 700px) {
+  .creation-first-run { align-items: flex-start; margin-bottom: 10px; }
+}
