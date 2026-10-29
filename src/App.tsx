@@ -1527,6 +1527,9 @@ export default function App() {
     aspectLabel: job ? `画幅 ${jobAspectSummary(job)}` : undefined,
     referenceLabel: job ? jobReferenceSummary(job) : undefined,
     versionLabel: job ? `版本 ${job.id.slice(0, 8)}` : undefined,
+    modelLabel: typeof job?.request.modelId === "string" ? job.request.modelId.replace(/^fal-ai\//, "") : undefined,
+    seedLabel: typeof job?.request.seed === "number" ? `种子 ${job.request.seed}` : undefined,
+    costLabel: typeof job?.request.estimatedCostUsd === "number" ? `约 $${job.request.estimatedCostUsd.toFixed(3)}` : undefined,
   }])), [activeTaskCandidateItems, card]);
   const selectedCandidateProvenance = activeTaskCandidateItems.find((item) => item.asset.id === selectedCreationCandidateId);
   const orderedTaskCandidates = useMemo(() => {

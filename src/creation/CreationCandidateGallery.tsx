@@ -20,6 +20,9 @@ export type CandidateDisplayDetail = {
   aspectLabel?: string;
   referenceLabel?: string;
   versionLabel?: string;
+  modelLabel?: string;
+  seedLabel?: string;
+  costLabel?: string;
 };
 
 const statusLabel = (asset: Asset) => {
@@ -81,6 +84,9 @@ export function CreationCandidateGallery({
                     {detail.providerLabel && <span>{detail.providerLabel}</span>}
                     {detail.aspectLabel && <span>{detail.aspectLabel}</span>}
                     {detail.referenceLabel && <span>{detail.referenceLabel}</span>}
+                    {detail.modelLabel && <span>{detail.modelLabel}</span>}
+                    {detail.seedLabel && <span>{detail.seedLabel}</span>}
+                    {detail.costLabel && <span>{detail.costLabel}</span>}
                     {detail.versionLabel && <span>{detail.versionLabel}</span>}
                   </span>}
                 </span>

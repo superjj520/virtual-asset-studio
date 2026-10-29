@@ -61,3 +61,16 @@ describe("CreationCandidateGallery", () => {
     expect(screen.getByText(/需要成图时/)).toBeInTheDocument();
   });
 });
+
+
+describe("CreationCandidateGallery 生成配方", () => {
+  beforeEach(() => {
+    window.studio = { assets: { preview: vi.fn().mockResolvedValue("data:image/png;base64,abc") } } as unknown as typeof window.studio;
+  });
+  it("展示候选的模型、种子和费用", () => {
+    render(<CreationCandidateGallery candidates={[candidate]} selectedId={candidate.id} detailsByAssetId={{ [candidate.id]: { modelLabel: "moss-image", seedLabel: "种子 128", costLabel: "约 $0.066" } }} onSelect={vi.fn()} />);
+    expect(screen.getByText("moss-image")).toBeInTheDocument();
+    expect(screen.getByText("种子 128")).toBeInTheDocument();
+    expect(screen.getByText("约 $0.066")).toBeInTheDocument();
+  });
+});
