@@ -5788,6 +5788,7 @@ export default function App() {
                 renderAsset={(asset) => <AssetVisual asset={asset} />}
                 onClear={() => setCompareAssetIds((current) => current.filter((assetId) => !activeTaskComparisonIds.includes(assetId)))}
                 onOpen={(assetId) => { setSelectedAssetId(assetId); setScreen("review"); }}
+                onSelect={(assetId) => { setSelectedCreationCandidateId(assetId); setSelectedAssetId(assetId); }}
               />
             </div>
           </section>

@@ -35,6 +35,22 @@ it("比较候选时直接展示模型、画幅、参考图与提示词版本", (
   expect(open).toHaveBeenCalledWith("a");
 });
 
+it("可从对比结果直接选为当前候选", () => {
+  const select = vi.fn();
+  render(<CandidateComparePanel
+    items={[
+      { asset: asset("a"), label: "候选 A", prompt: "暖光", job: job("job-a123456") },
+      { asset: asset("b"), label: "候选 B", prompt: "冷光", job: job("job-b123456") },
+    ]}
+    renderAsset={() => null}
+    onClear={vi.fn()}
+    onOpen={vi.fn()}
+    onSelect={select}
+  />);
+  fireEvent.click(screen.getAllByRole("button", { name: "选为当前" })[1]);
+  expect(select).toHaveBeenCalledWith("b");
+});
+
 it("缺少生成作业时明确标记来源缺失", () => {
   render(<CandidateComparePanel
     items={[

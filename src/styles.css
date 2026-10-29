@@ -3589,3 +3589,5 @@ button:active { transform: translateY(1px); }
 @media (max-width: 700px) {
   .creation-first-run { align-items: flex-start; margin-bottom: 10px; }
 }
+.candidate-compare-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.candidate-compare-actions button { min-height: 36px; }
