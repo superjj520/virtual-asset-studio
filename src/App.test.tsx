@@ -757,7 +757,7 @@ it('已确认候选可沉淀为角色资产并回写当前创作任务', async (
   const project = { id: 'project-character', name: '角色项目', medium: 'image', brief: { goal: '', audience: '', visualWorld: '', delivery: '', acceptance: '' } };
   const candidate = {
     id: 'candidate-character', type: 'image', name: '角色候选', managedPath: '/tmp/character.png', sha256: 'character', mediaType: 'image/png',
-    rightsStatus: 'original', confirmation: 'confirmed', metadata: { generatedFromJobId: 'job-character', generation: { providerModel: 'fal-ai/moss-image', aspectRatio: '2:3', seed: 246810, referenceCount: 1, prompt: '月下东方海报' } }, createdAt: '2026-01-01', updatedAt: '2026-01-01',
+    rightsStatus: 'original', confirmation: 'confirmed', metadata: { generatedFromJobId: 'job-character', generation: { characterProfileId: 'character-created', providerModel: 'fal-ai/moss-image', aspectRatio: '2:3', seed: 246810, referenceCount: 1, prompt: '月下东方海报' } }, createdAt: '2026-01-01', updatedAt: '2026-01-01',
   };
   const task = {
     id: 'task-character', projectId: project.id, name: '月下角色定妆', objective: '建立长期角色', status: 'review', collectionIds: [],
@@ -782,6 +782,7 @@ it('已确认候选可沉淀为角色资产并回写当前创作任务', async (
   fireEvent.click(await screen.findByRole('heading', { name: '角色候选' }));
   expect(await screen.findByText('生成来源')).toBeInTheDocument();
   expect(screen.getByText('fal-ai/moss-image')).toBeInTheDocument();
+  expect(screen.getByText('关联角色')).toBeInTheDocument();
   expect(screen.getByText('246810')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: '查看生成队列' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: '创作' }));

@@ -806,6 +806,7 @@ export const createStudioRuntime = (
             tasks.update(batch.creativeTaskId, { status: "producing" });
           const size = imageSizeForAspectRatio(batch.aspectRatio);
           const batchModel = batch.modelId ? findGenerationModel(batch.modelId) : undefined;
+          const batchTask = batch.creativeTaskId ? tasks.get(batch.creativeTaskId) : undefined;
           const references = batch.referenceAssetIds.map((id) => referenceForGeneration(id, batch.projectId));
           for (const item of batch.variants.filter(
             (variant) => variant.status === "planned",
@@ -832,6 +833,8 @@ export const createStudioRuntime = (
                 projectId: batch.projectId,
                 sourceAssetIds: references.length ? [references[0].id] : [],
                 generation: {
+                  characterProfileId: batchTask?.characterProfileId,
+                  sceneProfileId: batchTask?.card.sceneProfileId,
                   modelId: batchModel?.id,
                   providerModel: batchModel?.model,
                   prompt: item.prompt,

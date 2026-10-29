@@ -4947,6 +4947,8 @@ export default function App() {
               {selectedGeneration && <details className="asset-generation-summary" aria-label="生成来源">
                 <summary>生成来源</summary>
                 <dl>
+                  {typeof selectedGeneration.characterProfileId === "string" && <div><dt>关联角色</dt><dd>{characters.find((item) => item.id === selectedGeneration.characterProfileId)?.name ?? selectedGeneration.characterProfileId.slice(0, 8)}</dd></div>}
+                  {typeof selectedGeneration.sceneProfileId === "string" && <div><dt>关联场景</dt><dd>{scenes.find((item) => item.id === selectedGeneration.sceneProfileId)?.name ?? selectedGeneration.sceneProfileId.slice(0, 8)}</dd></div>}
                   {typeof selectedGeneration.providerModel === "string" && <div><dt>模型</dt><dd>{selectedGeneration.providerModel}</dd></div>}
                   {typeof selectedGeneration.aspectRatio === "string" && <div><dt>画幅</dt><dd>{selectedGeneration.aspectRatio}</dd></div>}
                   {typeof selectedGeneration.seed === "number" && <div><dt>随机种子</dt><dd>{selectedGeneration.seed}</dd></div>}
