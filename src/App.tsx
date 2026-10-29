@@ -5789,7 +5789,7 @@ export default function App() {
                 renderAsset={(asset) => <AssetVisual asset={asset} />}
                 onClear={() => setCompareAssetIds((current) => current.filter((assetId) => !activeTaskComparisonIds.includes(assetId)))}
                 onOpen={(assetId) => { setSelectedAssetId(assetId); setScreen("review"); }}
-                onSelect={(assetId) => { setSelectedCreationCandidateId(assetId); setSelectedAssetId(assetId); }}
+                onSelect={(assetId) => { setSelectedCreationCandidateId(assetId); setSelectedAssetId(assetId); setNotice("已把这张图设为当前候选；可继续做单变量调整或确认归档。"); }}
               />
             </div>
           </section>
