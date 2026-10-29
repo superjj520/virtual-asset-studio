@@ -660,6 +660,9 @@ export default function App() {
     setAssets(nextAssets);
     setProjects(nextProjects);
   }, [selectedProjectId, selectedType]);
+  useEffect(() => {
+    void window.studio.settings.warmSecrets().catch(() => undefined);
+  }, []);
   const refreshCharacterRelations = useCallback(async () => {
     const projectId = selectedProjectId;
     const requestId = ++characterRelationsRequestRef.current;

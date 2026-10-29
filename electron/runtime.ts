@@ -995,6 +995,12 @@ export const createStudioRuntime = (
         },
       );
       ipcMain.handle("settings:provider-status", () => providerStatus());
+      ipcMain.handle("settings:warm-secrets", () => {
+        for (const providerId of ["openai", "flux", "fal", "gemini", "deepseek"] as ProviderId[]) {
+          if (settings.get(`${providerId}_api_key`)) apiKeyFor(providerId);
+        }
+        return true;
+      });
       ipcMain.handle(
         "settings:verify-provider",
         async (_event, providerId: ProviderId): Promise<ProviderVerificationResult> => {

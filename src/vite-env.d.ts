@@ -299,6 +299,7 @@ interface Window {
     };
     settings: {
       providerStatus: () => Promise<import("./shared/types").ProviderStatus>;
+      warmSecrets: () => Promise<boolean>;
       verifyProvider: (providerId: import("./shared/types").ProviderId) => Promise<import("./shared/types").ProviderVerificationResult>;
       budgetStatus: () => Promise<import("./shared/types").BudgetStatus>;
       saveMonthlyBudget: (
