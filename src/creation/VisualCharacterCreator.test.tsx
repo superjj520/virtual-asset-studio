@@ -367,7 +367,7 @@ describe("VisualCharacterCreator", () => {
     expect(screen.getByText("单张方案已就绪")).toBeInTheDocument();
 
     // 高级交付默认折叠，不阻挡主流程
-    const advanced = screen.getByText("高级交付 · 质量与候选数量（可跳过）").closest("details");
+    const advanced = screen.getByText("高级交付 · 质量、候选与模型（可跳过）").closest("details");
     expect(advanced).not.toHaveAttribute("open");
     expect(within(advanced as HTMLElement).getByRole("group", { name: "快速生成质量" })).toBeInTheDocument();
     expect(within(advanced as HTMLElement).getByRole("group", { name: "快速候选数量" })).toBeInTheDocument();

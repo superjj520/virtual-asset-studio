@@ -1155,7 +1155,7 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
         </div>
       </div>
       <details className="creator-advanced">
-        <summary>高级交付 · 质量与候选数量（可跳过）</summary>
+        <summary>高级交付 · 质量、候选与模型（可跳过）</summary>
         <div className="creator-output-controls quick-output-controls">
           <div>
             <div className="visual-choice-heading"><strong>生成质量</strong><span>越高越重视细节</span></div>
@@ -1184,8 +1184,8 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
             />
           </div>
         </div>
+        {props.generationSettings}
       </details>
-      {props.generationSettings}
       <div className="creator-ready-card ready">
         <span>{flow.readyLabel}</span>
         <strong>{flow.readyTitle}</strong>
