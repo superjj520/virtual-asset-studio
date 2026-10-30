@@ -1268,7 +1268,8 @@ export const createStudioRuntime = (
               mediaType: "image/png",
               extension: ".png",
               jobId: job.id,
-              projectId: input.projectId,
+              // 没有指定项目时落到“未归档资产”，否则生成结果会成为界面不可见的孤儿资产。
+              projectId: input.projectId ?? libraryProject.id,
               sourceAssetIds: references.length ? [references[0].id] : [],
               generation: {
                 characterProfileId: linkedTask?.characterProfileId,

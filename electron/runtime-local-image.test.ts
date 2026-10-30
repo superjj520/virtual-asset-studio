@@ -182,6 +182,8 @@ it('保存地址后本地图像服务成为默认图片路由，并按当前画�
   });
 
   expect(job.status).toBe('completed');
+  const libraryAssets = await harness.invoke('assets:list', { projectId: 'asset-library' });
+  expect(libraryAssets.some((asset: any) => asset.id === job.result.assetId)).toBe(true);
   expect(job.request).toMatchObject({
     size: '1024x1536',
     requestedAspectRatio: '2:3',
