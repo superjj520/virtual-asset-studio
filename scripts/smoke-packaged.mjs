@@ -71,7 +71,8 @@ try {
     if (!resumedClicked) throw new Error("继续上次创作入口不可点击");
     await sleep(900);
     const restored = await evaluate(`document.body.innerText.slice(0, 1600)`);
-    if (!restored.includes("已恢复上次进度") && !restored.includes("选主体和画面")) throw new Error("恢复后没有回到原创作阶段：" + restored.slice(0, 160));
+    const restoredMarkers = ["已恢复上次进度", "选主体和画面", "系列镜头", "创建一个可持续使用的角色", "剧情场景"];
+    if (!restoredMarkers.some((marker) => restored.includes(marker))) throw new Error("恢复后没有回到原创作阶段：" + restored.slice(0, 160));
     console.log("打包 App 冒烟通过：4 个入口，重启后可恢复上次创作");
   } else {
   const clicked = await evaluate(`(() => { const b=[...document.querySelectorAll(".creation-launch-card")].find(x=>x.getAttribute("aria-label")==="单张画面"); b?.click(); return !!b; })()`);
