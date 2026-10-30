@@ -10,6 +10,11 @@ export type AssetReusePlan = {
   modelId?: string;
 };
 
+/** 只有通过审片且权利可用的图片，才允许作为新创作的参考图。 */
+export function canReuseAsset(asset: Pick<Asset, "mediaType" | "confirmation" | "rightsStatus">): boolean {
+  return asset.mediaType.startsWith("image/") && asset.confirmation === "confirmed" && ["original", "authorized"].includes(asset.rightsStatus);
+}
+
 export function buildAssetReusePlan(asset: Pick<Asset, "id" | "mediaType" | "metadata">): AssetReusePlan | undefined {
   if (!asset.mediaType.startsWith("image/")) return undefined;
   const generation = asset.metadata.generation && typeof asset.metadata.generation === "object"

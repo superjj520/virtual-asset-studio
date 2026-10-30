@@ -23,7 +23,7 @@ import { orderSeriesCandidates, seriesCandidateLabel, seriesShotPosition } from 
 import { SeriesShotReview, approvedSeriesShotLabels as selectApprovedSeriesShotLabels, type SeriesShotReviewRow } from "./creation/SeriesShotReview";
 import { productionShotVariableLines, selectProductionShots } from "./creation/series-production";
 import { buildBatchVariables } from "./creation/batch-variants";
-import { buildAssetReusePlan } from "./creation/asset-reuse";
+import { buildAssetReusePlan, canReuseAsset } from "./creation/asset-reuse";
 import { CreationStudioJourney, type CreationStudioStage } from "./creation/CreationStudioJourney";
 import { CreationLaunchpad, type CreationLaunchKind } from "./creation/CreationLaunchpad";
 import { CREATION_PRESET_ARTWORKS, SCENE_ARTWORKS, VisualCharacterCreator } from "./creation/VisualCharacterCreator";
@@ -1434,6 +1434,10 @@ export default function App() {
   const selectedAsset = assets.find((asset) => asset.id === selectedAssetId);
   const startCreationFromSelectedAsset = () => {
     if (!selectedAsset) return;
+    if (!canReuseAsset(selectedAsset)) {
+      setNotice("这张素材还没有同时通过审片和使用权核实；请先在资产详情确认画面并声明使用权，再用它开始创作。");
+      return;
+    }
     const plan = buildAssetReusePlan(selectedAsset);
     if (!plan) return;
     clearCreationSession();
@@ -1587,9 +1591,7 @@ export default function App() {
         : current.length >= 4 ? current : [...current, assetId],
     );
   };
-  const selectableImages = assets.filter((asset) =>
-    asset.mediaType.startsWith("image/") && asset.confirmation === "confirmed" && ["original", "authorized"].includes(asset.rightsStatus),
-  );
+  const selectableImages = assets.filter(canReuseAsset);
   const characterReferenceIssues = activeTask?.characterProfileId
     ? (() => {
       const references = card.referenceAssetIds.map((id) => assets.find((asset) => asset.id === id));
