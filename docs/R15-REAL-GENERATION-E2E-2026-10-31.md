@@ -23,6 +23,7 @@
 1. 代理继承导致 fal 连接失败：启动时清空 `HTTP(S)_PROXY` 等变量并设置 `NODE_USE_ENV_PROXY=1`，改走系统代理。
 2. 生成资产未指定项目时会成为界面不可见的孤儿资产：提交 `bffede7`，无项目时归入“未归档资产”，并补测试。
 3. 未通过审片或使用权核实的资产仍可点击“用此资产开始创作”，导致参考图列表与实际参考 ID 不一致：提交 `0ea1b14`，统一用 `canReuseAsset` 作为门禁，并补测试。
+4. 资产卡缩略图使用默认 `object-fit: fill`，竖图被压扁成不可辨认的色块：改为封面裁切并优先保留人物上半身，重新打包验证。
 
 ## 质量门禁
 
@@ -37,6 +38,7 @@
 
 - 真实候选页：`/tmp/real-candidates-1440.png`
 - 修复后资产复用页：`/tmp/reuse-fixed-1440.png`
+- 资产库封面裁切：`/tmp/final-assets-cover-1440.png`
 - 生成原图：`~/Library/Application Support/virtual-asset-studio/managed-assets/c2b972184fd97b17f995be87942498471a77f7ec8ff1efbfe3ddc08a7b331d28/generated.png`
 
 ## 尚未完成

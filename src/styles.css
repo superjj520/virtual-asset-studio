@@ -580,7 +580,17 @@ textarea:focus {
   padding: 11px;
   background: linear-gradient(135deg, #3d4d82, #161b2e);
 }
+.asset-visual img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 32%;
+}
 .asset-visual span {
+  position: relative;
+  z-index: 1;
   padding: 4px 7px;
   color: #dbe4ff;
   font-size: 11px;
