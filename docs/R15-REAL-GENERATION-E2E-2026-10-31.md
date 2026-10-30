@@ -39,10 +39,19 @@
 - 真实候选页：`/tmp/real-candidates-1440.png`
 - 修复后资产复用页：`/tmp/reuse-fixed-1440.png`
 - 资产库封面裁切：`/tmp/final-assets-cover-1440.png`
+- 角色资产桌面：`/Users/superjj/virtual-asset-studio/artifacts/r15/角色资产-1440.png`
+- 角色资产 390px：`/Users/superjj/virtual-asset-studio/artifacts/r15/角色资产-390.png`
 - 生成原图：`~/Library/Application Support/virtual-asset-studio/managed-assets/c2b972184fd97b17f995be87942498471a77f7ec8ff1efbfe3ddc08a7b331d28/generated.png`
+
+## 角色资产闭环
+
+- 用资产 `7dc6d113-2285-416b-ad9c-64355f858126` 作为参考图，使用 `fal-flux-kontext` 再生成一张图。
+- job `000ba91f-0923-4e9f-8793-c812e0b5d434` completed，资产 `2da9285d-c594-464c-9848-38dba5b9dd43`。
+- 在画面归档页完成权利复核，点击“沉淀为角色资产”，生成角色 `6edc48c2-b575-43ac-94cf-e7ee5a2936cf`，主参考指向该资产，并同步资产包与创作任务。
+- 修复角色默认命名：原来会把“按参考图……”整段任务标题写进角色名，改为优先使用视觉方向名称。
+- 390px 归档页已检查：底部四项导航、单主操作、无遮挡。
 
 ## 尚未完成
 
-- 390px 窄屏本轮的独立真实截图。
-- 把生成图“沉淀为角色资产”并形成角色主参考的完整点击链路。
-- 用复用参考图再次真实生成，验证身份一致性。
+- 390px 资产库与候选对比页的独立真实截图。
+- 用沉淀出的角色资产再发起一轮生成，验证跨会话身份一致性。

@@ -3721,7 +3721,9 @@ export default function App() {
         mustKeep: mergeText(sourceCard.mustKeep ?? "", "此候选已成为角色主参考；后续创作必须保持脸部结构、发型、成年体态与核心造型识别。"),
       };
       await window.studio.assets.setMaster(targetAsset.id, true, selectedProjectId || undefined);
-      const baseName = (activeTask?.name || sourceCard.intent || "原创角色").trim().slice(0, 28);
+      // 角色名应来自视觉方向，而不是整段任务标题；否则会把“按参考图…”写进资产名。
+      const presetLabel = CREATION_PRESETS.find((preset) => preset.id === sourceCard.visualPresetId)?.label;
+      const baseName = (presetLabel || sourceCard.subject || sourceCard.intent || "原创角色").trim().slice(0, 24);
       const profile = await window.studio.characters.create({
         name: baseName.endsWith("角色") ? baseName : `${baseName} · 角色`,
         card: characterCard,
