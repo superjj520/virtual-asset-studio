@@ -65,6 +65,12 @@
 - 素材库：≤620px 隐藏 `.control-panel .project-create`，先展示筛选与素材网格；截图 `artifacts/r15/素材库-390.png`、`artifacts/r15/素材库列表-390.png`。
 - 候选对比截图：`artifacts/r15/候选对比-390.png`。
 
+## 恢复入口修复
+
+- 发现 `screen === "workspace"` 的创作域启动页没有传 `resume`，所以从侧栏点“创作”时看不到已保存的会话；启动页 `screen === "launch"` 一直有。
+- 已给 embedded `CreationLaunchpad` 补上 `resume` 与 `onDiscardResume`，重新打包后启动页可见“继续上次创作 · 单张画面 · 上次保存在 …”，并提供“继续/重新开始”。
+- 注意：会话仍然只保存到本地 `virtual-asset-studio.creation-session.v1`，不是任务数据库恢复；清除浏览器存储后会丢失入口。
+
 ## 尚未完成
 
 - 候选沉淀角色时的“肖像必填项”引导仍偏重；应增加“从主参考一键生成待确认细项”的入口，减少 9 项手工补齐。

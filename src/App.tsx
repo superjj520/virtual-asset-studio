@@ -4589,6 +4589,12 @@ export default function App() {
             onSelect={startCreationFlow}
             onOpenAssets={() => setScreen("assets")}
             onExit={() => document.getElementById("creation-projects")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            resume={resumableSession ? {
+              kindLabel: creationKindLabel[resumableSession.kind],
+              updatedAt: resumableSession.updatedAt,
+              onResume: () => { void resumeCreationSession(resumableSession); },
+            } : undefined}
+            onDiscardResume={() => { clearCreationSession(); setResumableSession(undefined); setNotice("已清除上次创作，请选择新的起点。"); }}
           />
           <section id="creation-projects" className="creation-home-management" aria-label="项目与历史">
           <header className="workspace-header creation-management-header">
