@@ -93,6 +93,14 @@
 - 角色档案新增“用此角色生成肖像”，与“用此角色做新场景”并列，避免肖像需求被送进剧情场景。证据 `artifacts/r15/角色双入口-1440.png`。
 - 草稿角色仍通过角色状态下拉的“已归档”做可逆清理；归档后不会出现在创作来源列表。
 
+## macOS 交付外壳（2026-10-31）
+
+- 新增正式应用图标 `build/icon.icns`（源文件 `build/icon.svg`，1024 预览 `artifacts/r15/app-icon-1024.png`），打包时写入 `Contents/Resources/icon.icns` 与 `CFBundleIconFile`。
+- 版本从 `0.1.0` 升为 `1.0.0`，同步 `CFBundleShortVersionString` / `CFBundleVersion`，并写入 `LSApplicationCategoryType=public.app-category.graphics-design` 与中文版权说明。
+- 主进程改为显式中文应用菜单：`虚拟资产创作工作台 / 文件 / 编辑 / 显示 / 窗口 / 帮助`；关于面板显示产品名和版本，“帮助”可直接打开本地数据文件夹。
+- 关键约束：不要在 `app.whenReady()` 之前调用 `app.setName()`。那会把 `app.getPath('userData')` 改到另一个目录，启动后表现为素材、角色、任务全部为空。菜单名称使用常量 `APP_NAME`，不改应用名。
+- 实机检查：菜单栏为中文；`CFBundleShortVersionString=1.0.0`、`CFBundleIconFile=icon.icns`；启动后角色 7、场景 2、参考 4，恢复栏正常出现，无钥匙串弹窗。
+
 ## 尚未完成
 
 - 候选沉淀角色时的“肖像必填项”引导仍偏重；应增加“从主参考一键生成待确认细项”的入口，减少 9 项手工补齐。

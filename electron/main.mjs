@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, safeStorage } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, shell } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { appendFileSync } from 'node:fs';
@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import net from 'node:net';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const APP_NAME = '虚拟资产创作工作台';
 const rendererPath = path.join(__dirname, '..', 'dist', 'renderer', 'index.html');
 const rendererDirectoryUrl = pathToFileURL(path.dirname(rendererPath) + path.sep).href;
 const canConnect = (host, port) => new Promise((resolve) => {
@@ -41,9 +42,74 @@ const startupLog = (message) => {
   try { appendFileSync(path.join(app.getPath('userData'), 'startup-diagnostics.log'), `[${new Date().toISOString()}] ${message}\n`, 'utf8'); } catch { /* 诊断失败不应阻断启动 */ }
 };
 
+const installApplicationMenu = () => {
+  const template = [
+    {
+      label: APP_NAME,
+      submenu: [
+        { role: 'about', label: '关于虚拟资产创作工作台' },
+        { type: 'separator' },
+        { role: 'hide', label: '隐藏虚拟资产创作工作台' },
+        { role: 'hideOthers', label: '隐藏其他' },
+        { role: 'unhide', label: '全部显示' },
+        { type: 'separator' },
+        { role: 'quit', label: '退出虚拟资产创作工作台' },
+      ],
+    },
+    {
+      label: '文件',
+      submenu: [
+        { role: 'close', label: '关闭窗口' },
+      ],
+    },
+    {
+      label: '编辑',
+      submenu: [
+        { role: 'undo', label: '撤销' },
+        { role: 'redo', label: '重做' },
+        { type: 'separator' },
+        { role: 'cut', label: '剪切' },
+        { role: 'copy', label: '复制' },
+        { role: 'paste', label: '粘贴' },
+        { role: 'selectAll', label: '全选' },
+      ],
+    },
+    {
+      label: '显示',
+      submenu: [
+        { role: 'resetZoom', label: '实际大小' },
+        { role: 'zoomIn', label: '放大' },
+        { role: 'zoomOut', label: '缩小' },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: '进入全屏幕' },
+      ],
+    },
+    {
+      label: '窗口',
+      submenu: [
+        { role: 'minimize', label: '最小化' },
+        { role: 'zoom', label: '缩放' },
+        { type: 'separator' },
+        { role: 'front', label: '前置全部窗口' },
+      ],
+    },
+    {
+      label: '帮助',
+      submenu: [
+        {
+          label: '打开本地数据文件夹',
+          click: () => { void shell.openPath(app.getPath('userData')); },
+        },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+};
+
 const createWindow = () => {
   const preloadPath = path.join(__dirname, 'preload.cjs');
   const window = new BrowserWindow({
+    title: '虚拟资产创作工作台',
     width: 1440,
     height: 960,
     minWidth: 1100,
@@ -144,6 +210,13 @@ app.whenReady().then(async () => {
     const result = await dialog.showOpenDialog({ title: '选择项目资产包导出位置', properties: ['openDirectory', 'createDirectory'] });
     return result.canceled ? undefined : result.filePaths[0];
   });
+  app.setAboutPanelOptions({
+    applicationName: '虚拟资产创作工作台',
+    applicationVersion: app.getVersion(),
+    copyright: '本地运行 · 创作记录保存在此 Mac',
+    credits: '从角色与场景资产开始，比较方向、单变量调整并保存为可复用资产。',
+  });
+  installApplicationMenu();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

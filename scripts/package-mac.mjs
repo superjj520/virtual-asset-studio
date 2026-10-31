@@ -13,6 +13,8 @@ const stagingApp = join(packOutput, appDirectoryName, appName);
 const finalDirectory = join(releaseRoot, appDirectoryName);
 const finalApp = join(finalDirectory, appName);
 const electronVersion = JSON.parse(readFileSync(join(root, "node_modules", "electron", "package.json"), "utf8")).version;
+const appVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+const iconPath = join(root, "build", "icon.icns");
 const electronCacheRoot = process.env.ELECTRON_CACHE || process.env.electron_config_cache || join(homedir(), "Library", "Caches", "electron");
 const electronZipName = `electron-v${electronVersion}-darwin-arm64.zip`;
 const cachedElectronZipDirectory = existsSync(electronCacheRoot)
@@ -83,6 +85,24 @@ try {
     run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleIdentifier com.superjj.virtualassetstudio", plist]);
     console.warn("未找到 Electron ZIP 缓存，已用 node_modules/electron/dist/Electron.app 组装正式 App。");
   }
+  if (!existsSync(iconPath)) throw new Error(`缺少应用图标：${iconPath}`);
+  cpSync(iconPath, join(stagingApp, "Contents", "Resources", "icon.icns"));
+  const plist = join(stagingApp, "Contents", "Info.plist");
+  const setPlist = (key, value) => {
+    const entry = `/usr/libexec/PlistBuddy`;
+    let exists = true;
+    try {
+      execFileSync(entry, ["-c", `Print :${key}`, plist], { stdio: "ignore" });
+    } catch {
+      exists = false;
+    }
+    run(entry, ["-c", `${exists ? "Set" : "Add"} :${key} ${exists ? "" : "string "}${JSON.stringify(value)}`, plist]);
+  };
+  setPlist("CFBundleIconFile", "icon.icns");
+  setPlist("LSApplicationCategoryType", "public.app-category.graphics-design");
+  setPlist("CFBundleShortVersionString", appVersion);
+  setPlist("CFBundleVersion", appVersion);
+  setPlist("NSHumanReadableCopyright", "本地运行 · 创作记录保存在此 Mac");
   run("codesign", ["--force", "--deep", "--sign", "-", stagingApp]);
 
   if (existsSync(finalDirectory)) {
