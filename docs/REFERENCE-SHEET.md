@@ -73,7 +73,8 @@
 
 - 单参考回退已真实出图：job `1eec1350-773b-4fb6-aff2-3f5105eff646`，资产 `dcfb98f8-e262-4a29-a01f-4bead636b9fb`，单幅、无拼贴、身份与身份格一致。
 - 这张图只继承身份格，服装/姿态/场景仍来自文字约束；单参考模型做不到四格语义同时生效，这是能力边界，不是验收通过。
-- Gemini 四图路径已通过 12 项适配器/共享模块测试与全量 394 项测试、build、package、verify；但实机多图请求尚未完成，因为生成会再次触发 macOS 钥匙串授权。
+- Gemini 四图路径已通过适配器测试与全量 394 项测试、build、package、verify；网络已改走 Electron `net.fetch` 的系统代理，四参考请求确实到达 Gemini。
+- 实机失败原因不是代码或网络，而是当前 Gemini 免费额度对 `gemini-3.1-flash-image` 为 0 次/天（429 `limit: 0 requests per day on Free Tier`）。要完成四层语义验收，需启用付费配额或换一个支持多参考图的 fal 模型。
 
 ## 商用前必须解决
 

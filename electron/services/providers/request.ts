@@ -1,3 +1,5 @@
+import { net } from "electron";
+
 export const fetchProvider = async (
   provider: string,
   input: RequestInfo | URL,
@@ -11,7 +13,10 @@ export const fetchProvider = async (
   else parentSignal?.addEventListener('abort', abortFromParent, { once: true });
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(input, { ...init, signal: controller.signal });
+    // Electron 的 net.fetch 走 Chromium 网络栈，自动使用系统代理；
+    // 测试环境保留全局 fetch，方便注入 mock。
+    const transport = process.versions.electron ? net.fetch.bind(net) : fetch;
+    const response = await transport(input as string, { ...init, signal: controller.signal });
     const originalJson = typeof response.json === 'function' ? response.json.bind(response) : undefined;
     const originalText = typeof response.text === 'function' ? response.text.bind(response) : undefined;
     const originalArrayBuffer = typeof response.arrayBuffer === 'function' ? response.arrayBuffer.bind(response) : undefined;
