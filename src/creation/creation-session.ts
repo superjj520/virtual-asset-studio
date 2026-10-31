@@ -1,7 +1,8 @@
 import type { CharacterCreationDraft } from "./character-creation-draft";
 import type { CreationLaunchKind } from "./CreationLaunchpad";
 import type { CandidateVariation } from "./candidate-variations";
-import type { GuidedStoryPlan } from "./creative-plan";
+import { DEFAULT_GUIDED_STORY_PLAN, type GuidedStoryPlan } from "./creative-plan";
+import type { CreativeCard, CreativeTask } from "../shared/types";
 import type { CreationStudioStage } from "./CreationStudioJourney";
 
 const CREATION_SESSION_KEY = "virtual-asset-studio.creation-session.v1";
@@ -87,3 +88,44 @@ export const creationKindLabel: Record<CreationLaunchKind, string> = {
   scene: "剧情场景",
   series: "系列镜头",
 };
+
+
+export const resolveCreationKind = (card: CreativeCard): CreationLaunchKind => {
+  if (card.deliveryMode === "story_scene") return "scene";
+  if (card.deliveryMode === "series_pack") return "series";
+  if (card.deliveryMode === "character_sheet" || card.appearanceProfile) return "character";
+  return "image";
+};
+
+const RESUMABLE_TASK_STATUSES = new Set<CreativeTask["status"]>(["draft", "ready", "producing", "blocked", "review"]);
+export const RESUME_TASK_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * 会话只是“上次停在哪”的快捷方式，事实来源仍是本地数据库中的创作任务。
+ * 本地会话被清空或换设备后，最近一个仍可继续的任务也应能回到启动页。
+ */
+export function deriveResumableSessionFromTasks(
+  tasks: CreativeTask[],
+  dismissedTaskId = "",
+  now = Date.now(),
+): CreationSession | undefined {
+  const latest = [...tasks]
+    .filter((task) => RESUMABLE_TASK_STATUSES.has(task.status) && task.id !== dismissedTaskId)
+    .filter((task) => {
+      const updatedAt = Date.parse(task.updatedAt);
+      return Number.isFinite(updatedAt) && now - updatedAt <= RESUME_TASK_TTL_MS;
+    })
+    .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0];
+  if (!latest) return undefined;
+  return {
+    version: 1,
+    updatedAt: latest.updatedAt,
+    kind: resolveCreationKind(latest.card),
+    phase: "studio",
+    taskId: latest.id,
+    studioStage: latest.resultAssetId || latest.status === "review" ? "candidates" : "plan",
+    candidateCount: 2,
+    seriesPlan: [],
+    storyPlan: { ...DEFAULT_GUIDED_STORY_PLAN },
+  };
+}

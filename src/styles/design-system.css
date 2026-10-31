@@ -587,6 +587,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--ds-primary); box
   }
   .mobile-domain-nav button.nav-current { color: var(--ds-primary-hover); font-weight: 700; }
   .mobile-domain-nav button:active { background: var(--ds-primary-soft); transform: none; }
+  .creation-focus-shell .mobile-domain-nav { display: none; }
+  .creation-focus-shell .app-main { padding-bottom: env(safe-area-inset-bottom); }
+  .creation-focus-shell .creation-studio-grid.stage-candidates { padding-bottom: calc(92px + env(safe-area-inset-bottom)); }
+  .control-panel .import-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ds-space-2); }
+  .control-panel .import-controls > label { min-width: 0; font-size: 11px; }
+  .control-panel .import-controls > label select { width: 100%; min-height: 40px; }
+  .control-panel .import-controls > button { grid-column: 1 / -1; min-height: 44px; }
 }
 
 @media (max-width: 700px) {

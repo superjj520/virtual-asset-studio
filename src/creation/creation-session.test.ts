@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDefaultSeriesPlan } from "./candidate-variations";
-import { clearCreationSession, loadCreationSession, saveCreationSession } from "./creation-session";
+import { clearCreationSession, deriveResumableSessionFromTasks, loadCreationSession, saveCreationSession } from "./creation-session";
 import { DEFAULT_GUIDED_APPEARANCE, DEFAULT_GUIDED_STORY_PLAN } from "./creative-plan";
 
 const draft = {
@@ -104,5 +104,48 @@ describe("creation session retention", () => {
     } as never);
     vi.setSystemTime(new Date("2026-11-15T00:00:00.000Z"));
     expect(loadCreationSession()).toBeUndefined();
+  });
+});
+
+describe("deriveResumableSessionFromTasks", () => {
+  const card = { deliveryMode: "portrait" as const } as never;
+  const task = (overrides: Partial<import("../shared/types").CreativeTask> = {}) => ({
+    id: "task-latest",
+    name: "单张方案",
+    objective: "",
+    status: "review" as const,
+    collectionIds: [],
+    card,
+    resultAssetId: "asset-1",
+    createdAt: "2026-10-30T10:00:00.000Z",
+    updatedAt: "2026-10-30T11:00:00.000Z",
+    ...overrides,
+  });
+
+  it("没有本地会话时从数据库任务恢复候选阶段", () => {
+    const session = deriveResumableSessionFromTasks([task()], "", Date.parse("2026-10-31T00:00:00.000Z"));
+    expect(session).toMatchObject({ phase: "studio", taskId: "task-latest", studioStage: "candidates", kind: "image" });
+  });
+
+  it("用户主动重新开始后不再提示同一个任务", () => {
+    expect(deriveResumableSessionFromTasks([task()], "task-latest", Date.parse("2026-10-31T00:00:00.000Z"))).toBeUndefined();
+  });
+
+  it("跳过已归档和超过 30 天的任务", () => {
+    const now = Date.parse("2026-10-31T00:00:00.000Z");
+    expect(deriveResumableSessionFromTasks([task({ status: "archived" })], "", now)).toBeUndefined();
+    expect(deriveResumableSessionFromTasks([task({ updatedAt: "2026-08-01T00:00:00.000Z" })], "", now)).toBeUndefined();
+  });
+
+  it("按任务类型映射回正确的创作入口", () => {
+    const kind = (deliveryMode: string) => deriveResumableSessionFromTasks(
+      [task({ card: { deliveryMode } as never })],
+      "",
+      Date.parse("2026-10-31T00:00:00.000Z"),
+    )?.kind;
+    expect(kind("character_sheet")).toBe("character");
+    expect(kind("story_scene")).toBe("scene");
+    expect(kind("series_pack")).toBe("series");
+    expect(kind("portrait")).toBe("image");
   });
 });

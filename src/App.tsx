@@ -41,7 +41,9 @@ import {
 import {
   clearCreationSession,
   creationKindLabel,
+  deriveResumableSessionFromTasks,
   loadCreationSession,
+  resolveCreationKind,
   saveCreationSession,
   type CreationSession,
 } from "./creation/creation-session";
@@ -356,18 +358,6 @@ const normalizeCreativeCard = (card: CreativeCard): CreativeCard => {
   };
 };
 
-const resolveCreationKind = (card: CreativeCard): CreationLaunchKind => {
-  if (card.deliveryMode === "story_scene") return "scene";
-  if (card.deliveryMode === "series_pack") return "series";
-  if (card.deliveryMode === "character_sheet" || card.appearanceProfile) return "character";
-  return "image";
-};
-
-/**
- * 角色设定板不是一张普通肖像图：它把同一角色的身份、结构、表情、服装和姿态
- * 压缩成一份可复用的生产基线。真正的角色 ID 会在创建任务时写入
- * characterProfileId，参考图只作为证据，不会被当成新角色。
- */
 const CHARACTER_SHEET_TEMPLATE: CreativeCard = {
   projectId: undefined,
   intent: "基于已锁定角色 ID 生成高精度角色设定板（Character Sheet），不生成新角色，不改变角色结构",
@@ -384,6 +374,7 @@ const CHARACTER_SHEET_TEMPLATE: CreativeCard = {
   aspectRatio: "4:3",
   referenceAssetIds: [],
 };
+
 const EMPTY_SHOT: ShotContract = {
   deliveryType: "image",
   subjectAnchor: "",
@@ -542,6 +533,12 @@ export default function App() {
   const [guideCustomTrackers, setGuideCustomTrackers] = useState<CharacterStateTracker[]>([]);
   const [restoredCharacterDraftAt, setRestoredCharacterDraftAt] = useState("");
   const [resumableSession, setResumableSession] = useState<CreationSession | undefined>(() => loadCreationSession());
+  const [dismissedResumeTaskId, setDismissedResumeTaskId] = useState("");
+  const databaseResumeSession = useMemo(
+    () => resumableSession ? undefined : deriveResumableSessionFromTasks(creativeTasks, dismissedResumeTaskId),
+    [creativeTasks, dismissedResumeTaskId, resumableSession],
+  );
+  const effectiveResumableSession = resumableSession ?? databaseResumeSession;
   const [guideSubject, setGuideSubject] = useState("");
   const [guideScene, setGuideScene] = useState("");
   const [guideReferenceAssetId, setGuideReferenceAssetId] = useState("");
@@ -660,9 +657,6 @@ export default function App() {
     setAssets(nextAssets);
     setProjects(nextProjects);
   }, [selectedProjectId, selectedType]);
-  useEffect(() => {
-    void window.studio.settings.warmSecrets().catch(() => undefined);
-  }, []);
   const refreshCharacterRelations = useCallback(async () => {
     const projectId = selectedProjectId;
     const requestId = ++characterRelationsRequestRef.current;
@@ -3927,6 +3921,11 @@ export default function App() {
     ...(selectedCreationCandidate?.confirmation === "confirmed" || (creationStudioStage === "asset" && canArchiveCreation) ? ["asset" as const] : []),
   ];
 
+  const openSettings = () => {
+    // 密钥只在用户进入设置或真正生成时解锁；启动页不主动请求钥匙串。
+    void window.studio.settings.warmSecrets().catch(() => undefined);
+    setScreen("settings");
+  };
   const openCreationLaunchpad = () => {
     setNotice("");
     setGuidedDraftTaskId("");
@@ -4097,12 +4096,12 @@ export default function App() {
   };
 
   return (
-    <div className={`app-shell ${screen === "start" || screen === "launch" ? "creator-focus-shell" : ""}`}>
+    <div className={`app-shell ${screen === "start" || screen === "launch" ? "creator-focus-shell" : ""} ${screen === "creation" ? "creation-focus-shell" : ""}`}>
       {screen !== "start" && screen !== "launch" && <AdaptiveDomainNavigation
         activeDomain={activeDomain}
         connected={connected}
         onNavigate={openDomain}
-        onOpenSettings={() => setScreen("settings")}
+        onOpenSettings={openSettings}
       />}
       <div className="app-main">
         {screen !== "start" && screen !== "launch" && <header className="context-bar">
@@ -4134,12 +4133,18 @@ export default function App() {
           referenceCount={selectableImages.length}
           onSelect={startCreationFlow}
           onExit={() => setScreen("workspace")}
-          resume={resumableSession ? {
-            kindLabel: creationKindLabel[resumableSession.kind],
-            updatedAt: resumableSession.updatedAt,
-            onResume: () => { void resumeCreationSession(resumableSession); },
+          resume={effectiveResumableSession ? {
+            kindLabel: creationKindLabel[effectiveResumableSession.kind],
+            updatedAt: effectiveResumableSession.updatedAt,
+            onResume: () => { void resumeCreationSession(effectiveResumableSession); },
           } : undefined}
-          onDiscardResume={() => { clearCreationSession(); setResumableSession(undefined); setNotice("已清除上次创作，请选择新的起点。"); }}
+          onDiscardResume={() => {
+            const dismissedTaskId = effectiveResumableSession?.taskId;
+            clearCreationSession();
+            setResumableSession(undefined);
+            setDismissedResumeTaskId(dismissedTaskId ?? "");
+            setNotice("已清除上次创作，请选择新的起点。");
+          }}
         />
       )}
       {screen === "start" && (
@@ -4220,7 +4225,7 @@ export default function App() {
           onExit={() => setScreen("workspace")}
           draftRestoredAt={restoredCharacterDraftAt}
           onRestart={restartCharacterCreation}
-          onOpenSettings={() => setScreen("settings")}
+          onOpenSettings={openSettings}
           notice={notice}
             onNoticeDismiss={() => setNotice("")}
         />
@@ -4452,6 +4457,7 @@ export default function App() {
                     </select>
                   </label>
                   <button onClick={() => { setCreationLaunchKind("scene"); setGuideMode("saved"); setGuideCharacterId(profile.id); setGuideCollectionIds(collections.filter((collection) => collection.characterProfileId === profile.id).map((collection) => collection.id)); setGuideSceneChoice("modern_city"); setScreen("start"); }}>用此角色做新场景</button>
+                  <button onClick={() => { setCreationLaunchKind("image"); setGuideMode("saved"); setGuideCharacterId(profile.id); setGuideCollectionIds(collections.filter((collection) => collection.characterProfileId === profile.id).map((collection) => collection.id)); setGuideDirection("portrait"); setGuideShotChoice("half_body"); setScreen("start"); }}>用此角色生成肖像</button>
                   <button className="primary-button" onClick={() => selectCharacter(profile.id)}>打开工作室</button>
                   <button type="button" onClick={() => void openMasterPicker(profile)}>{profile.masterAssetId ? "更换主参考图" : "选择主参考图"}</button>
                 </div>}
@@ -4595,12 +4601,18 @@ export default function App() {
             onSelect={startCreationFlow}
             onOpenAssets={() => setScreen("assets")}
             onExit={() => document.getElementById("creation-projects")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-            resume={resumableSession ? {
-              kindLabel: creationKindLabel[resumableSession.kind],
-              updatedAt: resumableSession.updatedAt,
-              onResume: () => { void resumeCreationSession(resumableSession); },
+            resume={effectiveResumableSession ? {
+              kindLabel: creationKindLabel[effectiveResumableSession.kind],
+              updatedAt: effectiveResumableSession.updatedAt,
+              onResume: () => { void resumeCreationSession(effectiveResumableSession); },
             } : undefined}
-            onDiscardResume={() => { clearCreationSession(); setResumableSession(undefined); setNotice("已清除上次创作，请选择新的起点。"); }}
+            onDiscardResume={() => {
+              const dismissedTaskId = effectiveResumableSession?.taskId;
+              clearCreationSession();
+              setResumableSession(undefined);
+              setDismissedResumeTaskId(dismissedTaskId ?? "");
+              setNotice("已清除上次创作，请选择新的起点。");
+            }}
           />
           <section id="creation-projects" className="creation-home-management" aria-label="项目与历史">
           <header className="workspace-header creation-management-header">
