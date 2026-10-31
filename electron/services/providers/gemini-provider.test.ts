@@ -59,3 +59,22 @@ it('未配置 Gemini 密钥时不会发出请求', async () => {
   await expect(provider.generateImage({ prompt: '写实人物', size: '1024x1024' })).rejects.toThrow(/尚未配置 Gemini/);
   expect(fetchMock).not.toHaveBeenCalled();
 });
+
+it('Gemini 多参考模式按顺序送四张图，不合成参考板', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'gemini-provider-test-'));
+  try {
+    const references = ['identity', 'wardrobe', 'pose', 'scene'].map((role) => {
+      const path = join(directory, `${role}.png`);
+      writeFileSync(path, Buffer.from(role));
+      return { path, mediaType: 'image/png' };
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(imagePayload('multi')), { status: 200 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+    const provider = new GeminiProvider({ apiKey: () => 'gemini-test-key-with-enough-length' });
+    await expect(provider.refineImage({ prompt: '四槽位参考', size: '1024x1024', referencePath: references[0].path, referenceMediaType: 'image/png', references })).resolves.toEqual(Buffer.from('multi'));
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.input.filter((part: { type: string }) => part.type === 'image')).toHaveLength(4);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

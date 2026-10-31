@@ -23,6 +23,7 @@ import {
   buildReferenceSheetPrompt,
   normalizeReferenceSheetSlots,
   referenceSheetLayout,
+  stripReferenceSheetLayoutLanguage,
   type ReferenceSheetRecipe,
 } from "../src/shared/reference-sheet";
 import { estimateGenerationCostUsd, findGenerationModel } from "../src/shared/generation-models";
@@ -169,6 +170,7 @@ export const createStudioRuntime = (
       size: ImageGenerationSize;
       referencePath: string;
       referenceMediaType: string;
+      references?: Array<{ path: string; mediaType: string }>;
     }) => Promise<Buffer>;
   }>> = { openai, fal, gemini };
   const videoProviders: Partial<
@@ -217,7 +219,7 @@ export const createStudioRuntime = (
   };
   const refineWithResult = async (
     providerId: ProviderId,
-    input: { prompt: string; size: ImageGenerationSize; referencePath: string; referenceMediaType: string; onRemoteTask?: (task: FalRemoteTask) => void },
+    input: { prompt: string; size: ImageGenerationSize; referencePath: string; referenceMediaType: string; references?: Array<{ path: string; mediaType: string }>; onRemoteTask?: (task: FalRemoteTask) => void },
   ): Promise<{ image: Buffer; remoteTask?: FalRemoteTask }> => {
     if (providerId === "fal") {
       const result = await fal.refineImageWithTask(input);
@@ -916,22 +918,38 @@ export const createStudioRuntime = (
           const batchModel = batch.modelId ? findGenerationModel(batch.modelId) : undefined;
           const batchTask = batch.creativeTaskId ? tasks.get(batch.creativeTaskId) : undefined;
           const references = batch.referenceAssetIds.map((id) => referenceForGeneration(id, batch.projectId));
+          const primaryReference = references[0];
+          const sheetRecipe = primaryReference?.metadata?.referenceSheet as
+            | ReferenceSheetRecipe
+            | undefined;
+          const sheetIdentityAssetId = sheetRecipe?.slots.find(
+            (slot) => slot.role === "identity",
+          )?.assetId;
+          // 单参考模型如果直接吃四格参考板，会把版式一起画出来。
+          // 参考板只作为人类规划与追溯；生图改用身份格锚定人物。
+          const generationReference =
+            sheetRecipe && sheetIdentityAssetId
+              ? referenceForGeneration(sheetIdentityAssetId, batch.projectId)
+              : primaryReference;
           for (const item of batch.variants.filter(
             (variant) => variant.status === "planned",
           )) {
             let job: import("../src/shared/types").StudioJob | undefined;
             try {
+              const generationPrompt = sheetRecipe
+                ? `${stripReferenceSheetLayoutLanguage(item.prompt)}\n参考图只用于锁定人物身份与脸部；服装、姿态和场景以文字约束为准，不要复制任何版式。`
+                : `${item.prompt}\n参考图仅用于保持人物身份和服装连续性。`;
               job = jobs.create({
                 projectId: batch.projectId ?? libraryProject.id,
                 kind: "image_generation",
                 providerId: batch.providerId,
-                request: { prompt: item.prompt, size, modelId: batchModel?.id, providerModel: batchModel?.model, requestedAspectRatio: batch.aspectRatio, actualAspectRatio: aspectRatioForImageSize(size), referenceAssetIds: batch.referenceAssetIds, referenceBindings: batch.referenceBindings, appliedReferenceAssetIds: references.length ? [references[0].id] : [], referenceUsage: batch.referenceBindings.map((binding) => ({ ...binding, status: binding.priority === "primary" ? "sent" : "recorded" })), batchId, variantId: item.id },
+                request: { prompt: generationPrompt, size, modelId: batchModel?.id, providerModel: batchModel?.model, requestedAspectRatio: batch.aspectRatio, actualAspectRatio: aspectRatioForImageSize(size), referenceAssetIds: batch.referenceAssetIds, referenceBindings: batch.referenceBindings, appliedReferenceAssetIds: generationReference ? [generationReference.id] : [], referenceUsage: batch.referenceBindings.map((binding) => ({ ...binding, status: generationReference && binding.assetId === generationReference.id ? "sent" : "recorded" })), batchId, variantId: item.id },
               });
               jobs.update(job.id, { status: "in_progress" });
               // 先落盘关联，再调用服务；进程中断后不会把可能已付费的变体伪装成 planned。
               batches.updateVariant(item.id, { status: "planned", jobId: job.id });
-              const generated = references.length
-                ? await refineWithResult(batch.providerId, { prompt: `${item.prompt}\n参考图仅用于保持人物身份和服装连续性。`, size, referencePath: references[0].managedPath, referenceMediaType: references[0].mediaType, onRemoteTask: (remoteTask) => jobs.update(job!.id, { status: "in_progress", result: { remoteTask, requestedAspectRatio: batch.aspectRatio, actualSize: size, batchId, variantId: item.id } }) })
+              const generated = generationReference
+                ? await refineWithResult(batch.providerId, { prompt: generationPrompt, size, referencePath: generationReference.managedPath, referenceMediaType: generationReference.mediaType, onRemoteTask: (remoteTask) => jobs.update(job!.id, { status: "in_progress", result: { remoteTask, requestedAspectRatio: batch.aspectRatio, actualSize: size, batchId, variantId: item.id } }) })
                 : await generateWithResult(batch.providerId, { prompt: item.prompt, size, seed: batch.seed, quality: batch.qualityTier === "draft" ? "medium" : batch.qualityTier ? "high" : undefined, falModel: batchModel?.providerId === "fal" ? batchModel.model : undefined, onRemoteTask: (remoteTask) => jobs.update(job!.id, { status: "in_progress", result: { remoteTask, requestedAspectRatio: batch.aspectRatio, actualSize: size, batchId, variantId: item.id } }) });
               const asset = writeGeneratedAsset(generated.image, {
                 type: "image",
@@ -939,16 +957,16 @@ export const createStudioRuntime = (
                 extension: ".png",
                 jobId: job.id,
                 projectId: batch.projectId,
-                sourceAssetIds: references.length ? [references[0].id] : [],
+                sourceAssetIds: generationReference ? [generationReference.id] : [],
                 generation: {
                   characterProfileId: batchTask?.characterProfileId,
                   sceneProfileId: batchTask?.card.sceneProfileId,
                   modelId: batchModel?.id,
                   providerModel: batchModel?.model,
-                  prompt: item.prompt,
+                  prompt: generationPrompt,
                   aspectRatio: batch.aspectRatio,
                   requestedSize: size,
-                  referenceCount: references.length,
+                  referenceCount: generationReference ? 1 : 0,
                   seed: batch.seed,
                 },
               });
@@ -1275,6 +1293,20 @@ export const createStudioRuntime = (
           const references = referenceAssetIds.map((id) =>
             referenceForGeneration(id, input.projectId),
           );
+          const primaryReference = references[0];
+          const sheetRecipe = primaryReference?.metadata?.referenceSheet as
+            | ReferenceSheetRecipe
+            | undefined;
+          const sheetIdentityAssetId = sheetRecipe?.slots.find(
+            (slot) => slot.role === "identity",
+          )?.assetId;
+          const generationReference =
+            sheetRecipe && sheetIdentityAssetId
+              ? referenceForGeneration(sheetIdentityAssetId, input.projectId)
+              : primaryReference;
+          const generationPrompt = sheetRecipe
+            ? `${stripReferenceSheetLayoutLanguage(input.prompt)}${input.negative ? `\n避免：${input.negative}` : ""}\n参考图只用于锁定人物身份与脸部；服装、姿态和场景以文字约束为准，不要复制任何版式。`
+            : `${input.prompt}${input.negative ? `\n避免：${input.negative}` : ""}\n参考图仅用于保持人物、服装和构图连续性；只按文字要求变化。`;
           if (input.seed !== undefined && (!Number.isInteger(input.seed) || input.seed < 0 || input.seed > 4294967295))
             throw new Error("随机种子必须是 0–4294967295 的整数。");
           const requestedModel = findGenerationModel(input.modelId);
@@ -1300,6 +1332,20 @@ export const createStudioRuntime = (
               throw new Error(`“${requestedModel.label}”不支持 ${input.aspectRatio} 画幅，请切换模型。`);
           }
           const providerId = requestedModel?.providerId ?? routeFor(references.length ? "image_edit" : "image");
+          const sheetSlotReferences = sheetRecipe
+            ? sheetRecipe.slots.map((slot) => referenceForGeneration(slot.assetId, input.projectId))
+            : [];
+          // Gemini 的 interactions API 能按顺序接收多张图；用四张槽位原图，
+          // 既保留服装/姿态/场景语义，又不会把分格版式画进成图。
+          const useSheetSlots = providerId === "gemini" && sheetSlotReferences.length >= 2;
+          const generationReferences = useSheetSlots
+            ? sheetSlotReferences
+            : generationReference
+              ? [generationReference]
+              : [];
+          const finalPrompt = useSheetSlots && sheetRecipe
+            ? `${stripReferenceSheetLayoutLanguage(input.prompt)}${input.negative ? `\n避免：${input.negative}` : ""}\n参考图按顺序分别提供：${sheetRecipe.slots.map((slot, index) => `${index + 1} ${REFERENCE_SHEET_ROLE_LABELS[slot.role]}`).join("、")}。只生成单幅画面，不要把参考图版式、边框或分屏画进成图。`
+            : generationPrompt;
           if (!requestedModel && input.aspectRatio && providerId === "openai" && !["1:1", "2:3", "3:2"].includes(input.aspectRatio))
             throw new Error(`OpenAI 图像接口不支持 ${input.aspectRatio} 画幅，请选择其他模型。`);
           if (references.length && !imageEditProviders[providerId])
@@ -1318,17 +1364,17 @@ export const createStudioRuntime = (
             kind: "image_generation",
             providerId,
             request: {
-              prompt: input.prompt,
+              prompt: finalPrompt,
               negative: input.negative ?? "",
               size,
               requestedAspectRatio: input.aspectRatio,
               actualAspectRatio: aspectRatioForImageSize(size),
               referenceAssetIds,
               referenceBindings,
-              appliedReferenceAssetIds: references.length ? [references[0].id] : [],
+              appliedReferenceAssetIds: generationReferences.map((reference) => reference.id),
               referenceUsage: referenceBindings.map((binding) => ({
                 ...binding,
-                status: binding.priority === "primary" ? "sent" : "recorded",
+                status: generationReferences.some((reference) => reference.id === binding.assetId) ? "sent" : "recorded",
               })),
               qualityTier: input.qualityTier ?? "premium",
               modelId: requestedModel?.id,
@@ -1348,12 +1394,13 @@ export const createStudioRuntime = (
           jobs.update(job.id, { status: "in_progress", result: { progressStage: "submitted" } });
           try {
             const generated =
-              references.length
+              generationReferences.length
                 ? await refineWithResult(providerId, {
-                    prompt: `${input.prompt}${input.negative ? `\n避免：${input.negative}` : ""}\n参考图仅用于保持人物、服装和构图连续性；只按文字要求变化。`,
+                    prompt: finalPrompt,
                     size,
-                    referencePath: references[0].managedPath,
-                    referenceMediaType: references[0].mediaType,
+                    referencePath: generationReferences[0].managedPath,
+                    referenceMediaType: generationReferences[0].mediaType,
+                    references: generationReferences.map((reference) => ({ path: reference.managedPath, mediaType: reference.mediaType })),
                     onRemoteTask: (remoteTask) => jobs.update(job.id, { status: "in_progress", result: { remoteTask, progressStage: "remote", requestedAspectRatio: input.aspectRatio, actualSize: size } }),
                   })
                 : await generateWithResult(providerId, {
@@ -1378,7 +1425,7 @@ export const createStudioRuntime = (
               jobId: job.id,
               // 没有指定项目时落到“未归档资产”，否则生成结果会成为界面不可见的孤儿资产。
               projectId: input.projectId ?? libraryProject.id,
-              sourceAssetIds: references.length ? [references[0].id] : [],
+              sourceAssetIds: generationReferences.map((reference) => reference.id),
               generation: {
                 characterProfileId: linkedTask?.characterProfileId,
                 sceneProfileId: linkedTask?.card.sceneProfileId,
@@ -1392,7 +1439,7 @@ export const createStudioRuntime = (
                 seed: input.seed,
               },
             });
-            attachSessionOutput(session, asset.id, references[0]?.id);
+            attachSessionOutput(session, asset.id, generationReferences[0]?.id);
             return jobs.update(job.id, {
               status: "completed",
               result: { assetId: asset.id, remoteTask: generated.remoteTask, progressStage: "completed", requestedAspectRatio: input.aspectRatio, actualSize: size },

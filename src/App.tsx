@@ -3960,7 +3960,7 @@ export default function App() {
     setGuideReferenceAssetId(asset.id);
     setCreationStudioStage("plan");
     setScreen("start");
-    setNotice(`已把参考卡「${asset.name}」载入单张创作；送模提示词会按四个分区读取，不会把拼贴版式画进成图。`);
+    setNotice(`已把参考卡「${asset.name}」载入单张创作；参考卡用于整理与追溯，单参考模型只用身份格锚定人物，避免把分格版式画进成图。`);
   };
 
   const returnToCreationSetup = () => {

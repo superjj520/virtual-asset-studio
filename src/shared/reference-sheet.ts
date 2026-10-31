@@ -272,3 +272,18 @@ export const applyReferenceSheetToCard = (
     avoid: mergeText(card.avoid, recipe.prompt.negative),
   };
 };
+
+const referenceSheetLayoutLine = /参考板|四格|四宫格|左上格|右上格|左下格|右下格|分格线|分屏|拼贴|2×2|下方整行/;
+
+/**
+ * 单参考模型只接收一张图。参考卡用于人类整理与追溯，
+ * 不能把带分格的合成图直接送进去，否则模型会复刻版式。
+ * 这里删除只有“看参考板”才成立的句子，保留人物、风格与画质约束。
+ */
+export const stripReferenceSheetLayoutLanguage = (prompt: string): string =>
+  prompt
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && (!referenceSheetLayoutLine.test(line) || /无分屏|无边框|无分格线|不要复制/.test(line)))
+    .join("\n")
+    .trim();

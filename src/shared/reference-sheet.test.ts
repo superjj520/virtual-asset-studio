@@ -5,6 +5,7 @@ import {
   buildReferenceSheetPrompt,
   normalizeReferenceSheetSlots,
   referenceSheetLayout,
+  stripReferenceSheetLayoutLanguage,
   type ReferenceSheetRecipe,
 } from "./reference-sheet";
 
@@ -147,3 +148,13 @@ describe("reference sheet", () => {
     expect(prompt.modules).toHaveLength(2);
   });
 });
+
+  it("单参考模型会剥掉参考板版式语言，避免模型复刻分格", () => {
+    const stripped = stripReferenceSheetLayoutLanguage([
+      "保持人物脸型与肤色。",
+      "参考图是一张2×2 四格素材参考板，每个分区只读取对应信息。",
+      "左上格只提供人物身份：严格沿用脸型。",
+      "输出约束：单个人物、无分屏、无边框。",
+    ].join("\n"));
+    expect(stripped).toBe("保持人物脸型与肤色。\n输出约束：单个人物、无分屏、无边框。");
+  });

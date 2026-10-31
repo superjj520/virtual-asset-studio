@@ -84,12 +84,19 @@ export class GeminiProvider {
     return extractImage(payload);
   }
 
-  async refineImage(input: { prompt: string; size: ImageGenerationSize; referencePath: string; referenceMediaType: string }): Promise<Buffer> {
+  async refineImage(input: { prompt: string; size: ImageGenerationSize; referencePath: string; referenceMediaType: string; references?: Array<{ path: string; mediaType: string }> }): Promise<Buffer> {
     const payload = await this.requestImage({
       model: primaryImageModel,
       input: [
         { type: 'text', text: input.prompt },
-        { type: 'image', mime_type: input.referenceMediaType, data: readFileSync(input.referencePath).toString('base64') },
+        ...(input.references?.length
+          ? input.references
+          : [{ path: input.referencePath, mediaType: input.referenceMediaType }]
+        ).map((reference) => ({
+          type: 'image',
+          mime_type: reference.mediaType,
+          data: readFileSync(reference.path).toString('base64'),
+        })),
       ],
       response_format: { type: 'image', aspect_ratio: aspectRatioFor(input.size), image_size: '2K' },
     });
