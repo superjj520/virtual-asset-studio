@@ -125,8 +125,8 @@ describe("VisualCharacterCreator", () => {
       onOpenSettings={vi.fn()}
     />);
 
-    expect(screen.getByText("个角色资产 · 1 个可直接使用 · 1 个待完善")).toBeInTheDocument();
-    const readyList = screen.getByRole("listbox", { name: "可直接使用的角色资产" });
+    expect(screen.getByText("个角色资产 · 1 个已建立主参考 · 1 个待补主参考")).toBeInTheDocument();
+    const readyList = screen.getByRole("listbox", { name: "已建立主参考的角色资产" });
     const draftList = screen.getByRole("listbox", { name: "待补主参考角色" });
     const readyCard = within(readyList).getByRole("option", { name: "使用角色 蝶灵" });
     const draftCard = within(draftList).getByRole("option", { name: "使用角色 东方女主" });

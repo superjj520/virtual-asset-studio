@@ -701,10 +701,10 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
       </div>
     </>}
     {props.sourceMode === "saved" && <>
-      <div className="source-library-summary"><strong>{availableCharacters.length}</strong><span>个角色资产 · {visualCharacters.length} 个可直接使用 · {incompleteCharacters.length} 个待完善</span></div>
+      <div className="source-library-summary"><strong>{availableCharacters.length}</strong><span>个角色资产 · {visualCharacters.length} 个已建立主参考 · {incompleteCharacters.length} 个待补主参考</span></div>
       {visualCharacters.length > 0 && <>
-        <div className="creator-library-section-heading"><strong>可直接使用</strong><span>已建立主参考</span></div>
-        <div className="creator-asset-choice-grid" role="listbox" aria-label="可直接使用的角色资产">
+        <div className="creator-library-section-heading"><strong>已建立主参考</strong><span>生成前核对肖像细项</span></div>
+        <div className="creator-asset-choice-grid" role="listbox" aria-label="已建立主参考的角色资产">
         {visualCharacters.map((item) => <CharacterSourceCard
           key={item.id}
           character={item}

@@ -3,7 +3,7 @@ import { AdaptiveDomainNavigation } from "./ui-adapters/AdaptiveDomainNavigation
 import { CharacterInspector } from "./character/CharacterInspector";
 import { CharacterWorkspacePanel } from "./character/CharacterWorkspacePanel";
 import { buildCharacterExtensionCard, CHARACTER_EXTENSION_OPTIONS } from "./character/character-extensions";
-import { buildCharacterFactSeeds } from "./character/character-fact-seeds";
+import { buildCharacterFactSeeds, buildDepositedCharacterFactSeeds } from "./character/character-fact-seeds";
 import { SceneWorkspacePanel } from "./scene/SceneWorkspacePanel";
 import { ReviewWorkspacePanel } from "./review/ReviewWorkspacePanel";
 import { ProjectPipelinePanel } from "./project/ProjectPipelinePanel";
@@ -2704,12 +2704,15 @@ export default function App() {
     setScreen("characters");
     setIsCreatingCharacter(true);
   };
-  const syncCharacterFactsFromCard = async (characterId: string, sourceCard: CreativeCard) => {
-    const seeds = buildCharacterFactSeeds(sourceCard);
+  const syncCharacterFactsFromCard = async (characterId: string, sourceCard: CreativeCard, masterAssetId?: string) => {
+    const seeds = masterAssetId
+      ? buildDepositedCharacterFactSeeds(sourceCard, masterAssetId)
+      : buildCharacterFactSeeds(sourceCard);
     const results = await Promise.allSettled(seeds.map((input) => window.studio.characters.upsertFact(characterId, input)));
     return {
       total: seeds.length,
       failed: results.filter((result) => result.status === "rejected").length,
+      pending: seeds.filter((input) => input.state !== "confirmed").length,
     };
   };
   const saveCharacter = async (draftCard: CreativeCard = card) => {
@@ -3741,6 +3744,7 @@ export default function App() {
         status: "draft",
       });
       await window.studio.collections.attachAsset(collection.id, targetAsset.id, "角色主参考");
+      const factSync = await syncCharacterFactsFromCard(profile.id, characterCard, targetAsset.id);
       setCharacters((current) => [profile, ...current.filter((item) => item.id !== profile.id)]);
       setCollections((current) => [collection, ...current.filter((item) => item.id !== collection.id)]);
       if (activeTask) {
@@ -3755,7 +3759,9 @@ export default function App() {
       setCard(characterCard);
       setGuideCharacterId(profile.id);
       await refresh();
-      setNotice(`已建立角色资产「${profile.name}」，主参考、资产包与当前创作任务已联动。`);
+      setNotice(factSync.pending
+        ? `已建立角色资产「${profile.name}」；已从创作选择预填 ${factSync.total - factSync.pending} 项，还有 ${factSync.pending} 项待确认（面部正面已绑定主参考）。`
+        : `已建立角色资产「${profile.name}」，${factSync.total} 个人物细项已随主参考同步，可直接用于生成。`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "建立角色资产失败。");
     }

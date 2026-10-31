@@ -801,7 +801,12 @@ it('已确认候选可沉淀为角色资产并回写当前创作任务', async (
     collectionIds: [collection.id],
     resultAssetId: candidate.id,
   }));
-  expect(await screen.findByText(`已建立角色资产「${profile.name}」，主参考、资产包与当前创作任务已联动。`)).toBeInTheDocument();
+  expect(await screen.findByText(new RegExp(`已建立角色资产「${profile.name}」；已从创作选择预填`))).toBeInTheDocument();
+  expect(window.studio.characters.upsertFact).toHaveBeenCalledWith(profile.id, expect.objectContaining({
+    slotKey: 'view.face_front',
+    state: 'draft',
+    evidence: [{ assetId: candidate.id, regionNote: '候选主参考面部' }],
+  }));
 });
 
 it('场景档案可从资产域进入工作室，并把锁定场景带入创作卡', async () => {

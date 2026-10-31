@@ -116,3 +116,24 @@ it("需要图片证据的细项直接展示素材卡选择，不要求先填写�
   expect(screen.getAllByRole("button", { name: /角色正面全身/ }).length).toBeGreaterThan(0);
   expect(screen.getAllByText("看图选择素材证据").length).toBeGreaterThan(0);
 });
+
+it("面部正面缺失时可用主参考一键确认，不必重新填写技能细项", () => {
+  const detail = {
+    ...profile,
+    masterAssetId: "asset-front",
+    variants: [],
+    facts: [],
+    evidenceAssets: [{
+      id: "asset-front", name: "角色正面主参考", type: "character",
+      mediaType: "image/png", managedPath: "/tmp/front.png", sha256: "front-hash", metadata: {},
+      confirmation: "confirmed", rightsStatus: "authorized", createdAt: "", updatedAt: "",
+    }],
+  } as CharacterDetail;
+  const onSaveFact = inspector(detail);
+  fireEvent.click(screen.getByRole("button", { name: "用主参考确认面部正面" }));
+  expect(onSaveFact).toHaveBeenCalledWith(expect.objectContaining({
+    slotKey: "view.face_front",
+    state: "confirmed",
+    evidence: [{ assetId: "asset-front", regionNote: "主参考面部" }],
+  }));
+});

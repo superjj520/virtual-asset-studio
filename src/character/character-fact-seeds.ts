@@ -98,3 +98,25 @@ export function buildCharacterFactSeeds(card: CreativeCard): CharacterFactInput[
 
   return [...facts.values()];
 }
+
+/**
+ * 候选图沉淀为角色时，创作卡只能覆盖身份、五官、发型、肤色与表情；
+ * 面部正面必须绑定主参考图。这里先以“待确认”写入并绑定图片证据，
+ * 由角色档案中的一次确认完成，而不是让用户重新手填全部细项。
+ */
+export function buildDepositedCharacterFactSeeds(card: CreativeCard, masterAssetId?: string): CharacterFactInput[] {
+  const seeds = buildCharacterFactSeeds(card).filter((fact) => fact.slotKey !== "view.face_front");
+  if (!masterAssetId) return seeds;
+  return [
+    ...seeds,
+    {
+      slotKey: "view.face_front",
+      group: "view",
+      label: "面部正面",
+      value: "候选主参考",
+      state: "draft",
+      note: "从已确认候选自动绑定；请确认正面角度后启用。",
+      evidence: [{ assetId: masterAssetId, regionNote: "候选主参考面部" }],
+    },
+  ];
+}

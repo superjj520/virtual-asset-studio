@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { findCharacterSlot } from "../shared/character-slots";
 import type { CreativeCard } from "../shared/types";
 import { choicesForCharacterFact } from "./character-fact-choices";
-import { buildCharacterFactSeeds } from "./character-fact-seeds";
+import { buildCharacterFactSeeds, buildDepositedCharacterFactSeeds } from "./character-fact-seeds";
 
 const card = {
   intent: "建立可持续使用的角色",
@@ -100,5 +100,18 @@ describe("buildCharacterFactSeeds", () => {
     const facts = buildCharacterFactSeeds(card);
     expect(facts.filter((fact) => !findCharacterSlot(fact.slotKey)).map((fact) => fact.slotKey)).toEqual([]);
     expect(facts.filter((fact) => choicesForCharacterFact(fact.slotKey).length === 0).map((fact) => fact.slotKey)).toEqual([]);
+  });
+});
+
+describe("buildDepositedCharacterFactSeeds", () => {
+  it("候选主参考会补上面部正面证据，并保持待确认而不是冒充已确认", () => {
+    const facts = buildDepositedCharacterFactSeeds(card, "asset-front");
+    const front = facts.find((fact) => fact.slotKey === "view.face_front");
+    expect(front).toMatchObject({
+      value: "候选主参考",
+      state: "draft",
+      evidence: [{ assetId: "asset-front", regionNote: "候选主参考面部" }],
+    });
+    expect(facts.filter((fact) => fact.state === "confirmed").length).toBeGreaterThanOrEqual(8);
   });
 });

@@ -161,6 +161,9 @@ export function CharacterInspector({ detail, selection, onSelectionChange, onSav
   const selectedVariantId = kind ? selection[kind] : undefined;
   const active = activeCharacterFacts(detail, selection);
   const coverage = evaluateCharacterCoverage(detail, purpose, selection);
+  const masterAsset = detail.masterAssetId ? detail.evidenceAssets.find((asset) => asset.id === detail.masterAssetId) : undefined;
+  const faceFrontMissing = coverage.missingRequiredKeys.includes("view.face_front");
+  const [confirmingFaceFront, setConfirmingFaceFront] = useState(false);
   const groupedSlots = CHARACTER_SLOTS.filter((slot) => slot.group === group);
   const customSlots = [...new Map([...active, ...detail.facts.filter((fact) => selectedVariantId && fact.variantId === selectedVariantId)]
     .filter((fact) => fact.group === group && !CHARACTER_SLOTS.some((slot) => slot.key === fact.slotKey))
@@ -193,6 +196,25 @@ export function CharacterInspector({ detail, selection, onSelectionChange, onSav
     } catch (cause) { setError(cause instanceof Error ? cause.message : "导入历史设定失败。"); }
     finally { setImportingLegacy(false); }
   };
+  const confirmFaceFront = async () => {
+    if (!masterAsset) return;
+    setError(""); setConfirmingFaceFront(true);
+    try {
+      await onSaveFact({
+        slotKey: "view.face_front",
+        group: "view",
+        label: "面部正面",
+        value: "候选主参考",
+        state: "confirmed",
+        note: "从主参考一键确认",
+        evidence: [{ assetId: masterAsset.id, regionNote: "主参考面部" }],
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "确认面部正面失败。");
+    } finally {
+      setConfirmingFaceFront(false);
+    }
+  };
   const createVariant = async () => {
     if (!kind || !newVariantName.trim()) return;
     setError("");
@@ -216,6 +238,10 @@ export function CharacterInspector({ detail, selection, onSelectionChange, onSav
       <div><strong>{coverage.confirmedRequiredCount} / {coverage.requiredCount}</strong><span>必需项</span></div><div><strong>{coverage.evidenceLinkedCount}</strong><span>素材证据</span></div><div><strong>{coverage.status === "ready" ? "可创作" : "待补齐"}</strong><span>当前用途</span></div>
     </div>
     <p className="coverage-next" role="status">{coverage.missingRequiredKeys.length ? `还缺 ${coverage.missingRequiredKeys.length} 个必需项：${coverage.missingRequiredKeys.slice(0, 5).map((key) => CHARACTER_SLOTS.find((slot) => slot.key === key)?.label).join("、")}${coverage.missingRequiredKeys.length > 5 ? "等" : ""}。` : "当前用途的必需项已确认。"}</p>
+    {faceFrontMissing && masterAsset && <div className="coverage-quick-action">
+      <span>主参考已就位，可直接确认面部正面，不必重填 9 项。</span>
+      <button type="button" disabled={confirmingFaceFront} onClick={() => void confirmFaceFront()}>{confirmingFaceFront ? "确认中…" : "用主参考确认面部正面"}</button>
+    </div>}
     <div className="character-completeness-map">
       <div className="character-map-heading"><div><h4>角色完整度地图</h4><p>按模块补齐；有缺口的模块优先处理。</p></div><span>{active.filter((fact) => characterFactIsUsable(fact, detail)).length} 项已确认</span></div>
       <div className="character-group-map" role="group" aria-label="角色细项分类">{groupSummaries.map((item) => {
