@@ -527,10 +527,10 @@ function ReferenceSourceCard({ asset, index, selected, onSelect }: {
       <AssetPreview
         assetId={asset.id}
         alt={asset.name}
-        className="creator-asset-image"
+        className={asset.metadata.referenceSheet ? "creator-asset-image reference-sheet-thumb" : "creator-asset-image"}
         fallback={<span className="creator-asset-fallback image" aria-hidden="true">图</span>}
       />
-      <span className="creator-asset-state">可用于身份锁定</span>
+      <span className="creator-asset-state">{asset.metadata.referenceSheet ? "四格参考卡" : "可用于身份锁定"}</span>
     </span>
     <span className="creator-asset-copy"><strong>{displayName}</strong><small>已审片 · 权利已确认</small></span>
   </button>;
@@ -1350,6 +1350,8 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
   </>;
 
   const selectedReferenceIndex = selectedReference ? props.referenceAssets.findIndex((item) => item.id === selectedReference.id) : -1;
+  const previewAsset = props.referenceAssets.find((item) => item.id === props.previewAssetId);
+  const previewIsSheet = Boolean(previewAsset?.metadata?.referenceSheet);
   const sourceLabel = props.sourceMode === "saved"
     ? selectedCharacter?.name
     : props.sourceMode === "reference" && selectedReference
@@ -1433,7 +1435,10 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
         GUIDED_MOODS.find((item) => item.id === props.mood)?.label,
       ];
   const renderStepPreview = () => {
-    if (props.previewAssetId) return <AssetPreview assetId={props.previewAssetId} fallback={<GeneratedCharacterPreview preset={selectedPreset} note={previewNote} />} />;
+    const previewClassName = previewAsset?.metadata?.referenceSheet
+      ? "creator-source-preview reference-sheet-preview"
+      : "creator-source-preview";
+    if (props.previewAssetId) return <AssetPreview assetId={props.previewAssetId} className={previewClassName} fallback={<GeneratedCharacterPreview preset={selectedPreset} note={previewNote} />} />;
     if (creationKind === "character" && mode === "quick") {
       const choicePreview = renderCharacterChoicePreview();
       if (choicePreview) return choicePreview;
@@ -1536,7 +1541,7 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
         {mode === "fine" && <nav className="creator-section-nav" aria-label="角色创作步骤">
           {SECTIONS.map((item, index) => <button type="button" key={item.id} className={section === item.id ? "active" : index < sectionIndex ? "complete" : ""} aria-current={section === item.id ? "step" : undefined} onClick={() => setSection(item.id)}><span>{index < sectionIndex ? "✓" : index + 1}</span><strong>{item.label}</strong><small>{item.short}</small></button>)}
         </nav>}
-        <section className="creator-preview-stage" aria-label={flow.previewAriaLabel}>
+        <section className={`creator-preview-stage${previewIsSheet ? " reference-sheet-stage" : ""}`} aria-label={flow.previewAriaLabel}>
           {renderStepPreview()}
           <div className="creator-preview-badge"><span>{props.sourceMode === "new" ? "方向样片" : "身份参考"}</span><strong>{sourceLabel || "等待选择"}</strong></div>
           <div className="creator-preview-summary"><div><strong>{summary}</strong><span>{sceneLabel} · {atmosphereSummary}</span></div><div className="preview-contract"><span>{flow.previewPrimaryLabel}</span><b>{props.constraints.includes("identity") ? "已锁定" : "可变化"}</b><span>{flow.previewSecondaryLabel}</span><b>{creationKind === "series" ? `${seriesPlan.length} 镜头` : creationKind === "character" ? CREATION_DIRECTIONS.find((item) => item.id === props.direction)?.label : (props.aspectRatio ?? "2:3")}</b></div></div>

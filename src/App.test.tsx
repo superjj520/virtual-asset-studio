@@ -20,6 +20,7 @@ beforeEach(() => {
       setMaster: vi.fn(),
       review: vi.fn(),
     },
+    referenceSheets: { compose: vi.fn() },
     imageReviews: { workspace: vi.fn().mockResolvedValue({ projectId: "", candidates: [], reviews: [], promotions: [] }), create: vi.fn(), promote: vi.fn() },
     collections: { create: vi.fn(), list: vi.fn().mockResolvedValue([]), detail: vi.fn(), update: vi.fn(), attachAsset: vi.fn(), detachAsset: vi.fn() },
     projects: {

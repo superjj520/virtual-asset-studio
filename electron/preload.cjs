@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld("studio", {
     review: (assetId, review) =>
       ipcRenderer.invoke("assets:review", assetId, review),
   },
+  referenceSheets: {
+    compose: (input) => ipcRenderer.invoke("references:compose-sheet", input),
+  },
   imageReviews: {
     workspace: (projectId) => ipcRenderer.invoke("image-reviews:workspace", projectId),
     create: (input) => ipcRenderer.invoke("image-reviews:create", input),

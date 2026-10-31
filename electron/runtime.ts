@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
+import sharp from "sharp";
 import { nativeImage, type IpcMain } from "electron";
 import { StudioDatabase } from "./db/client";
 import { AssetRepository } from "./services/assets/repository";
@@ -17,6 +18,13 @@ import {
 } from "./services/creation/prompt-compiler";
 import { aspectRatioForImageSize, dimensionsForImageSize, imageSizeForAspectRatio, type ImageGenerationSize } from "../src/shared/types";
 import { normalizeReferenceBindings } from "../src/shared/reference-bindings";
+import {
+  REFERENCE_SHEET_ROLE_LABELS,
+  buildReferenceSheetPrompt,
+  normalizeReferenceSheetSlots,
+  referenceSheetLayout,
+  type ReferenceSheetRecipe,
+} from "../src/shared/reference-sheet";
 import { estimateGenerationCostUsd, findGenerationModel } from "../src/shared/generation-models";
 import type {
   Asset,
@@ -433,6 +441,101 @@ export const createStudioRuntime = (
     return result.asset;
   };
 
+  const composeReferenceSheet = async (input: {
+    projectId?: string;
+    slots: unknown;
+    name?: string;
+  }): Promise<{ asset: Asset; recipe: ReferenceSheetRecipe }> => {
+    const rawSlots = Array.isArray(input?.slots) ? input.slots : [];
+    const slots = normalizeReferenceSheetSlots(rawSlots);
+    if (slots.length < 2)
+      throw new Error("参考卡至少需要两个槽位：身份和另外一项。");
+    if (!slots.some((slot) => slot.role === "identity"))
+      throw new Error("参考卡必须先选择身份参考。");
+    const rawAssetIds = rawSlots
+      .map((slot) =>
+        slot && typeof slot === "object" && !Array.isArray(slot)
+          ? (slot as Record<string, unknown>).assetId
+          : undefined,
+      )
+      .filter((value): value is string => typeof value === "string" && Boolean(value));
+    if (new Set(rawAssetIds).size !== slots.length)
+      throw new Error("四个槽位必须使用不同素材，不能重复引用同一张图。");
+    const projectId = input?.projectId ?? libraryProject.id;
+    const resolved = slots.map((slot) => ({
+      slot,
+      asset: referenceForGeneration(slot.assetId, projectId),
+    }));
+    const layout = referenceSheetLayout(slots);
+    const prompt = buildReferenceSheetPrompt(slots);
+    const images = await Promise.all(
+      resolved.map(async ({ slot, asset }) => {
+        const panel = layout.panels.find((candidate) => candidate.role === slot.role);
+        if (!panel) throw new Error("参考卡分区计算失败。");
+        const data = await sharp(asset.managedPath)
+          .rotate()
+          .resize(panel.width, panel.height, {
+            fit: "cover",
+            position: "attention",
+          })
+          .png()
+          .toBuffer();
+        return { input: data, left: panel.x, top: panel.y };
+      }),
+    );
+    const composed = await sharp({
+      create: {
+        width: layout.width,
+        height: layout.height,
+        channels: 4,
+        background: { r: 11, g: 13, b: 18, alpha: 1 },
+      },
+    })
+      .composite(images)
+      .png()
+      .toBuffer();
+    const sha256 = hashBuffer(composed);
+    const managedPath = store.writeGenerated(composed, sha256, ".png");
+    await store.createThumbnail(managedPath, sha256);
+    const recipe: ReferenceSheetRecipe = {
+      version: 1,
+      layout,
+      slots: resolved.map(({ slot, asset }) => ({
+        ...slot,
+        name: asset.name,
+        sha256: asset.sha256,
+      })),
+      prompt,
+      rightsBasis:
+        "由已审片、已授权的本地参考图合成；不引入第三方素材，权利随来源资产保留。",
+      createdAt: new Date().toISOString(),
+    };
+    const roleNames = slots
+      .map((slot) => REFERENCE_SHEET_ROLE_LABELS[slot.role])
+      .join(" + ");
+    const result = assets.createOrGet({
+      type: "reference_image",
+      name: String(input?.name ?? "").trim() || `参考卡 · ${roleNames}`,
+      managedPath,
+      sourcePath: `composed://reference-sheet/${sha256}`,
+      sha256,
+      mediaType: "image/png",
+      rightsStatus: "authorized",
+      confirmation: "confirmed",
+      metadata: {
+        provenance: "composed_reference_sheet",
+        rightsReview: "approved",
+        rightsReason: recipe.rightsBasis,
+        referenceSheet: recipe,
+        sourceAssetIds: slots.map((slot) => slot.assetId),
+      },
+    });
+    projects.attachAsset(projectId, result.asset.id);
+    for (const slot of slots)
+      relationships.create(result.asset.id, slot.assetId, "derived_from");
+    return { asset: result.asset, recipe };
+  };
+
   return {
     register(ipcMain: IpcMain) {
       ipcMain.handle("studio:health", () => ({
@@ -538,6 +641,11 @@ export const createStudioRuntime = (
           previewPath === thumbnail ? "image/webp" : asset.mediaType;
         return `data:${mediaType};base64,${readFileSync(previewPath).toString("base64")}`;
       });
+      ipcMain.handle(
+        "references:compose-sheet",
+        (_event, input: { projectId?: string; slots: unknown; name?: string }) =>
+          composeReferenceSheet(input),
+      );
       ipcMain.handle("projects:create", (_event, name, medium) =>
         projects.create(name, medium),
       );

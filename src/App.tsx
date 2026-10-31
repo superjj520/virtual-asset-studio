@@ -26,6 +26,8 @@ import { buildBatchVariables } from "./creation/batch-variants";
 import { buildAssetReusePlan, canReuseAsset } from "./creation/asset-reuse";
 import { CreationStudioJourney, type CreationStudioStage } from "./creation/CreationStudioJourney";
 import { CreationLaunchpad, type CreationLaunchKind } from "./creation/CreationLaunchpad";
+import { ReferenceSheetComposer } from "./reference/ReferenceSheetComposer";
+import { applyReferenceSheetToCard, type ReferenceSheetRecipe } from "./shared/reference-sheet";
 import { CREATION_PRESET_ARTWORKS, SCENE_ARTWORKS, VisualCharacterCreator } from "./creation/VisualCharacterCreator";
 import {
   buildCharacterStateTrackers,
@@ -542,6 +544,7 @@ export default function App() {
   const [guideSubject, setGuideSubject] = useState("");
   const [guideScene, setGuideScene] = useState("");
   const [guideReferenceAssetId, setGuideReferenceAssetId] = useState("");
+  const [referenceSheetOpen, setReferenceSheetOpen] = useState(false);
   const [guideCollectionIds, setGuideCollectionIds] = useState<string[]>([]);
   const [showGuideOptions, setShowGuideOptions] = useState(false);
   const [showAdvancedCreation, setShowAdvancedCreation] = useState(false);
@@ -3114,6 +3117,10 @@ export default function App() {
         setActiveSceneContext({ profileId: sceneProfile.id, stateId: sceneState.id });
         nextCard = { ...nextCard, sceneProfileId: sceneProfile.id };
       }
+      const sheetRecipe = guideMode === "reference" && referenceAsset?.metadata?.referenceSheet && typeof referenceAsset.metadata.referenceSheet === "object"
+        ? referenceAsset.metadata.referenceSheet as ReferenceSheetRecipe
+        : undefined;
+      if (sheetRecipe) nextCard = applyReferenceSheetToCard(nextCard, sheetRecipe);
       const normalizedCard = normalizeCreativeCard(nextCard);
       if (saveAsCharacter) {
         const roleName = GUIDED_ROLES.find((item) => item.id === guideAppearance.role)?.label ?? "原创角色";
@@ -3938,6 +3945,23 @@ export default function App() {
     setLocalRefinementApplied(false);
     setScreen("launch");
   };
+  const handleReferenceSheetSaved = (asset: Asset) => {
+    setAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
+    setNotice(`参考卡「${asset.name}」已合成；它已进入未归档资产，并且只引用已审片、已授权的素材。`);
+  };
+  const useReferenceSheetForCreation = (asset: Asset) => {
+    setAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
+    setReferenceSheetOpen(false);
+    setGuidedDraftTaskId("");
+    setActiveTaskId("");
+    setActiveDomain("creation");
+    setCreationLaunchKind("image");
+    setGuideMode("reference");
+    setGuideReferenceAssetId(asset.id);
+    setCreationStudioStage("plan");
+    setScreen("start");
+    setNotice(`已把参考卡「${asset.name}」载入单张创作；送模提示词会按四个分区读取，不会把拼贴版式画进成图。`);
+  };
 
   const returnToCreationSetup = () => {
     if (card.characterExtension) {
@@ -4133,6 +4157,7 @@ export default function App() {
           referenceCount={selectableImages.length}
           onSelect={startCreationFlow}
           onExit={() => setScreen("workspace")}
+          onComposeReference={() => setReferenceSheetOpen(true)}
           resume={effectiveResumableSession ? {
             kindLabel: creationKindLabel[effectiveResumableSession.kind],
             updatedAt: effectiveResumableSession.updatedAt,
@@ -4600,6 +4625,7 @@ export default function App() {
             referenceCount={selectableImages.length}
             onSelect={startCreationFlow}
             onOpenAssets={() => setScreen("assets")}
+            onComposeReference={() => setReferenceSheetOpen(true)}
             onExit={() => document.getElementById("creation-projects")?.scrollIntoView({ behavior: "smooth", block: "start" })}
             resume={effectiveResumableSession ? {
               kindLabel: creationKindLabel[effectiveResumableSession.kind],
@@ -6796,6 +6822,15 @@ export default function App() {
         </section>
       )}
       </main>
+      {referenceSheetOpen && (
+        <ReferenceSheetComposer
+          assets={assets}
+          projectId={selectedProjectId || undefined}
+          onClose={() => setReferenceSheetOpen(false)}
+          onSaved={handleReferenceSheetSaved}
+          onUse={useReferenceSheetForCreation}
+        />
+      )}
       </div>
     </div>
   );

@@ -36,6 +36,16 @@ interface Window {
         review: Omit<import("./shared/types").AssetReview, "reviewedAt">,
       ) => Promise<import("./shared/types").Asset>;
     };
+    referenceSheets: {
+      compose: (input: {
+        projectId?: string;
+        slots: import("./shared/reference-sheet").ReferenceSheetSlotInput[];
+        name?: string;
+      }) => Promise<{
+        asset: import("./shared/types").Asset;
+        recipe: import("./shared/reference-sheet").ReferenceSheetRecipe;
+      }>;
+    };
     imageReviews: {
       workspace: (projectId: string) => Promise<import("./shared/types").ReviewWorkspaceSnapshot>;
       create: (input: {
