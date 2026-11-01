@@ -13,7 +13,7 @@ export type GenerationTaskKind =
 
 export type GenerationModel = {
   id: string;
-  providerId: Extract<ProviderId, "openai" | "flux" | "fal" | "gemini" | "local">;
+  providerId: Extract<ProviderId, "openai" | "flux" | "fal" | "gemini" | "local" | "custom">;
   model: string;
   label: string;
   description: string;
@@ -53,6 +53,20 @@ const MODEL_LIST: GenerationModel[] = [
     costNote: "约 $0.003/张，按 fal 实际计费",
     qualityMode: "fixed",
     supportedAspectRatios: ALL_RATIOS,
+  },
+  {
+    id: "custom-openai-image",
+    providerId: "custom",
+    model: "custom",
+    label: "自定义兼容图像",
+    description: "接入千问、豆包等 OpenAI 兼容图像协议，地址与模型由你决定。",
+    tasks: ["portrait", "scene", "series"],
+    supportsReference: false,
+    maxReferences: 0,
+    estimatedCostUsd: 0.03,
+    costNote: "按所选协议实际计费",
+    qualityMode: "fixed",
+    supportedAspectRatios: OPENAI_RATIOS,
   },
   {
     id: "fal-flux-kontext",

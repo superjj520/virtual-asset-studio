@@ -145,6 +145,8 @@ contextBridge.exposeInMainWorld("studio", {
       ipcRenderer.invoke("settings:save-provider-key", providerId, key),
     saveLocalImage: (input) =>
       ipcRenderer.invoke("settings:save-local-image", input),
+    saveCustomImage: (input) =>
+      ipcRenderer.invoke("settings:save-custom-image", input),
     saveRoute: (capability, providerId) =>
       ipcRenderer.invoke("settings:save-route", capability, providerId),
   },

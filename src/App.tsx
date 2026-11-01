@@ -617,10 +617,13 @@ export default function App() {
     deepseek: "",
     gemini: "",
     local: "",
+    custom: "",
   });
   // 本地图像服务不需要密钥，但要记住地址与模型名，重启后仍然可用。
   const [localImageBaseUrl, setLocalImageBaseUrl] = useState("");
   const [localImageModel, setLocalImageModel] = useState("");
+  const [customImageBaseUrl, setCustomImageBaseUrl] = useState("");
+  const [customImageModel, setCustomImageModel] = useState("");
   const [budget, setBudget] = useState<BudgetStatus>({ plannedSpendUsd: 0 });
   const [budgetInput, setBudgetInput] = useState("");
   const [selectedAssetId, setSelectedAssetId] = useState("");
@@ -737,6 +740,8 @@ export default function App() {
         setProvider(status);
         setLocalImageBaseUrl(status.localImage?.baseUrl ?? "");
         setLocalImageModel(status.localImage?.model ?? "");
+        setCustomImageBaseUrl(status.customImage?.baseUrl ?? "");
+        setCustomImageModel(status.customImage?.model ?? "");
       })
       .catch(() => undefined);
   }, []);
@@ -1661,6 +1666,22 @@ export default function App() {
       setNotice(error instanceof Error ? error.message : "保存连接配置失败。");
     }
   };
+  const saveCustomImage = async () => {
+    setNotice("");
+    try {
+      const status = await window.studio.settings.saveCustomImage({
+        baseUrl: customImageBaseUrl,
+        model: customImageModel,
+        apiKey: providerKeys.custom,
+      });
+      setProvider(status);
+      setProviderKeys((current) => ({ ...current, custom: "" }));
+      setNotice("自定义兼容协议已保存。");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "保存自定义兼容协议失败。");
+    }
+  };
+
   const saveLocalImage = async () => {
     try {
       const status = await window.studio.settings.saveLocalImage({
@@ -6731,6 +6752,31 @@ export default function App() {
                 )}
               </div>;
             })}
+          </section>
+          <section className="form-panel">
+            <p className="eyebrow">自定义兼容协议 / 千问、豆包等</p>
+            <p className="result-note">
+              接任意提供 OpenAI 兼容 <code>/images/generations</code> 的云端协议。接口地址、模型名和密钥都由你填写；主进程带系统代理请求，不经过浏览器转发。
+            </p>
+            <div className="provider-row">
+              <div>
+                <strong>阿里百炼 Qwen / 火山方舟 Doubao</strong>
+                <p className="result-note">
+                  {provider?.providers.find((item) => item.id === "custom")?.configured
+                    ? "已配置"
+                    : "未配置"}
+                  {" · "}地址和模型可随时替换
+                </p>
+              </div>
+              <div className="provider-inline-actions">
+                <button type="button" className="secondary" onClick={() => { setCustomImageBaseUrl("https://dashscope.aliyuncs.com/compatible-mode/v1"); setCustomImageModel("qwen-image"); }}>千问</button>
+                <button type="button" className="secondary" onClick={() => { setCustomImageBaseUrl("https://ark.cn-beijing.volces.com/api/v3"); setCustomImageModel("doubao-seedream-3-0-t2i-250415"); }}>豆包</button>
+              </div>
+              <input value={customImageBaseUrl} onChange={(event) => setCustomImageBaseUrl(event.target.value)} placeholder="接口地址，例如 https://dashscope.aliyuncs.com/compatible-mode/v1" />
+              <input value={customImageModel} onChange={(event) => setCustomImageModel(event.target.value)} placeholder="模型名，例如 qwen-image" />
+              <input type="password" value={providerKeys.custom} onChange={(event) => setProviderKeys((current) => ({ ...current, custom: event.target.value }))} placeholder="粘贴兼容协议 API 密钥" />
+              <button onClick={() => void saveCustomImage()}>保存协议</button>
+            </div>
           </section>
           <section className="form-panel">
             <p className="eyebrow">本地图像服务 / 不需要云端密钥</p>

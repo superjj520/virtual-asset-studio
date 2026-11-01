@@ -3811,3 +3811,5 @@ button:active { transform: translateY(1px); }
 
 .creator-preview-stage.reference-sheet-stage { padding: 18px 18px 116px; }
 .creator-preview-stage.reference-sheet-stage > .creator-source-preview { width: auto; max-width: 100%; height: 100%; object-fit: contain; object-position: center; background: transparent; }
+
+.provider-inline-actions { display: flex; gap: 6px; }

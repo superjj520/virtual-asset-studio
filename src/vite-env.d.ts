@@ -332,6 +332,11 @@ interface Window {
         baseUrl: string;
         model: string;
       }) => Promise<import("./shared/types").ProviderStatus>;
+      saveCustomImage: (input: {
+        baseUrl: string;
+        model: string;
+        apiKey: string;
+      }) => Promise<import("./shared/types").ProviderStatus>;
       saveRoute: (
         capability: import("./shared/types").ProviderCapability,
         providerId: import("./shared/types").ProviderId,

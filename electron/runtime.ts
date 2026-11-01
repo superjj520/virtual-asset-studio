@@ -47,6 +47,7 @@ import { FalProvider, FalRemoteTaskError, type FalRemoteTask } from "./services/
 import { GeminiProvider } from "./services/providers/gemini-provider";
 import { DeepSeekProvider } from "./services/providers/deepseek-provider";
 import { LocalImageProvider } from "./services/providers/local-image-provider";
+import { CustomImageProvider } from "./services/providers/custom-image-provider";
 import { GenerationBatchRepository } from "./services/batches/repository";
 import { JobRepository } from "./services/jobs/repository";
 import { hashBuffer } from "./services/files/hash";
@@ -161,6 +162,11 @@ export const createStudioRuntime = (
     baseUrl: () => settings.get("local_image_base_url"),
     model: () => settings.get("local_image_model"),
   });
+  const custom = new CustomImageProvider({
+    baseUrl: () => settings.get("custom_image_base_url"),
+    model: () => settings.get("custom_image_model"),
+    apiKey: () => apiKeyFor("custom"),
+  });
   const imageProviders: Partial<
     Record<
       ProviderId,
@@ -174,7 +180,7 @@ export const createStudioRuntime = (
         }) => Promise<Buffer>;
       }
     >
-  > = { openai, flux, fal, gemini, local };
+  > = { openai, flux, fal, gemini, local, custom };
   const imageEditProviders: Partial<Record<ProviderId, {
     refineImage: (input: {
       prompt: string;
@@ -260,6 +266,11 @@ export const createStudioRuntime = (
         capabilities: ["image"],
       },
       {
+        id: "custom",
+        configured: custom.isConfigured(),
+        capabilities: ["image"],
+      },
+      {
         id: "deepseek",
         configured: hasStoredApiKey("deepseek"),
         capabilities: ["text"],
@@ -302,6 +313,10 @@ export const createStudioRuntime = (
       localImage: {
         baseUrl: local.baseUrl() ?? "",
         model: settings.get("local_image_model") ?? "",
+      },
+      customImage: {
+        baseUrl: custom.baseUrl() ?? "",
+        model: settings.get("custom_image_model") ?? "",
       },
     };
   };
@@ -1180,7 +1195,7 @@ export const createStudioRuntime = (
       ipcMain.handle(
         "settings:save-provider-key",
         (_event, providerId: ProviderId, key: string) => {
-          if (!["openai", "flux", "fal", "deepseek", "gemini"].includes(providerId))
+          if (!["openai", "flux", "fal", "deepseek", "gemini", "custom"].includes(providerId))
             throw new Error("不支持的模型提供方。");
           if (typeof key !== "string" || key.trim().length < 20)
             throw new Error("API 密钥格式不正确。");
@@ -1211,6 +1226,33 @@ export const createStudioRuntime = (
           const model = typeof input.model === "string" ? input.model.trim() : "";
           settings.set("local_image_base_url", baseUrl);
           settings.set("local_image_model", model);
+          return providerStatus();
+        },
+      );
+      ipcMain.handle(
+        "settings:save-custom-image",
+        (_event, input: { baseUrl?: string; model?: string; apiKey?: string }) => {
+          if (!input || typeof input !== "object")
+            throw new Error("自定义兼容协议配置格式不正确。");
+          const baseUrl = (typeof input.baseUrl === "string" ? input.baseUrl : "")
+            .trim()
+            .replace(/\/+$/, "");
+          if (!baseUrl) throw new Error("请填写兼容协议的接口地址。");
+          let parsed: URL;
+          try {
+            parsed = new URL(baseUrl);
+          } catch {
+            throw new Error("接口地址需要是完整地址，例如 https://example.com/v1。");
+          }
+          if (parsed.protocol !== "https:" && parsed.protocol !== "http:")
+            throw new Error("接口地址只支持 http 或 https。");
+          const model = typeof input.model === "string" ? input.model.trim() : "";
+          if (!model) throw new Error("请填写协议要求的模型名。");
+          const apiKey = typeof input.apiKey === "string" ? input.apiKey.trim() : "";
+          if (apiKey && apiKey.length < 8) throw new Error("API 密钥格式不正确。");
+          if (apiKey) settings.set("custom_api_key", secretBox.encrypt(apiKey));
+          settings.set("custom_image_base_url", baseUrl);
+          settings.set("custom_image_model", model);
           return providerStatus();
         },
       );

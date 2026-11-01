@@ -1020,7 +1020,9 @@ export type ProviderId =
   | "deepseek"
   | "gemini"
   /** 本机 OpenAI 兼容图像服务，不依赖云端密钥。 */
-  | "local";
+  | "local"
+  /** 任意云端 OpenAI 兼容图像协议，例如千问、豆包。 */
+  | "custom";
 export type ProviderCapability =
   "text" | "vision" | "image" | "image_edit" | "video";
 
@@ -1036,6 +1038,7 @@ export type ProviderStatus = {
   network?: "system_proxy" | "direct";
   /** 本地图像服务配置：不经过密钥，地址为空即未启用。 */
   localImage?: { baseUrl: string; model: string };
+  customImage?: { baseUrl: string; model: string };
 };
 
 export type ProviderVerificationResult = {
