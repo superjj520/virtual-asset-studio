@@ -969,25 +969,49 @@ export const createStudioRuntime = (
             sheetRecipe && sheetIdentityAssetId
               ? referenceForGeneration(sheetIdentityAssetId, batch.projectId)
               : primaryReference;
+          // 批量生产也必须按所选模型真正使用四张槽位原图；之前这里固定只送身份图，
+          // 还会丢掉所选模型，导致“Nano Banana 批量”实际退化成单参考 Kontext。
+          const sheetSlotReferences = sheetRecipe
+            ? sheetRecipe.slots.map((slot) => referenceForGeneration(slot.assetId, batch.projectId))
+            : [];
+          const useSheetSlots = sheetSlotReferences.length >= 2 && (
+            batch.providerId === "gemini" ||
+            (batch.providerId === "fal" && (batchModel?.maxReferences ?? 1) >= 4)
+          );
+          const generationReferences = useSheetSlots
+            ? sheetSlotReferences
+            : generationReference
+              ? [generationReference]
+              : [];
           for (const item of batch.variants.filter(
             (variant) => variant.status === "planned",
           )) {
             let job: import("../src/shared/types").StudioJob | undefined;
             try {
-              const generationPrompt = sheetRecipe
-                ? `${stripReferenceSheetLayoutLanguage(item.prompt)}\n参考图只用于锁定人物身份与脸部；服装、姿态和场景以文字约束为准，不要复制任何版式。`
-                : `${item.prompt}\n参考图仅用于保持人物身份和服装连续性。`;
+              const generationPrompt = useSheetSlots && sheetRecipe
+                ? `${stripReferenceSheetLayoutLanguage(item.prompt)}\n参考图按顺序分别提供：${sheetRecipe.slots.map((slot, index) => `${index + 1} ${REFERENCE_SHEET_ROLE_LABELS[slot.role]}`).join("、")}。只生成单幅画面，不要把参考图版式、边框或分屏画进成图。`
+                : sheetRecipe
+                  ? `${stripReferenceSheetLayoutLanguage(item.prompt)}\n参考图只用于锁定人物身份与脸部；服装、姿态和场景以文字约束为准，不要复制任何版式。`
+                  : `${item.prompt}\n参考图仅用于保持人物身份和服装连续性。`;
               job = jobs.create({
                 projectId: batch.projectId ?? libraryProject.id,
                 kind: "image_generation",
                 providerId: batch.providerId,
-                request: { prompt: generationPrompt, size, modelId: batchModel?.id, providerModel: batchModel?.model, requestedAspectRatio: batch.aspectRatio, actualAspectRatio: aspectRatioForImageSize(size), referenceAssetIds: batch.referenceAssetIds, referenceBindings: batch.referenceBindings, appliedReferenceAssetIds: generationReference ? [generationReference.id] : [], referenceUsage: batch.referenceBindings.map((binding) => ({ ...binding, status: generationReference && binding.assetId === generationReference.id ? "sent" : "recorded" })), batchId, variantId: item.id },
+                request: { prompt: generationPrompt, size, modelId: batchModel?.id, providerModel: batchModel?.model, requestedAspectRatio: batch.aspectRatio, actualAspectRatio: aspectRatioForImageSize(size), referenceAssetIds: batch.referenceAssetIds, referenceBindings: batch.referenceBindings, appliedReferenceAssetIds: generationReferences.map((reference) => reference.id), referenceUsage: batch.referenceBindings.map((binding) => ({ ...binding, status: generationReferences.some((reference) => reference.id === binding.assetId) ? "sent" : "recorded" })), batchId, variantId: item.id },
               });
               jobs.update(job.id, { status: "in_progress" });
               // 先落盘关联，再调用服务；进程中断后不会把可能已付费的变体伪装成 planned。
               batches.updateVariant(item.id, { status: "planned", jobId: job.id });
-              const generated = generationReference
-                ? await refineWithResult(batch.providerId, { prompt: generationPrompt, size, referencePath: generationReference.managedPath, referenceMediaType: generationReference.mediaType, onRemoteTask: (remoteTask) => jobs.update(job!.id, { status: "in_progress", result: { remoteTask, requestedAspectRatio: batch.aspectRatio, actualSize: size, batchId, variantId: item.id } }) })
+              const generated = generationReferences.length
+                ? await refineWithResult(batch.providerId, {
+                    prompt: generationPrompt,
+                    size,
+                    referencePath: generationReferences[0].managedPath,
+                    referenceMediaType: generationReferences[0].mediaType,
+                    references: generationReferences.map((reference) => ({ path: reference.managedPath, mediaType: reference.mediaType })),
+                    model: batchModel?.model,
+                    onRemoteTask: (remoteTask) => jobs.update(job!.id, { status: "in_progress", result: { remoteTask, requestedAspectRatio: batch.aspectRatio, actualSize: size, batchId, variantId: item.id } }),
+                  })
                 : await generateWithResult(batch.providerId, { prompt: item.prompt, size, seed: batch.seed, quality: batch.qualityTier === "draft" ? "medium" : batch.qualityTier ? "high" : undefined, falModel: batchModel?.providerId === "fal" ? batchModel.model : undefined, onRemoteTask: (remoteTask) => jobs.update(job!.id, { status: "in_progress", result: { remoteTask, requestedAspectRatio: batch.aspectRatio, actualSize: size, batchId, variantId: item.id } }) });
               const asset = writeGeneratedAsset(generated.image, {
                 type: "image",
@@ -995,7 +1019,7 @@ export const createStudioRuntime = (
                 extension: ".png",
                 jobId: job.id,
                 projectId: batch.projectId,
-                sourceAssetIds: generationReference ? [generationReference.id] : [],
+                sourceAssetIds: generationReferences.map((reference) => reference.id),
                 generation: {
                   characterProfileId: batchTask?.characterProfileId,
                   sceneProfileId: batchTask?.card.sceneProfileId,
@@ -1004,7 +1028,7 @@ export const createStudioRuntime = (
                   prompt: generationPrompt,
                   aspectRatio: batch.aspectRatio,
                   requestedSize: size,
-                  referenceCount: generationReference ? 1 : 0,
+                  referenceCount: generationReferences.length,
                   seed: batch.seed,
                 },
               });
@@ -1523,7 +1547,7 @@ export const createStudioRuntime = (
                 negativePrompt: input.negative,
                 aspectRatio: input.aspectRatio,
                 requestedSize: size,
-                referenceCount: references.length,
+                referenceCount: generationReferences.length,
                 seed: input.seed,
               },
             });
