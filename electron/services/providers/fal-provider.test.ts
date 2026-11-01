@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import sharp from "sharp";
 import { FalProvider, FAL_NANO_BANANA_2_EDIT_MODEL, FalRemoteTaskError } from "./fal-provider";
 
 const originalFetch = globalThis.fetch;
@@ -63,8 +64,9 @@ it("fal Nano Banana 2 多图编辑按顺序发送 image_urls", async () => {
   const dir = mkdtempSync(join(tmpdir(), "fal-nano-"));
   const identity = join(dir, "identity.png");
   const wardrobe = join(dir, "wardrobe.png");
-  writeFileSync(identity, Buffer.from("identity"));
-  writeFileSync(wardrobe, Buffer.from("wardrobe"));
+  const pixel = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#c9a27a" } }).png().toBuffer();
+  writeFileSync(identity, pixel);
+  writeFileSync(wardrobe, pixel);
   await expect(provider.refineImage({ prompt: "合成单幅画面", size: "1024x1536", referencePath: identity, referenceMediaType: "image/png", model: FAL_NANO_BANANA_2_EDIT_MODEL, references: [{ path: identity, mediaType: "image/png" }, { path: wardrobe, mediaType: "image/png" }] })).resolves.toEqual(Buffer.from("nano"));
   expect(fetchMock.mock.calls[0]?.[0]).toBe("https://queue.fal.run/fal-ai/nano-banana-2/edit");
   const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));

@@ -319,6 +319,11 @@ interface Window {
     settings: {
       providerStatus: () => Promise<import("./shared/types").ProviderStatus>;
       warmSecrets: () => Promise<boolean>;
+      migrateLegacyKeys: () => Promise<{
+        migrated: import("./shared/types").ProviderId[];
+        failed: import("./shared/types").ProviderId[];
+        unavailable: boolean;
+      }>;
       verifyProvider: (providerId: import("./shared/types").ProviderId) => Promise<import("./shared/types").ProviderVerificationResult>;
       budgetStatus: () => Promise<import("./shared/types").BudgetStatus>;
       saveMonthlyBudget: (

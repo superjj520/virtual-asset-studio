@@ -610,6 +610,7 @@ export default function App() {
   const [provider, setProvider] = useState<ProviderStatus>();
   const [providerVerifications, setProviderVerifications] = useState<Partial<Record<ProviderId, ProviderVerificationResult>>>({});
   const [verifyingProviderId, setVerifyingProviderId] = useState<ProviderId>();
+  const [migratingLegacyKeys, setMigratingLegacyKeys] = useState(false);
   const [providerKeys, setProviderKeys] = useState<Record<ProviderId, string>>({
     openai: "",
     flux: "",
@@ -1664,6 +1665,27 @@ export default function App() {
       );
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "保存连接配置失败。");
+    }
+  };
+  const migrateLegacyKeys = async () => {
+    setMigratingLegacyKeys(true);
+    setNotice("");
+    try {
+      const result = await window.studio.settings.migrateLegacyKeys();
+      setProvider(await window.studio.settings.providerStatus());
+      if (result.unavailable) {
+        setNotice("当前系统无法访问旧钥匙串，请在下方重新粘贴一次密钥。");
+      } else if (result.migrated.length) {
+        setNotice(`已从旧钥匙串迁移 ${result.migrated.length} 个密钥到本机加密文件。`);
+      } else if (result.failed.length) {
+        setNotice("旧钥匙串中的密钥暂时不可读；可以再试一次，或重新粘贴密钥。");
+      } else {
+        setNotice("没有找到需要迁移的旧密钥。");
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "迁移旧密钥失败。");
+    } finally {
+      setMigratingLegacyKeys(false);
     }
   };
   const saveCustomImage = async () => {
@@ -6694,8 +6716,17 @@ export default function App() {
           </header>
           <section className="form-panel">
             <p className="result-note">
-              密钥只保存在本机加密文件，不再触发系统钥匙串授权。从旧版本升级后，请把用过的 API Key 重新粘贴保存一次。
+              密钥只保存在本机加密文件，不再触发系统钥匙串授权。旧版本用系统钥匙串保存的密钥可以迁移一次；迁移时 macOS 可能询问一次钥匙串授权。
             </p>
+            <div className="provider-row">
+              <div>
+                <strong>旧版密钥迁移</strong>
+                <p className="result-note">把旧钥匙串中的密钥转存到本机加密文件，之后重打包不再询问。</p>
+              </div>
+              <button disabled={migratingLegacyKeys} onClick={() => void migrateLegacyKeys()}>
+                {migratingLegacyKeys ? "正在迁移…" : "从旧钥匙串迁移"}
+              </button>
+            </div>
             {provider?.network && (
               <p className="result-note">
                 当前网络：{provider.network === "system_proxy" ? "使用本机系统代理" : "直连"}

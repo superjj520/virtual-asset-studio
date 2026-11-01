@@ -136,6 +136,7 @@ contextBridge.exposeInMainWorld("studio", {
   settings: {
     providerStatus: () => ipcRenderer.invoke("settings:provider-status"),
     warmSecrets: () => ipcRenderer.invoke("settings:warm-secrets"),
+    migrateLegacyKeys: () => ipcRenderer.invoke("settings:migrate-legacy-keys"),
     verifyProvider: (providerId) =>
       ipcRenderer.invoke("settings:verify-provider", providerId),
     budgetStatus: () => ipcRenderer.invoke("settings:budget-status"),

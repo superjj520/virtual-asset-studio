@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import sharp from "sharp";
-import { nativeImage, type IpcMain } from "electron";
+import { nativeImage, safeStorage, type IpcMain } from "electron";
 import { StudioDatabase } from "./db/client";
 import { AssetRepository } from "./services/assets/repository";
 import { ManagedStore } from "./services/files/managed-store";
@@ -1162,6 +1162,25 @@ export const createStudioRuntime = (
         },
       );
       ipcMain.handle("settings:provider-status", () => providerStatus());
+      ipcMain.handle("settings:migrate-legacy-keys", () => {
+        if (!safeStorage.isEncryptionAvailable())
+          return { migrated: [] as ProviderId[], failed: [] as ProviderId[], unavailable: true };
+        const migrated: ProviderId[] = [];
+        const failed: ProviderId[] = [];
+        for (const providerId of ["openai", "flux", "fal", "gemini", "deepseek", "custom"] as ProviderId[]) {
+          const stored = settings.get(`${providerId}_api_key`);
+          if (!stored || isLocalSecret(stored)) continue;
+          try {
+            const plain = safeStorage.decryptString(Buffer.from(stored, "base64")).trim();
+            if (!plain) throw new Error("旧密钥为空。");
+            settings.set(`${providerId}_api_key`, secretBox.encrypt(plain));
+            migrated.push(providerId);
+          } catch {
+            failed.push(providerId);
+          }
+        }
+        return { migrated, failed, unavailable: false };
+      });
       ipcMain.handle("settings:warm-secrets", () => {
         for (const providerId of ["openai", "flux", "fal", "gemini", "deepseek"] as ProviderId[]) {
           if (settings.get(`${providerId}_api_key`)) apiKeyFor(providerId);

@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import sharp from "sharp";
 import { fetchProvider } from "./request";
 import { buildFalImageRequest, FAL_FLUX_SCHNELL_MODEL, type GenerationSize } from "../../../src/shared/generation-requests";
 import { aspectRatioForImageSize } from "../../../src/shared/types";
@@ -41,6 +42,7 @@ export class FalProvider {
   private async pollTask(remoteTask: FalRemoteTask): Promise<Buffer> {
     const apiKey = this.options.apiKey();
     if (!apiKey) throw new FalRemoteTaskError("尚未配置 fal API 密钥，远程任务暂时无法查询。", remoteTask);
+    let resultNotReadyAttempts = 0;
     for (let attempt = 0; attempt < 240; attempt += 1) {
       await sleep(500);
       let statusResponse: Response;
@@ -53,7 +55,16 @@ export class FalProvider {
       let resultResponse: Response;
       try { resultResponse = await fetchProvider("fal", remoteTask.responseUrl, { headers: { Authorization: `Key ${apiKey}` } }); }
       catch (error) { throw new FalRemoteTaskError(error instanceof Error ? error.message : "fal 结果读取失败。", remoteTask); }
-      if (!resultResponse.ok) throw new FalRemoteTaskError(`fal 结果读取失败（${resultResponse.status}）。`, remoteTask);
+      if (!resultResponse.ok) {
+        // fal 的 status 先变成 COMPLETED，结果端点偶尔还会短暂返回 422；
+        // 这是结果尚未可读，不是输入失败。给最多 30 秒重试窗口。
+        if (resultResponse.status === 422 && resultNotReadyAttempts < 30) {
+          resultNotReadyAttempts += 1;
+          continue;
+        }
+        const detail = (await resultResponse.text()).slice(0, 300);
+        throw new FalRemoteTaskError(`fal 结果读取失败（${resultResponse.status}）：${detail}`, remoteTask);
+      }
       const result = (await resultResponse.json()) as FalResponse;
       const image = result.images?.[0] ?? result.image;
       if (!image) throw new Error("fal 未返回图片数据。");
@@ -89,9 +100,16 @@ export class FalProvider {
       ? input.references
       : [{ path: input.referencePath, mediaType: input.referenceMediaType }];
     if (input.model === FAL_NANO_BANANA_2_EDIT_MODEL && references.length > 1) {
+      // Nano Banana 2 对输入格式挑剔：统一转成 PNG，并把边长压到 1536 以内，
+      // 避免 webp/超大 PNG 的 data URI 被队列接口以 422 拒绝。
       const imageUrls = await Promise.all(references.map(async (reference) => {
-        const bytes = await readFile(reference.path);
-        return `data:${reference.mediaType};base64,${bytes.toString("base64")}`;
+        const source = await readFile(reference.path);
+        const bytes = await sharp(source)
+          .rotate()
+          .resize({ width: 1536, height: 1536, fit: "inside", withoutEnlargement: true })
+          .png()
+          .toBuffer();
+        return `data:image/png;base64,${bytes.toString("base64")}`;
       }));
       return this.submit(FAL_NANO_BANANA_2_EDIT_MODEL, {
         prompt: input.prompt,
