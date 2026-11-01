@@ -1500,6 +1500,30 @@ export default function App() {
   );
   const activeTaskCandidates = useMemo(() => {
     if (!activeTaskId) return [];
+    const taskJobIds = new Set(
+      jobs
+        .filter((job) => job.request.creativeTaskId === activeTaskId)
+        .map((job) => job.id),
+    );
+    const plannedLabels = new Set((card.candidatePlan ?? []).map((item) => item.label));
+    const candidateLimit = Math.max(2, card.candidatePlan?.length ?? 2);
+    const seenOrphanLabels = new Set<string>();
+    const orphanCandidateIds: string[] = [];
+    for (const asset of assets
+      .filter((item) => {
+        const jobId = item.metadata.generatedFromJobId;
+        return typeof jobId === "string" && taskJobIds.has(jobId);
+      })
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
+      if (orphanCandidateIds.length >= candidateLimit) break;
+      const job = jobs.find((item) => item.id === asset.metadata.generatedFromJobId);
+      const label = typeof job?.request.candidateLabel === "string" ? job.request.candidateLabel : "";
+      if (label && plannedLabels.size && !plannedLabels.has(label)) continue;
+      const key = label || asset.id;
+      if (seenOrphanLabels.has(key)) continue;
+      seenOrphanLabels.add(key);
+      orphanCandidateIds.push(asset.id);
+    }
     const ids = [
       ...jobs
         .filter((job) => job.request.creativeTaskId === activeTaskId && job.status === "completed")
@@ -1508,6 +1532,7 @@ export default function App() {
         .filter((batch) => batch.creativeTaskId === activeTaskId)
         .flatMap((batch) => batch.variants.map((variant) => variant.assetId ?? "")),
       creativeTasks.find((task) => task.id === activeTaskId)?.resultAssetId ?? "",
+      ...orphanCandidateIds,
     ].filter(Boolean);
     return [...new Set(ids)]
       .map((id) => assets.find((asset) => asset.id === id))
