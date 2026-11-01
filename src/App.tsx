@@ -2014,6 +2014,10 @@ export default function App() {
         setCreativeTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
       }
       const prompt = activeTranslation?.positive ?? activeBuild.positive;
+      const candidateSeed =
+        generationSeed === undefined
+          ? undefined
+          : generationSeed + Math.max(0, (prepared?.candidateIndex ?? 1) - 1);
       const characterId = prepared?.characterProfileId ?? activeCharacterContext?.profileId ?? activeTask?.characterProfileId;
       const characterWorkspace = characterId
         ? await window.studio.characterWorkspace.get(characterId)
@@ -2051,7 +2055,7 @@ export default function App() {
         referenceBindings: normalizedCard.referenceBindings,
         qualityTier,
         modelId: effectiveGenerationModelId,
-        seed: generationSeed,
+        seed: candidateSeed,
         candidateLabel: prepared?.candidateLabel,
         candidateIndex: prepared?.candidateIndex,
         candidateCount: prepared?.candidateCount,

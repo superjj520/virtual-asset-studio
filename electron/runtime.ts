@@ -489,7 +489,7 @@ export const createStudioRuntime = (
       )
       .filter((value): value is string => typeof value === "string" && Boolean(value));
     if (new Set(rawAssetIds).size !== slots.length)
-      throw new Error("四个槽位必须使用不同素材，不能重复引用同一张图。");
+      throw new Error("参考槽位必须使用不同素材，不能重复引用同一张图。");
     const projectId = input?.projectId ?? libraryProject.id;
     const resolved = slots.map((slot) => ({
       slot,

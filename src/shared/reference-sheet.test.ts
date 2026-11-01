@@ -7,6 +7,7 @@ import {
   referenceSheetLayout,
   stripReferenceSheetLayoutLanguage,
   type ReferenceSheetRecipe,
+  type ReferenceSheetRole,
 } from "./reference-sheet";
 import { findReferenceStyle } from "./reference-styles";
 
@@ -26,7 +27,7 @@ const card: CreativeCard = {
 };
 
 const recipe = (
-  slots: Array<{ role: "identity" | "wardrobe" | "pose" | "scene"; assetId: string }>,
+  slots: Array<{ role: ReferenceSheetRole; assetId: string }>,
 ): ReferenceSheetRecipe => {
   const normalized = normalizeReferenceSheetSlots(slots);
   return {
@@ -92,6 +93,29 @@ describe("reference sheet", () => {
       "右下格",
     ]);
     expect(four.panels.every((panel) => panel.width === 684)).toBe(true);
+
+    const five = referenceSheetLayout([
+      { role: "identity", assetId: "a" },
+      { role: "wardrobe", assetId: "b" },
+      { role: "pose", assetId: "c" },
+      { role: "scene", assetId: "d" },
+      { role: "extra1", assetId: "e" },
+    ]);
+    expect(five.kind).toBe("3x2");
+    expect(five.panels).toHaveLength(5);
+    expect(five.panels[4].label).toBe("中下格");
+
+    const six = referenceSheetLayout([
+      { role: "identity", assetId: "a" },
+      { role: "wardrobe", assetId: "b" },
+      { role: "pose", assetId: "c" },
+      { role: "scene", assetId: "d" },
+      { role: "extra1", assetId: "e" },
+      { role: "extra2", assetId: "f" },
+    ]);
+    expect(six.kind).toBe("3x2");
+    expect(six.panels).toHaveLength(6);
+    expect(six.panels[5].label).toBe("右下格");
   });
 
   it("提示词说明每格用途，并要求成图不是拼贴", () => {
@@ -116,6 +140,18 @@ describe("reference sheet", () => {
     expect(prompt.positive).toContain("右下格只提供场景、光线与色调");
     expect(prompt.negative).toContain("拼贴画");
     expect(prompt.modules).toHaveLength(4);
+
+    const withExtras = buildReferenceSheetPrompt([
+      { role: "identity", assetId: "a" },
+      { role: "wardrobe", assetId: "b" },
+      { role: "extra1", assetId: "c" },
+      { role: "extra2", assetId: "d" },
+      { role: "pose", assetId: "e" },
+    ]);
+    expect(withExtras.modules).toHaveLength(5);
+    expect(withExtras.positive).toContain("2 行 3 列的六格");
+    expect(withExtras.positive).toContain("补充 1");
+    expect(withExtras.positive).toContain("不改变人物身份、服装结构、姿态和场景");
   });
 
   it("选择画风后写入正向约束与负面词", () => {
@@ -151,6 +187,17 @@ describe("reference sheet", () => {
     expect(next.mustKeep).toContain("参考图是素材参考板");
     expect(next.avoid).toContain("分屏");
     expect(card.identityAnchor).toBe("原身份");
+
+    const withExtra = applyReferenceSheetToCard(
+      card,
+      recipe([
+        { role: "identity", assetId: "a" },
+        { role: "wardrobe", assetId: "b" },
+        { role: "extra1", assetId: "c" },
+      ]),
+    );
+    expect(withExtra.mustKeep).toContain("补充参考 c");
+    expect(withExtra.mustKeep).toContain("不改变身份、服装结构、姿态和场景");
   });
 
   it("两张卡提示词使用左右格标签，且没有场景模块", () => {

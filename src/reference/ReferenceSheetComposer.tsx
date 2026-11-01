@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { canReuseAsset } from "../creation/asset-reuse";
 import {
   REFERENCE_SHEET_ROLES,
+  REFERENCE_SHEET_EXTRA_ROLES,
   REFERENCE_SHEET_ROLE_LABELS,
   buildReferenceSheetPrompt,
   referenceSheetLayout,
@@ -34,6 +35,8 @@ const ROLE_HINT: Record<ReferenceSheetRole, string> = {
   wardrobe: "款式、材质、颜色、配饰",
   pose: "站位、重心、手部与镜头",
   scene: "空间、光线、色调与气氛",
+  extra1: "补充材质、配饰或光影；不改变身份和构图",
+  extra2: "再补充一处细节；最多两张",
 };
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
@@ -55,6 +58,8 @@ const preferredType: Record<ReferenceSheetRole, string[]> = {
   wardrobe: ["wardrobe", "reference_image", "image"],
   pose: ["pose", "reference_image", "image"],
   scene: ["scene", "reference_image", "image"],
+  extra1: ["reference_image", "wardrobe", "image", "character"],
+  extra2: ["reference_image", "wardrobe", "image", "character"],
 };
 
 export function ReferenceSheetComposer({
@@ -120,17 +125,22 @@ export function ReferenceSheetComposer({
   }, [onClose]);
 
   const selectedCount = Object.values(slots).filter(Boolean).length;
+  const selectedExtras = REFERENCE_SHEET_EXTRA_ROLES.filter((role) => slots[role]);
   const canCompose = Boolean(slots.identity) && selectedCount >= 2 && !busy;
   const livePrompt = buildReferenceSheetPrompt(
-    REFERENCE_SHEET_ROLES.filter((role) => slots[role]).map((role) => ({
-      role,
-      assetId: slots[role]?.id ?? "",
-    })),
+    [...REFERENCE_SHEET_ROLES, ...REFERENCE_SHEET_EXTRA_ROLES]
+      .filter((role) => slots[role])
+      .map((role) => ({
+        role,
+        assetId: slots[role]?.id ?? "",
+      })),
     findReferenceStyle(styleId),
   );
-  const selectedHint = REFERENCE_SHEET_ROLES.filter((role) => slots[role]).map(
-    (role) => `${REFERENCE_SHEET_ROLE_LABELS[role]} · ${slots[role]?.name ?? ""}`,
-  );
+  const selectedHint = [...REFERENCE_SHEET_ROLES, ...REFERENCE_SHEET_EXTRA_ROLES]
+    .filter((role) => slots[role])
+    .map(
+      (role) => `${REFERENCE_SHEET_ROLE_LABELS[role]} · ${slots[role]?.name ?? ""}`,
+    );
   const activeCandidates = useMemo(() => {
     const priority = preferredType[activeRole];
     return [...eligible].sort((left, right) => {
@@ -149,7 +159,7 @@ export function ReferenceSheetComposer({
     );
     if (usedBy) {
       setError(
-        `「${asset.name}」已经用在「${REFERENCE_SHEET_ROLE_LABELS[usedBy]}」槽位；四个槽位必须是不同素材。`,
+        `「${asset.name}」已经用在「${REFERENCE_SHEET_ROLE_LABELS[usedBy]}」槽位；参考槽位必须是不同素材。`,
       );
       return;
     }
@@ -217,6 +227,16 @@ export function ReferenceSheetComposer({
     }
   };
 
+  const addExtra = () => {
+    const free = REFERENCE_SHEET_EXTRA_ROLES.find((role) => !slots[role]);
+    if (!free) {
+      setError("补充参考最多两张；先清除一张再添加。");
+      return;
+    }
+    setActiveRole(free);
+    setError("");
+  };
+
   const clearRole = (role: ReferenceSheetRole) => {
     setSlots((current) => {
       const next = { ...current };
@@ -236,9 +256,12 @@ export function ReferenceSheetComposer({
     setBusy(true);
     setError("");
     try {
-      const payload: ReferenceSheetSlotInput[] = REFERENCE_SHEET_ROLES.filter(
-        (role) => slots[role],
-      ).map((role) => ({ role, assetId: slots[role]!.id }));
+      const payload: ReferenceSheetSlotInput[] = [
+        ...REFERENCE_SHEET_ROLES,
+        ...REFERENCE_SHEET_EXTRA_ROLES,
+      ]
+        .filter((role) => slots[role])
+        .map((role) => ({ role, assetId: slots[role]!.id }));
       const composed = await window.studio.referenceSheets.compose({
         projectId,
         slots: payload,
@@ -267,19 +290,23 @@ export function ReferenceSheetComposer({
     setError("");
   };
 
-  const boardPanels = referenceSheetLayout(
-    REFERENCE_SHEET_ROLES.map((role) => ({
+  const boardRoles = selectedExtras.length
+    ? [...REFERENCE_SHEET_ROLES, ...selectedExtras]
+    : REFERENCE_SHEET_ROLES;
+  const boardLayout = referenceSheetLayout(
+    boardRoles.map((role) => ({
       role,
       assetId: slots[role]?.id ?? role,
     })),
-  ).panels;
+  );
+  const boardPanels = boardLayout.panels;
 
   return (
     <div className="reference-sheet-overlay" role="dialog" aria-modal="true" aria-label="参考卡组合">
       <section className="reference-sheet-panel">
         <header className="reference-sheet-header">
           <div>
-            <p className="eyebrow">参考卡工坊 · 一张图承载四层语义</p>
+            <p className="eyebrow">参考卡工坊 · 四层语义 + N 补充</p>
             <h2>把身份、服装、姿态、场景压成一张送模参考</h2>
             <p>素材只从已审片、已授权的本地资产里选。合成图保留来源和权利记录。</p>
           </div>
@@ -317,9 +344,35 @@ export function ReferenceSheetComposer({
                 );
               })}
             </ol>
+            <div className="reference-sheet-extras">
+              <div className="reference-sheet-extras-head">
+                <div>
+                  <strong>补充参考</strong>
+                  <small>只补材质、配饰或光影，不改变身份和构图</small>
+                </div>
+                <button type="button" onClick={addExtra} disabled={selectedExtras.length >= REFERENCE_SHEET_EXTRA_ROLES.length}>
+                  ＋ 添加
+                </button>
+              </div>
+              {selectedExtras.length ? (
+                <div className="reference-sheet-extra-list">
+                  {selectedExtras.map((role) => (
+                    <div className={activeRole === role ? "reference-sheet-extra-row active" : "reference-sheet-extra-row"} key={role}>
+                      <button type="button" onClick={() => setActiveRole(role)}>
+                        <span>{REFERENCE_SHEET_ROLE_LABELS[role]}</span>
+                        <strong>{slots[role]?.name}</strong>
+                      </button>
+                      <button type="button" onClick={() => clearRole(role)} aria-label={`清除${REFERENCE_SHEET_ROLE_LABELS[role]}`}>×</button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p>暂无补充参考。3 + N 中的 N 可选 0–2 张，最终合成为六格参考板。</p>
+              )}
+            </div>
             <div className="reference-sheet-summary">
-              <strong>{selectedCount} / 4 槽位</strong>
-              <span>{selectedHint.length ? selectedHint.join(" · ") : "仍可选择最多四项参考"}</span>
+              <strong>{selectedCount} / 6 槽位</strong>
+              <span>{selectedHint.length ? selectedHint.join(" · ") : "核心四槽 + 最多两张补充参考"}</span>
             </div>
             <div className="reference-sheet-style">
               <div className="reference-sheet-style-head">
@@ -370,7 +423,7 @@ export function ReferenceSheetComposer({
             <div className="reference-sheet-stage-head">
               <div>
                 <span className="eyebrow">{result ? "已合成 · 可送入生成" : "本地排版预览"}</span>
-                <h3>{result ? result.name : "四格参考板"}</h3>
+                <h3>{result ? result.name : `参考板 · ${boardPanels.length} 格`}</h3>
               </div>
               {result && <span className="reference-sheet-badge">已授权 · 已确认</span>}
             </div>
@@ -379,7 +432,7 @@ export function ReferenceSheetComposer({
                 {sheetPreview ? <img src={sheetPreview} alt="已合成的参考卡" /> : <span>参考卡已合成，正在读取预览…</span>}
               </div>
             ) : (
-              <div className={`reference-sheet-board board-${boardPanels.length > 2 ? "2x2" : "1x2"}`}>
+              <div className={`reference-sheet-board board-${boardLayout.kind}`}>
                 {boardPanels.map((panel) => {
                   const asset = slots[panel.role as ReferenceSheetRole];
                   const preview = asset ? previews[asset.id] : "";

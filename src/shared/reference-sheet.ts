@@ -12,13 +12,23 @@ export const REFERENCE_SHEET_ROLES = [
   "scene",
 ] as const;
 
-export type ReferenceSheetRole = (typeof REFERENCE_SHEET_ROLES)[number];
+export const REFERENCE_SHEET_EXTRA_ROLES = ["extra1", "extra2"] as const;
+
+export const REFERENCE_SHEET_ALL_ROLES = [
+  ...REFERENCE_SHEET_ROLES,
+  ...REFERENCE_SHEET_EXTRA_ROLES,
+] as const;
+
+export type ReferenceSheetRole = (typeof REFERENCE_SHEET_ALL_ROLES)[number];
+export type ReferenceSheetExtraRole = (typeof REFERENCE_SHEET_EXTRA_ROLES)[number];
 
 export const REFERENCE_SHEET_ROLE_LABELS: Record<ReferenceSheetRole, string> = {
   identity: "身份",
   wardrobe: "服装",
   pose: "姿态",
   scene: "场景",
+  extra1: "补充 1",
+  extra2: "补充 2",
 };
 
 export type ReferenceSheetSlotInput = {
@@ -33,7 +43,7 @@ export type ReferenceSheetSlot = ReferenceSheetSlotInput & {
 
 export type ReferenceSheetPanel = {
   role: ReferenceSheetRole;
-  column: 0 | 1;
+  column: 0 | 1 | 2;
   row: 0 | 1;
   x: number;
   y: number;
@@ -43,7 +53,7 @@ export type ReferenceSheetPanel = {
 };
 
 export type ReferenceSheetLayout = {
-  kind: "1x2" | "2x2";
+  kind: "1x2" | "2x2" | "3x2";
   width: number;
   height: number;
   gap: number;
@@ -67,7 +77,7 @@ export type ReferenceSheetRecipe = {
 };
 
 const ROLE_ORDER = new Map(
-  REFERENCE_SHEET_ROLES.map((role, index) => [role, index]),
+  REFERENCE_SHEET_ALL_ROLES.map((role, index) => [role, index]),
 );
 
 const clean = (value: string) => value.trim().replace(/\s+/g, " ");
@@ -76,7 +86,7 @@ export const isReferenceSheetRole = (
   value: unknown,
 ): value is ReferenceSheetRole =>
   typeof value === "string" &&
-  REFERENCE_SHEET_ROLES.includes(value as ReferenceSheetRole);
+  REFERENCE_SHEET_ALL_ROLES.includes(value as ReferenceSheetRole);
 
 export const normalizeReferenceSheetSlots = (
   input: unknown,
@@ -166,6 +176,29 @@ export const referenceSheetLayout = (
       })),
     };
   }
+  if (normalized.length >= 5) {
+    const width = 1440;
+    const height = 960;
+    const panelWidth = (width - gap * 4) / 3;
+    const panelHeight = (height - gap * 3) / 2;
+    const labels = ["左上格", "中上格", "右上格", "左下格", "中下格", "右下格"];
+    return {
+      kind: "3x2",
+      width,
+      height,
+      gap,
+      panels: normalized.map((slot, index) => ({
+        role: slot.role,
+        column: (index % 3) as 0 | 1 | 2,
+        row: (index < 3 ? 0 : 1) as 0 | 1,
+        x: gap + (index % 3) * (panelWidth + gap),
+        y: gap + (index < 3 ? 0 : 1) * (panelHeight + gap),
+        width: panelWidth,
+        height: panelHeight,
+        label: labels[index] ?? `第 ${index + 1} 格`,
+      })),
+    };
+  }
   const positions = [
     { column: 0 as const, row: 0 as const, label: "左上格" },
     { column: 1 as const, row: 0 as const, label: "右上格" },
@@ -205,6 +238,10 @@ const roleInstruction: Record<
     `${label}只提供姿态与身体朝向：采用其站位、重心、手部位置和镜头角度，不要复制成第二个人。`,
   scene: (label) =>
     `${label}只提供场景、光线与色调：沿用其空间、环境、光源方向和色彩气氛，人物仍须清晰可辨。`,
+  extra1: (label) =>
+    `${label}只提供补充细节：只提取其材质、配饰、发型或光影等明确特征，不改变人物身份、服装结构、姿态和场景。`,
+  extra2: (label) =>
+    `${label}只提供补充细节：只提取其材质、配饰、发型或光影等明确特征，不改变人物身份、服装结构、姿态和场景。`,
 };
 
 export const buildReferenceSheetPrompt = (
@@ -222,18 +259,26 @@ export const buildReferenceSheetPrompt = (
   });
   if (style) modules.push({ label: "画风", value: style.positive });
   const negative = [
-    "拼贴画、分屏、四宫格、参考板边框、分格线、文字、水印、多个主体、身份漂移、服装不一致、肢体畸形",
+    "拼贴画、分屏、四宫格、六宫格、参考板边框、分格线、文字、水印、多个主体、身份漂移、服装不一致、肢体畸形",
     style?.negative,
   ]
     .filter(Boolean)
     .join("、");
-  const presentRoles = new Set(normalized.map((slot) => slot.role));
-  const references = REFERENCE_SHEET_ROLES.filter((role) =>
-    presentRoles.has(role),
-  ).map((role) => `${REFERENCE_SHEET_ROLE_LABELS[role]}以${REFERENCE_SHEET_ROLE_LABELS[role]}参考为准`);
+    const references = normalized.map(
+    (slot) =>
+      `${REFERENCE_SHEET_ROLE_LABELS[slot.role]}以${REFERENCE_SHEET_ROLE_LABELS[slot.role]}参考为准`,
+  );
   const positive = [
     "任务：生成一张完整的单幅新画面，不是拼贴图，也不是参考板的复制。",
-    `参考图是一张${normalized.length === 3 ? "上方两格、下方整行的三格" : layout.kind === "2x2" ? "2×2 四格" : "左右两格"}素材参考板，每个分区只读取对应信息，不复制版式。`,
+    `参考图是一张${
+      normalized.length === 3
+        ? "上方两格、下方整行的三格"
+        : layout.kind === "3x2"
+          ? "2 行 3 列的六格"
+          : layout.kind === "2x2"
+            ? "2×2 四格"
+            : "左右两格"
+    }素材参考板，每个分区只读取对应信息，不复制版式。`,
     ...modules.map((module) => `${module.label}：${module.value}`),
     `输出约束：单个人物、单幅构图、无分屏、无边框、无分格线、无文字、无水印${references.length ? `；${references.join("，")}` : ""}。`,
   ].join("\n");
@@ -260,6 +305,9 @@ export const applyReferenceSheetToCard = (
   const wardrobeLabel = slot("wardrobe");
   const poseLabel = slot("pose");
   const sceneLabel = slot("scene");
+  const extraLabels = recipe.slots
+    .filter((item) => item.role === "extra1" || item.role === "extra2")
+    .map((item) => item.name);
   return {
     ...card,
     identityAnchor: identityLabel
@@ -275,14 +323,19 @@ export const applyReferenceSheetToCard = (
       ? `${sceneLabel}场景、光线与色调：沿用参考板中的空间、环境、光源方向和色彩气氛`
       : card.scene,
     mustKeep: mergeText(
-      mergeText(card.mustKeep, "参考图是素材参考板：只读取各分区信息，不把分格线、边框或拼贴版式画进成图"),
-      recipe.prompt.positive,
+      mergeText(
+        mergeText(card.mustKeep, "参考图是素材参考板：只读取各分区信息，不把分格线、边框或拼贴版式画进成图"),
+        recipe.prompt.positive,
+      ),
+      extraLabels.length
+        ? `补充参考 ${extraLabels.join("、")}：只提取材质、配饰、发型或光影等明确特征，不改变身份、服装结构、姿态和场景。`
+        : "",
     ),
     avoid: mergeText(card.avoid, recipe.prompt.negative),
   };
 };
 
-const referenceSheetLayoutLine = /参考板|四格|四宫格|左上格|右上格|左下格|右下格|分格线|分屏|拼贴|2×2|下方整行/;
+const referenceSheetLayoutLine = /参考板|四格|四宫格|六格|六宫格|左上格|中上格|右上格|左下格|中下格|右下格|分格线|分屏|拼贴|2×2|3×2|下方整行/;
 
 /**
  * 单参考模型只接收一张图。参考卡用于人类整理与追溯，
