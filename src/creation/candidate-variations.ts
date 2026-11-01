@@ -4,9 +4,9 @@ export type CandidateVariation = CreativeCandidatePlanItem;
 
 const GENERAL_VARIATIONS: CandidateVariation[] = [
   { id: "primary", label: "主方案", directive: "严格执行当前方案，优先保证主体身份、场景和整体视觉方向的准确性" },
-  { id: "composition", label: "构图备选", directive: "保持人物身份、服装、场景与风格不变，只优化机位、画面重心和空间层次" },
-  { id: "emotion", label: "情绪备选", directive: "保持人物身份、服装、场景和镜头不变，只微调表情、视线与姿态张力" },
-  { id: "lighting", label: "光影备选", directive: "保持人物身份、服装、动作、场景和构图不变，只优化主光、轮廓光与明暗层次" },
+  { id: "composition", label: "构图备选", directive: "保持人物身份、服装、场景与风格不变，改为近景半身构图：镜头拉近，主体占画面 60% 以上，机位略高，与主方案一眼可分" },
+  { id: "emotion", label: "情绪备选", directive: "保持人物身份、服装、场景不变，改为面部近景（肩部以上），表情与视线明显变化，与主方案一眼可分" },
+  { id: "lighting", label: "光影备选", directive: "保持人物身份、服装、动作、场景和构图不变，改为侧逆光，主光方向与明暗层次明显不同" },
 ];
 
 export const SERIES_VARIATION_LIBRARY: CandidateVariation[] = [
