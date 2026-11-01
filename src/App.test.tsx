@@ -274,7 +274,7 @@ it('单张方案进入候选阶段后可直接生成首版并显示模型成本'
   await waitFor(() => expect(rejectImage).toBeTypeOf('function'));
   rejectImage(new Error('网络中断'));
   await waitFor(() => expect(window.studio.generation.image).toHaveBeenCalledTimes(1));
-  expect((await screen.findAllByText(/候选 1 生成失败；本批已停止，已生成 0 张/)).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText(/候选 1 生成失败；已生成 0 张，已保留/)).length).toBeGreaterThan(0);
   fireEvent.click(screen.getByRole('button', { name: '重试未完成' }));
   await waitFor(() => expect(window.studio.generation.image).toHaveBeenCalledTimes(2));
   expect(await screen.findByText('正在生成 1/2')).toBeInTheDocument();

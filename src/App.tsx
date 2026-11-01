@@ -2174,20 +2174,26 @@ export default function App() {
         setNotice(`正在生成候选 ${index + 1}/${allCandidateVariations.length}…`);
         const candidateBuild = { ...build, positive: `${build.positive}\n候选策略：${variation.directive}` };
         const candidateTranslation = translated ? { ...translated, positive: `${translated.positive}\nCandidate variation: ${variation.directive}` } : undefined;
-        const assetId = await generateImage({
-          build: candidateBuild,
-          translated: candidateTranslation,
-          card: normalizedCard,
-          taskId,
-          characterProfileId,
-          sceneProfileId,
-          candidateLabel: variation.label,
-          candidateIndex: index + 1,
-          candidateCount: allCandidateVariations.length,
-          seedBase: candidateSeedBase,
-        });
+        let assetId: string | undefined;
+        try {
+          assetId = await generateImage({
+            build: candidateBuild,
+            translated: candidateTranslation,
+            card: normalizedCard,
+            taskId,
+            characterProfileId,
+            sceneProfileId,
+            candidateLabel: variation.label,
+            candidateIndex: index + 1,
+            candidateCount: allCandidateVariations.length,
+            seedBase: candidateSeedBase,
+          });
+        } catch (error) {
+          stopReason = `候选 ${index + 1} 生成失败（${error instanceof Error ? error.message : "未知错误"}）；已生成 ${generatedIds.length} 张，已保留。未完成部分可点“重试未完成”。`;
+          break;
+        }
         if (!assetId) {
-          stopReason = `候选 ${index + 1} 生成失败；本批已停止，已生成 ${generatedIds.length} 张。未完成部分可点“重试未完成”或在生成队列按原请求重试。`;
+          stopReason = `候选 ${index + 1} 生成失败；已生成 ${generatedIds.length} 张，已保留。未完成部分可点“重试未完成”。`;
           break;
         }
         generatedIds.push(assetId);
