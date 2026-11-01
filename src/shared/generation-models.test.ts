@@ -71,10 +71,10 @@ describe("generation model registry", () => {
     expect(selection.issues.join("")).toContain("指定模型不可用");
   });
 
-  it("生成前检查把参考图数量作为阻断项", () => {
+  it("生成前检查把超过模型上限的参考图作为阻断项", () => {
     const result = preflightGeneration({
       task: "edit",
-      referenceCount: 2,
+      referenceCount: 5,
       providers: providers({ fal: true }),
     });
     expect(result.ok).toBe(false);

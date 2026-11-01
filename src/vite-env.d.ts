@@ -36,6 +36,14 @@ interface Window {
         review: Omit<import("./shared/types").AssetReview, "reviewedAt">,
       ) => Promise<import("./shared/types").Asset>;
     };
+    referenceLibrary: {
+      list: () => Promise<import("./shared/reference-library").CloudReferenceCatalog>;
+      thumbnail: (url: string) => Promise<string>;
+      import: (
+        item: import("./shared/reference-library").CloudReferenceItem,
+        projectId?: string,
+      ) => Promise<import("./shared/types").Asset>;
+    };
     referenceSheets: {
       compose: (input: {
         projectId?: string;

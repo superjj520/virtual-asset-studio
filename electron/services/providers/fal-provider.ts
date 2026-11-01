@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { fetchProvider } from "./request";
 import { buildFalImageRequest, FAL_FLUX_SCHNELL_MODEL, type GenerationSize } from "../../../src/shared/generation-requests";
+import { aspectRatioForImageSize } from "../../../src/shared/types";
 
 type FalImage = { url?: string; content_type?: string; data?: string };
 type FalResponse = { images?: FalImage[]; image?: FalImage };
@@ -16,6 +17,7 @@ export class FalRemoteTaskError extends Error {
 }
 
 const editModel = "fal-ai/flux-kontext/dev";
+export const FAL_NANO_BANANA_2_EDIT_MODEL = "fal-ai/nano-banana-2/edit";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class FalProvider {
@@ -74,11 +76,36 @@ export class FalProvider {
   }
   async generateImage(input: { prompt: string; negative?: string; size: GenerationSize; model?: string; seed?: number; quality?: "medium" | "high" }): Promise<Buffer> { return (await this.generateImageWithTask(input)).image; }
 
-  async refineImageWithTask(input: { prompt: string; size: GenerationSize; referencePath: string; referenceMediaType: string; onRemoteTask?: (task: FalRemoteTask) => void }): Promise<FalImageResult> {
-    const reference = await readFile(input.referencePath);
-    return this.submit(editModel, { prompt: input.prompt, image_url: `data:${input.referenceMediaType};base64,${reference.toString("base64")}`, resolution_mode: "match_input", num_images: 1, output_format: "png", enable_safety_checker: true }, input.onRemoteTask);
+  async refineImageWithTask(input: {
+    prompt: string;
+    size: GenerationSize;
+    referencePath: string;
+    referenceMediaType: string;
+    references?: Array<{ path: string; mediaType: string }>;
+    model?: string;
+    onRemoteTask?: (task: FalRemoteTask) => void;
+  }): Promise<FalImageResult> {
+    const references = input.references?.length
+      ? input.references
+      : [{ path: input.referencePath, mediaType: input.referenceMediaType }];
+    if (input.model === FAL_NANO_BANANA_2_EDIT_MODEL && references.length > 1) {
+      const imageUrls = await Promise.all(references.map(async (reference) => {
+        const bytes = await readFile(reference.path);
+        return `data:${reference.mediaType};base64,${bytes.toString("base64")}`;
+      }));
+      return this.submit(FAL_NANO_BANANA_2_EDIT_MODEL, {
+        prompt: input.prompt,
+        image_urls: imageUrls,
+        num_images: 1,
+        output_format: "png",
+        aspect_ratio: aspectRatioForImageSize(input.size),
+        resolution: "1K",
+      }, input.onRemoteTask);
+    }
+    const reference = await readFile(references[0].path);
+    return this.submit(input.model ?? editModel, { prompt: input.prompt, image_url: `data:${references[0].mediaType};base64,${reference.toString("base64")}`, resolution_mode: "match_input", num_images: 1, output_format: "png", enable_safety_checker: true }, input.onRemoteTask);
   }
-  async refineImage(input: { prompt: string; size: GenerationSize; referencePath: string; referenceMediaType: string }): Promise<Buffer> { return (await this.refineImageWithTask(input)).image; }
+  async refineImage(input: { prompt: string; size: GenerationSize; referencePath: string; referenceMediaType: string; references?: Array<{ path: string; mediaType: string }>; model?: string }): Promise<Buffer> { return (await this.refineImageWithTask(input)).image; }
 }
 
 const decodeDataUri = (value: string): Buffer => {

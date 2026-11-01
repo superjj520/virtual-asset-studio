@@ -10,6 +10,13 @@ import {
   type ReferenceSheetSlotInput,
 } from "../shared/reference-sheet";
 import type { Asset } from "../shared/types";
+import {
+  CLOUD_REFERENCE_KIND_LABELS,
+  CLOUD_REFERENCE_KINDS,
+  type CloudReferenceCatalog,
+  type CloudReferenceItem,
+  type CloudReferenceKind,
+} from "../shared/reference-library";
 
 type ReferenceSheetComposerProps = {
   assets: Asset[];
@@ -64,6 +71,13 @@ export function ReferenceSheetComposer({
   const [sheetPreview, setSheetPreview] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [sourceMode, setSourceMode] = useState<"local" | "cloud">("local");
+  const [cloudCatalog, setCloudCatalog] = useState<CloudReferenceCatalog>();
+  const [cloudKind, setCloudKind] = useState<CloudReferenceKind | "all">("all");
+  const [cloudQuery, setCloudQuery] = useState("");
+  const [cloudBusy, setCloudBusy] = useState(false);
+  const [cloudError, setCloudError] = useState("");
+  const [importingCloudId, setImportingCloudId] = useState("");
 
   const eligible = useMemo(
     () => assets.filter((asset) => canReuseAsset(asset) && isImageAsset(asset) && !asset.metadata?.referenceSheet),
@@ -138,6 +152,66 @@ export function ReferenceSheetComposer({
     }
     setSlots((current) => ({ ...current, [activeRole]: asset }));
     setError("");
+  };
+
+  useEffect(() => {
+    if (sourceMode !== "cloud" || cloudCatalog) return;
+    let cancelled = false;
+    setCloudBusy(true);
+    setCloudError("");
+    window.studio.referenceLibrary
+      .list()
+      .then((catalog) => {
+        if (!cancelled) setCloudCatalog(catalog);
+      })
+      .catch((loadError) => {
+        if (!cancelled)
+          setCloudError(
+            loadError instanceof Error
+              ? loadError.message
+              : "云端参考库读取失败。",
+          );
+      })
+      .finally(() => {
+        if (!cancelled) setCloudBusy(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sourceMode, cloudCatalog]);
+
+  const cloudCandidates = useMemo(() => {
+    if (!cloudCatalog) return [] as CloudReferenceItem[];
+    const query = cloudQuery.trim().toLowerCase();
+    return cloudCatalog.items
+      .filter((item) => cloudKind === "all" || item.kind === cloudKind)
+      .filter((item) => {
+        if (!query) return true;
+        return `${item.title} ${item.category} ${item.tags.join(" ")}`
+          .toLowerCase()
+          .includes(query);
+      })
+      .slice(0, 48);
+  }, [cloudCatalog, cloudKind, cloudQuery]);
+
+  const chooseCloud = async (item: CloudReferenceItem) => {
+    setImportingCloudId(item.id);
+    setCloudError("");
+    try {
+      const asset = await window.studio.referenceLibrary.import(item, projectId);
+      const preview = await window.studio.assets.preview(asset.id);
+      if (preview) setPreviews((current) => ({ ...current, [asset.id]: preview }));
+      onSaved?.(asset);
+      choose(asset);
+    } catch (importError) {
+      setCloudError(
+        importError instanceof Error
+          ? importError.message
+          : "云端参考图引用失败。",
+      );
+    } finally {
+      setImportingCloudId("");
+    }
   };
 
   const clearRole = (role: ReferenceSheetRole) => {
@@ -304,33 +378,117 @@ export function ReferenceSheetComposer({
               <header>
                 <div>
                   <strong>为「{REFERENCE_SHEET_ROLE_LABELS[activeRole]}」选素材</strong>
-                  <small>只显示已审片、权利可用的本地图片</small>
+                  <small>{sourceMode === "local" ? "只显示已审片、权利可用的本地图片" : "云端图库按需引用，不整库下载"}</small>
                 </div>
-                <span>{activeCandidates.length} 张可用</span>
+                <span>{sourceMode === "local" ? `${activeCandidates.length} 张可用` : `${cloudCandidates.length} 张显示${cloudCatalog ? ` / ${cloudCatalog.items.length}` : ""}`}</span>
               </header>
-              {activeCandidates.length ? (
-                <div className="reference-sheet-assets">
-                  {activeCandidates.map((asset) => {
-                    const preview = previews[asset.id];
-                    const selected = slots[activeRole]?.id === asset.id;
-                    return (
-                      <button
-                        key={asset.id}
-                        type="button"
-                        className={selected ? "reference-sheet-asset selected" : "reference-sheet-asset"}
-                        onClick={() => choose(asset)}
-                        title={`${asset.name} · ${ASSET_TYPE_LABELS[asset.type] ?? asset.type}`}
-                      >
-                        {preview ? <img src={preview} alt="" /> : <span>无预览</span>}
-                        <strong>{asset.name}</strong>
-                        <small>{ASSET_TYPE_LABELS[asset.type] ?? asset.type}</small>
-                        {selected && <em>已选</em>}
-                      </button>
-                    );
-                  })}
-                </div>
+              <div className="reference-sheet-source-tabs" role="tablist" aria-label="素材来源">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={sourceMode === "local"}
+                  className={sourceMode === "local" ? "active" : ""}
+                  onClick={() => setSourceMode("local")}
+                >
+                  本地素材
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={sourceMode === "cloud"}
+                  className={sourceMode === "cloud" ? "active" : ""}
+                  onClick={() => setSourceMode("cloud")}
+                >
+                  云端图库
+                </button>
+              </div>
+              {sourceMode === "local" ? (
+                activeCandidates.length ? (
+                  <div className="reference-sheet-assets">
+                    {activeCandidates.map((asset) => {
+                      const preview = previews[asset.id];
+                      const selected = slots[activeRole]?.id === asset.id;
+                      return (
+                        <button
+                          key={asset.id}
+                          type="button"
+                          className={selected ? "reference-sheet-asset selected" : "reference-sheet-asset"}
+                          onClick={() => choose(asset)}
+                          title={`${asset.name} · ${ASSET_TYPE_LABELS[asset.type] ?? asset.type}`}
+                        >
+                          {preview ? <img src={preview} alt="" /> : <span>无预览</span>}
+                          <strong>{asset.name}</strong>
+                          <small>{ASSET_TYPE_LABELS[asset.type] ?? asset.type}</small>
+                          {selected && <em>已选</em>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="reference-sheet-no-assets">还没有可用的图片素材。先到素材库完成审片和权利确认。</p>
+                )
               ) : (
-                <p className="reference-sheet-no-assets">还没有可用的图片素材。先到素材库完成审片和权利确认。</p>
+                <div className="reference-sheet-cloud">
+                  <div className="reference-sheet-cloud-controls">
+                    <div className="reference-sheet-kind-chips">
+                      <button
+                        type="button"
+                        className={cloudKind === "all" ? "active" : ""}
+                        onClick={() => setCloudKind("all")}
+                      >
+                        全部 {cloudCatalog?.items.length ?? ""}
+                      </button>
+                      {CLOUD_REFERENCE_KINDS.map((kind) => (
+                        <button
+                          key={kind}
+                          type="button"
+                          className={cloudKind === kind ? "active" : ""}
+                          onClick={() => setCloudKind(kind)}
+                        >
+                          {CLOUD_REFERENCE_KIND_LABELS[kind]} {cloudCatalog?.counts[kind] ?? ""}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      value={cloudQuery}
+                      onChange={(event) => setCloudQuery(event.target.value)}
+                      placeholder="搜名称、分类或标签"
+                      aria-label="搜索云端参考图"
+                    />
+                  </div>
+                  {cloudError && <p className="reference-sheet-error" role="alert">{cloudError}</p>}
+                  {cloudBusy ? (
+                    <p className="reference-sheet-no-assets">正在读取云端参考库…</p>
+                  ) : cloudCandidates.length ? (
+                    <div className="reference-sheet-assets cloud">
+                      {cloudCandidates.map((item) => {
+                        const selected = (slots[activeRole]?.metadata?.cloudReference as { itemId?: string } | undefined)?.itemId === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className={selected ? "reference-sheet-asset selected" : "reference-sheet-asset"}
+                            onClick={() => void chooseCloud(item)}
+                            disabled={Boolean(importingCloudId)}
+                            title={`${item.title} · ${item.category}`}
+                          >
+                            <CloudThumb url={item.thumbUrl} title={item.title} />
+                            <strong>{importingCloudId === item.id ? "正在引用…" : item.title}</strong>
+                            <small>{CLOUD_REFERENCE_KIND_LABELS[item.kind]} · {item.category}</small>
+                            {selected && <em>已选</em>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="reference-sheet-no-assets">
+                      {cloudCatalog ? "当前筛选没有结果，换个关键词或分类。" : "云端参考库暂时不可用。"}
+                    </p>
+                  )}
+                  <p className="reference-sheet-attribution">
+                    {cloudCatalog?.attribution ?? "云端参考库"} · 仅引用选中的单张图片，不整库同步
+                  </p>
+                </div>
               )}
             </section>
           </main>
@@ -338,4 +496,25 @@ export function ReferenceSheetComposer({
       </section>
     </div>
   );
+}
+
+
+function CloudThumb({ url, title }: { url: string; title: string }) {
+  const [src, setSrc] = useState("");
+  useEffect(() => {
+    let active = true;
+    window.studio.referenceLibrary
+      .thumbnail(url)
+      .then((dataUrl) => {
+        if (active) setSrc(dataUrl);
+      })
+      .catch(() => {
+        if (active) setSrc("");
+      });
+    return () => {
+      active = false;
+    };
+  }, [url]);
+  if (!src) return <span>加载中</span>;
+  return <img src={src} alt={title} loading="lazy" />;
 }

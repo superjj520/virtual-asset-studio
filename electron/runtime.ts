@@ -10,6 +10,7 @@ import {
   type ImportAssetInput,
 } from "./services/import/import-service";
 import { ProjectRepository } from "./services/projects/repository";
+import { createCloudReferenceLibrary } from "./services/reference-library";
 import { LearningPatternRepository } from "./services/learning/repository";
 import { extractPromptPattern } from "./services/learning/prompt-learning";
 import {
@@ -27,6 +28,7 @@ import {
   type ReferenceSheetRecipe,
 } from "../src/shared/reference-sheet";
 import { estimateGenerationCostUsd, findGenerationModel } from "../src/shared/generation-models";
+import type { CloudReferenceItem } from "../src/shared/reference-library";
 import type {
   Asset,
   CreativeCard,
@@ -104,6 +106,7 @@ export const createStudioRuntime = (
   const learning = new LearningPatternRepository(database);
   const store = new ManagedStore(join(userDataDirectory, "managed-assets"));
   const importer = new ImportService(assets, store);
+  const cloudReferenceLibrary = createCloudReferenceLibrary(importer, assets, projects);
   const settings = new SettingsRepository(database);
   const jobs = new JobRepository(database);
   const relationships = new RelationshipRepository(database);
@@ -219,7 +222,7 @@ export const createStudioRuntime = (
   };
   const refineWithResult = async (
     providerId: ProviderId,
-    input: { prompt: string; size: ImageGenerationSize; referencePath: string; referenceMediaType: string; references?: Array<{ path: string; mediaType: string }>; onRemoteTask?: (task: FalRemoteTask) => void },
+    input: { prompt: string; size: ImageGenerationSize; referencePath: string; referenceMediaType: string; references?: Array<{ path: string; mediaType: string }>; model?: string; onRemoteTask?: (task: FalRemoteTask) => void },
   ): Promise<{ image: Buffer; remoteTask?: FalRemoteTask }> => {
     if (providerId === "fal") {
       const result = await fal.refineImageWithTask(input);
@@ -553,6 +556,15 @@ export const createStudioRuntime = (
             projects.attachAsset(input.projectId, result.asset.id);
           return result;
         },
+      );
+      ipcMain.handle("reference-library:list", () => cloudReferenceLibrary.list());
+      ipcMain.handle("reference-library:thumbnail", (_event, url: string) =>
+        cloudReferenceLibrary.thumbnail(url),
+      );
+      ipcMain.handle(
+        "reference-library:import",
+        (_event, item: CloudReferenceItem, projectId?: string) =>
+          cloudReferenceLibrary.importItem(item, projectId ?? libraryProject.id),
       );
       ipcMain.handle("assets:list", (_event, query) => assets.list(query));
       ipcMain.handle("assets:usage", (_event, assetId: string) => assets.usage(assetId));
@@ -1337,7 +1349,10 @@ export const createStudioRuntime = (
             : [];
           // Gemini 的 interactions API 能按顺序接收多张图；用四张槽位原图，
           // 既保留服装/姿态/场景语义，又不会把分格版式画进成图。
-          const useSheetSlots = providerId === "gemini" && sheetSlotReferences.length >= 2;
+          const useSheetSlots = sheetSlotReferences.length >= 2 && (
+            providerId === "gemini" ||
+            (providerId === "fal" && (requestedModel?.maxReferences ?? 1) >= 4)
+          );
           const generationReferences = useSheetSlots
             ? sheetSlotReferences
             : generationReference
@@ -1401,6 +1416,7 @@ export const createStudioRuntime = (
                     referencePath: generationReferences[0].managedPath,
                     referenceMediaType: generationReferences[0].mediaType,
                     references: generationReferences.map((reference) => ({ path: reference.managedPath, mediaType: reference.mediaType })),
+                    model: requestedModel?.model,
                     onRemoteTask: (remoteTask) => jobs.update(job.id, { status: "in_progress", result: { remoteTask, progressStage: "remote", requestedAspectRatio: input.aspectRatio, actualSize: size } }),
                   })
                 : await generateWithResult(providerId, {

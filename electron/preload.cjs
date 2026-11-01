@@ -23,6 +23,12 @@ contextBridge.exposeInMainWorld("studio", {
   referenceSheets: {
     compose: (input) => ipcRenderer.invoke("references:compose-sheet", input),
   },
+  referenceLibrary: {
+    list: () => ipcRenderer.invoke("reference-library:list"),
+    thumbnail: (url) => ipcRenderer.invoke("reference-library:thumbnail", url),
+    import: (item, projectId) =>
+      ipcRenderer.invoke("reference-library:import", item, projectId),
+  },
   imageReviews: {
     workspace: (projectId) => ipcRenderer.invoke("image-reviews:workspace", projectId),
     create: (input) => ipcRenderer.invoke("image-reviews:create", input),

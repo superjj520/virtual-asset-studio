@@ -3755,6 +3755,22 @@ button:active { transform: translateY(1px); }
 .reference-sheet-asset.selected { border-color: #7a8cff; box-shadow: inset 0 0 0 1px #7a8cff; }
 .reference-sheet-asset em { position: absolute; top: 8px; right: 8px; padding: 2px 5px; color: #fff; font-size: 9px; font-style: normal; background: #5266e8; border-radius: 4px; }
 .reference-sheet-no-assets { margin: 0; padding: 14px; color: var(--rs-muted); font-size: 11px; line-height: 1.6; background: rgba(255, 255, 255, .03); border: 1px dashed var(--rs-line); border-radius: 9px; }
+.reference-sheet-source-tabs { display: flex; gap: 6px; margin: 8px 0 10px; }
+.reference-sheet-source-tabs button { min-height: 30px; padding: 0 11px; color: var(--rs-muted); font-size: 11px; background: transparent; border: 1px solid var(--rs-line); border-radius: 6px; }
+.reference-sheet-source-tabs button.active { color: #fff; background: #5266e8; border-color: #5266e8; }
+.reference-sheet-cloud-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 260px); gap: 8px; align-items: center; margin-bottom: 8px; }
+.reference-sheet-kind-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.reference-sheet-kind-chips button { min-height: 26px; padding: 0 9px; color: var(--rs-muted); font-size: 10px; background: rgba(255, 255, 255, .04); border: 1px solid var(--rs-line); border-radius: 999px; }
+.reference-sheet-kind-chips button.active { color: #fff; background: rgba(82, 102, 232, .28); border-color: #5266e8; }
+.reference-sheet-cloud-controls input { min-height: 30px; padding: 0 10px; color: var(--rs-text); font-size: 11px; background: #0e1116; border: 1px solid var(--rs-line); border-radius: 6px; }
+.reference-sheet-assets.cloud { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); grid-auto-columns: auto; max-height: 300px; overflow-x: hidden; overflow-y: auto; }
+.reference-sheet-assets.cloud .reference-sheet-asset { grid-template-rows: 92px auto auto; }
+.reference-sheet-assets.cloud .reference-sheet-asset img { height: 92px; }
+.reference-sheet-attribution { margin: 8px 0 0; color: var(--rs-muted); font-size: 9px; }
+@media (max-width: 900px) {
+  .reference-sheet-cloud-controls { grid-template-columns: 1fr; }
+  .reference-sheet-assets.cloud { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: none; }
+}
 @media (max-width: 900px) {
   .reference-sheet-overlay { padding: 0; }
   .reference-sheet-panel { width: 100%; height: 100dvh; border-radius: 0; border: 0; }
