@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { appendFileSync } from 'node:fs';
@@ -171,20 +171,7 @@ app.whenReady().then(async () => {
   startupLog('主进程已就绪，开始初始化运行时。');
   const runtimePath = path.join(__dirname, '..', 'dist', 'electron', 'runtime.mjs');
   const { createStudioRuntime } = await import(pathToFileURL(runtimePath).href);
-  runtime = createStudioRuntime(app.getPath('userData'), {
-    isAvailable: () => {
-      startupLog('安全存储：检查可用性。');
-      return safeStorage.isEncryptionAvailable();
-    },
-    encrypt: (value) => {
-      startupLog('安全存储：加密新凭据。');
-      return safeStorage.encryptString(value).toString('base64');
-    },
-    decrypt: (value) => {
-      startupLog('安全存储：读取已保存凭据。');
-      return safeStorage.decryptString(Buffer.from(value, 'base64'));
-    }
-  });
+  runtime = createStudioRuntime(app.getPath('userData'));
   runtime.register(ipcMain);
   startupLog('运行时初始化完成，创建窗口。');
   ipcMain.handle('dialog:select-files', async () => {

@@ -68,6 +68,7 @@ import { AssetCollectionRepository } from "./services/collections/repository";
 import { CharacterAssetPackImporter } from "./services/import/character-pack-importer";
 import { BackupService } from "./services/backup/backup-service";
 import { ImageReviewRepository } from "./services/reviews/repository";
+import { LocalSecretBox, isLocalSecret } from "./services/security/local-secret-box";
 
 type SecretCipher = {
   isAvailable: () => boolean;
@@ -99,6 +100,7 @@ export const createStudioRuntime = (
   cipher?: SecretCipher,
 ) => {
   mkdirSync(userDataDirectory, { recursive: true });
+  const secretBox = cipher ?? new LocalSecretBox(userDataDirectory);
   const database = new StudioDatabase(
     join(userDataDirectory, "virtual-asset-studio.sqlite"),
   );
@@ -131,17 +133,22 @@ export const createStudioRuntime = (
   batches.recoverInterrupted();
   const apiKeyFor = (providerId: ProviderId) => {
     const encrypted = settings.get(`${providerId}_api_key`);
-    if (!encrypted || !cipher?.isAvailable()) return undefined;
+    if (!encrypted || !secretBox.isAvailable()) return undefined;
     try {
-      return cipher.decrypt(encrypted);
+      return secretBox.decrypt(encrypted);
     } catch {
       return undefined;
     }
   };
   // 首页只需要知道本机是否保存过凭据。不要在状态查询中初始化安全存储；
   // 真正调用模型或保存新密钥时才检查并解密，避免应用启动即触发 macOS 钥匙串授权。
-  const hasStoredApiKey = (providerId: ProviderId) =>
-    Boolean(settings.get(`${providerId}_api_key`));
+  const hasStoredApiKey = (providerId: ProviderId) => {
+    const stored = settings.get(`${providerId}_api_key`);
+    if (!stored) return false;
+    // 默认加密器使用本机密钥文件；旧版 safeStorage 密文不再冒充“已配置”，
+    // 否则用户会看到已配置但生成时才失败。注入测试加密器时保留旧行为。
+    return cipher ? true : isLocalSecret(stored);
+  };
   const openai = new OpenAIProvider({ apiKey: () => apiKeyFor("openai") });
   const flux = new FluxProvider({ apiKey: () => apiKeyFor("flux") });
   const fal = new FalProvider({ apiKey: () => apiKeyFor("fal") });
@@ -1177,9 +1184,9 @@ export const createStudioRuntime = (
             throw new Error("不支持的模型提供方。");
           if (typeof key !== "string" || key.trim().length < 20)
             throw new Error("API 密钥格式不正确。");
-          if (!cipher?.isAvailable())
+          if (!secretBox.isAvailable())
             throw new Error("当前系统无法使用本机加密存储。");
-          settings.set(`${providerId}_api_key`, cipher.encrypt(key.trim()));
+          settings.set(`${providerId}_api_key`, secretBox.encrypt(key.trim()));
           return providerStatus();
         },
       );

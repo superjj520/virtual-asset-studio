@@ -6666,7 +6666,7 @@ export default function App() {
           </header>
           <section className="form-panel">
             <p className="result-note">
-              密钥只保存在本机。按能力配置模型路由。
+              密钥只保存在本机加密文件，不再触发系统钥匙串授权。从旧版本升级后，请把用过的 API Key 重新粘贴保存一次。
             </p>
             {provider?.network && (
               <p className="result-note">
