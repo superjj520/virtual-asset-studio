@@ -1592,6 +1592,9 @@ export default function App() {
   const recentRecipes = selectableImages
     .filter((asset) => Boolean(asset.metadata?.referenceSheet))
     .slice(0, 3);
+  const recentResults = assets
+    .filter((asset) => asset.mediaType.startsWith("image/") && Boolean(asset.metadata?.generation))
+    .slice(0, 3);
   const characterReferenceIssues = activeTask?.characterProfileId
     ? (() => {
       const references = card.referenceAssetIds.map((id) => assets.find((asset) => asset.id === id));
@@ -4163,6 +4166,8 @@ export default function App() {
           onComposeReference={() => setReferenceSheetOpen(true)}
           recipes={recentRecipes}
           onUseRecipe={useReferenceSheetForCreation}
+          results={recentResults}
+          onOpenResult={(asset) => { setSelectedAssetId(asset.id); setScreen("assets"); }}
           resume={effectiveResumableSession ? {
             kindLabel: creationKindLabel[effectiveResumableSession.kind],
             updatedAt: effectiveResumableSession.updatedAt,
@@ -4633,6 +4638,8 @@ export default function App() {
             onComposeReference={() => setReferenceSheetOpen(true)}
             recipes={recentRecipes}
             onUseRecipe={useReferenceSheetForCreation}
+            results={recentResults}
+            onOpenResult={(asset) => { setSelectedAssetId(asset.id); setScreen("assets"); }}
             onExit={() => document.getElementById("creation-projects")?.scrollIntoView({ behavior: "smooth", block: "start" })}
             resume={effectiveResumableSession ? {
               kindLabel: creationKindLabel[effectiveResumableSession.kind],

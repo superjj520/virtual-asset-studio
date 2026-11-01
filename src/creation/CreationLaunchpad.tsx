@@ -17,6 +17,8 @@ type CreationLaunchpadProps = {
   onComposeReference?: () => void;
   recipes?: Asset[];
   onUseRecipe?: (asset: Asset) => void;
+  results?: Asset[];
+  onOpenResult?: (asset: Asset) => void;
   embedded?: boolean;
   onDiscardResume?: () => void;
   resume?: { kindLabel: string; updatedAt: string; onResume: () => void };
@@ -71,7 +73,7 @@ function RecipeThumb({ asset }: { asset: Asset }) {
   return preview ? <img src={preview} alt="" /> : <span className="creation-recipe-placeholder" aria-hidden="true">格</span>;
 }
 
-export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, onSelect, onExit, onOpenAssets, onComposeReference, recipes = [], onUseRecipe, embedded = false, resume, onDiscardResume }: CreationLaunchpadProps) {
+export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, onSelect, onExit, onOpenAssets, onComposeReference, recipes = [], onUseRecipe, results = [], onOpenResult, embedded = false, resume, onDiscardResume }: CreationLaunchpadProps) {
   return <section className={`creation-launchpad${embedded ? " creation-launchpad-embedded" : ""}`} aria-label="新建创作">
     <header className="creation-launchpad-header">
       {!embedded && <button type="button" className="creator-exit" onClick={onExit} aria-label="退出新建创作">←</button>}
@@ -117,6 +119,27 @@ export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, 
           </span>
         </button>)}
         {onComposeReference && <button type="button" className="creation-recipe-new" onClick={onComposeReference}>+ 新建配方</button>}
+      </div>
+    </section>}
+    {results.length > 0 && <section className="creation-result-dock" aria-label="最近生成结果">
+      <div className="creation-recipe-dock-head">
+        <strong>最近结果</strong>
+        <span>真实生成记录，点开继续审片或复用</span>
+      </div>
+      <div className="creation-recipe-dock-list">
+        {results.map((asset) => <button
+          type="button"
+          key={asset.id}
+          className="creation-recipe-card"
+          onClick={() => onOpenResult?.(asset)}
+          title={`打开「${asset.name}」`}
+        >
+          <RecipeThumb asset={asset} />
+          <span>
+            <strong>{asset.name}</strong>
+            <small>{asset.confirmation === "confirmed" ? "已确认" : "待审片"} · {asset.rightsStatus === "authorized" ? "已授权" : "权利待复核"}</small>
+          </span>
+        </button>)}
       </div>
     </section>}
     <div className="creation-launch-grid">
