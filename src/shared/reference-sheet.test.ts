@@ -151,7 +151,7 @@ describe("reference sheet", () => {
     expect(withExtras.modules).toHaveLength(5);
     expect(withExtras.positive).toContain("2 行 3 列的六格");
     expect(withExtras.positive).toContain("补充 1");
-    expect(withExtras.positive).toContain("不改变人物身份、服装结构、姿态和场景");
+    expect(withExtras.positive).toContain("补充参考不得覆盖");
   });
 
   it("选择画风后写入正向约束与负面词", () => {
@@ -197,7 +197,7 @@ describe("reference sheet", () => {
       ]),
     );
     expect(withExtra.mustKeep).toContain("补充参考 c");
-    expect(withExtra.mustKeep).toContain("不改变身份、服装结构、姿态和场景");
+    expect(withExtra.mustKeep).toContain("补充参考不得覆盖");
   });
 
   it("两张卡提示词使用左右格标签，且没有场景模块", () => {

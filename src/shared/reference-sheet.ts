@@ -239,9 +239,9 @@ const roleInstruction: Record<
   scene: (label) =>
     `${label}只提供场景、光线与色调：沿用其空间、环境、光源方向和色彩气氛，人物仍须清晰可辨。`,
   extra1: (label) =>
-    `${label}只提供补充细节：只提取其材质、配饰、发型或光影等明确特征，不改变人物身份、服装结构、姿态和场景。`,
+    `${label}只提供补充细节：只提取其材质、配饰、发型轮廓或光影等明确特征；发色、肤色、脸型、年龄、服装结构、姿态和场景必须严格沿用身份/服装/姿态/场景参考，补充参考不得覆盖。`,
   extra2: (label) =>
-    `${label}只提供补充细节：只提取其材质、配饰、发型或光影等明确特征，不改变人物身份、服装结构、姿态和场景。`,
+    `${label}只提供补充细节：只提取其材质、配饰、发型轮廓或光影等明确特征；发色、肤色、脸型、年龄、服装结构、姿态和场景必须严格沿用身份/服装/姿态/场景参考，补充参考不得覆盖。`,
 };
 
 export const buildReferenceSheetPrompt = (
@@ -328,7 +328,7 @@ export const applyReferenceSheetToCard = (
         recipe.prompt.positive,
       ),
       extraLabels.length
-        ? `补充参考 ${extraLabels.join("、")}：只提取材质、配饰、发型或光影等明确特征，不改变身份、服装结构、姿态和场景。`
+        ? `补充参考 ${extraLabels.join("、")}：只提取材质、配饰、发型轮廓或光影等明确特征；发色、肤色、脸型、年龄、服装结构、姿态和场景必须严格沿用身份/服装/姿态/场景参考，补充参考不得覆盖。`
         : "",
     ),
     avoid: mergeText(card.avoid, recipe.prompt.negative),
