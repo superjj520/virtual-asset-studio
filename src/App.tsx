@@ -1995,6 +1995,7 @@ export default function App() {
     candidateIndex?: number;
     candidateCount?: number;
     seedBase?: number;
+    propagateDuplicate?: boolean;
   }): Promise<string | undefined> => {
     const activeBuild = prepared?.build ?? promptBuild;
     const activeTranslation = prepared?.translated ?? translation;
@@ -2087,6 +2088,9 @@ export default function App() {
         setSelectedSceneWorkspace(await window.studio.sceneWorkspace.get(sceneWorkspace.scene.id));
       return assetId || undefined;
     } catch (error) {
+      if (prepared?.propagateDuplicate && error instanceof Error && error.message.includes("重复")) {
+        throw error;
+      }
       if (effectiveTaskId) {
         try {
           const updated = await window.studio.tasks.update(effectiveTaskId, { status: "blocked", card: normalizeCreativeCard(prepared?.card ?? card) });
@@ -2191,6 +2195,7 @@ export default function App() {
             candidateIndex: index + 1,
             candidateCount: allCandidateVariations.length,
             seedBase: candidateSeedBase,
+            propagateDuplicate: true,
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : "未知错误";
