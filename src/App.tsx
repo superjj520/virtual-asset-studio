@@ -2172,8 +2172,11 @@ export default function App() {
         }
         setCandidateProgress({ current: position + 1, total: pendingVariations.length, label: variation.label, model: displayGenerationModel?.label });
         setNotice(`正在生成候选 ${index + 1}/${allCandidateVariations.length}…`);
-        const candidateBuild = { ...build, positive: `${build.positive}\n候选策略：${variation.directive}` };
-        const candidateTranslation = translated ? { ...translated, positive: `${translated.positive}\nCandidate variation: ${variation.directive}` } : undefined;
+        const variationDirective = index === 0
+          ? variation.directive
+          : `${variation.directive}；这一版必须与同批其他候选一眼可分：改换机位、主体朝向或画面重心中的至少一项，身份、服装与场景保持不变`;
+        const candidateBuild = { ...build, positive: `${build.positive}\n候选策略：${variationDirective}` };
+        const candidateTranslation = translated ? { ...translated, positive: `${translated.positive}\nCandidate variation: ${variationDirective}` } : undefined;
         let assetId: string | undefined;
         try {
           assetId = await generateImage({
