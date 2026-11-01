@@ -70,6 +70,8 @@ describe("云端参考库", () => {
     );
     const catalog = await library.list();
     expect(catalog.counts).toEqual({ portrait: 1, costume: 1, pose: 2 });
+    expect(catalog.imageCounts).toEqual({ portrait: 1, costume: 1, pose: 3 });
+    expect(catalog.totalImages).toBe(5);
     expect(catalog.items).toHaveLength(4);
     expect(catalog.items.filter((item) => item.kind === "pose")).toHaveLength(2);
   });

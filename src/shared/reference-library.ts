@@ -31,5 +31,7 @@ export type CloudReferenceCatalog = {
   attribution: string;
   fetchedAt: string;
   counts: Record<CloudReferenceKind, number>;
+  imageCounts?: Record<CloudReferenceKind, number>;
+  totalImages?: number;
   items: CloudReferenceItem[];
 };

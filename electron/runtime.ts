@@ -27,6 +27,7 @@ import {
   stripReferenceSheetLayoutLanguage,
   type ReferenceSheetRecipe,
 } from "../src/shared/reference-sheet";
+import { findReferenceStyle } from "../src/shared/reference-styles";
 import { estimateGenerationCostUsd, findGenerationModel } from "../src/shared/generation-models";
 import type { CloudReferenceItem } from "../src/shared/reference-library";
 import type {
@@ -450,6 +451,7 @@ export const createStudioRuntime = (
     projectId?: string;
     slots: unknown;
     name?: string;
+    styleId?: string;
   }): Promise<{ asset: Asset; recipe: ReferenceSheetRecipe }> => {
     const rawSlots = Array.isArray(input?.slots) ? input.slots : [];
     const slots = normalizeReferenceSheetSlots(rawSlots);
@@ -472,7 +474,8 @@ export const createStudioRuntime = (
       asset: referenceForGeneration(slot.assetId, projectId),
     }));
     const layout = referenceSheetLayout(slots);
-    const prompt = buildReferenceSheetPrompt(slots);
+    const style = findReferenceStyle(input?.styleId);
+    const prompt = buildReferenceSheetPrompt(slots, style);
     const images = await Promise.all(
       resolved.map(async ({ slot, asset }) => {
         const panel = layout.panels.find((candidate) => candidate.role === slot.role);
@@ -511,6 +514,7 @@ export const createStudioRuntime = (
         sha256: asset.sha256,
       })),
       prompt,
+      ...(style ? { style } : {}),
       rightsBasis:
         "由已审片、已授权的本地参考图合成；不引入第三方素材，权利随来源资产保留。",
       createdAt: new Date().toISOString(),

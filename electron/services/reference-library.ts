@@ -183,6 +183,12 @@ class CloudReferenceLibrary {
         costume: costumeItems.length,
         pose: poseItems.length,
       },
+      imageCounts: {
+        portrait: portraits.length,
+        costume: costumes.length,
+        pose: poses.length,
+      },
+      totalImages: portraits.length + costumes.length + poses.length,
       items,
     };
     this.cache = { value, expiresAt: Date.now() + CACHE_TTL_MS };

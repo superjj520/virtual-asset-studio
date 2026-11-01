@@ -8,6 +8,7 @@ import {
   stripReferenceSheetLayoutLanguage,
   type ReferenceSheetRecipe,
 } from "./reference-sheet";
+import { findReferenceStyle } from "./reference-styles";
 
 const card: CreativeCard = {
   intent: "人物写真",
@@ -115,6 +116,21 @@ describe("reference sheet", () => {
     expect(prompt.positive).toContain("右下格只提供场景、光线与色调");
     expect(prompt.negative).toContain("拼贴画");
     expect(prompt.modules).toHaveLength(4);
+  });
+
+  it("选择画风后写入正向约束与负面词", () => {
+    const style = findReferenceStyle("oriental_ink");
+    const prompt = buildReferenceSheetPrompt(
+      [
+        { role: "identity", assetId: "a" },
+        { role: "wardrobe", assetId: "b" },
+      ],
+      style,
+    );
+    expect(prompt.modules).toHaveLength(3);
+    expect(prompt.modules.at(-1)?.label).toBe("画风");
+    expect(prompt.positive).toContain("东方水墨审美");
+    expect(prompt.negative).toContain("西式油画");
   });
 
   it("把分区语义写入创作卡，不改变原卡对象", () => {

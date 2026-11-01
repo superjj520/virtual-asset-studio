@@ -17,6 +17,7 @@ import {
   type CloudReferenceItem,
   type CloudReferenceKind,
 } from "../shared/reference-library";
+import { REFERENCE_STYLES, findReferenceStyle } from "../shared/reference-styles";
 
 type ReferenceSheetComposerProps = {
   assets: Asset[];
@@ -78,6 +79,7 @@ export function ReferenceSheetComposer({
   const [cloudBusy, setCloudBusy] = useState(false);
   const [cloudError, setCloudError] = useState("");
   const [importingCloudId, setImportingCloudId] = useState("");
+  const [styleId, setStyleId] = useState(REFERENCE_STYLES[0].id);
 
   const eligible = useMemo(
     () => assets.filter((asset) => canReuseAsset(asset) && isImageAsset(asset) && !asset.metadata?.referenceSheet),
@@ -124,6 +126,7 @@ export function ReferenceSheetComposer({
       role,
       assetId: slots[role]?.id ?? "",
     })),
+    findReferenceStyle(styleId),
   );
   const selectedHint = REFERENCE_SHEET_ROLES.filter((role) => slots[role]).map(
     (role) => `${REFERENCE_SHEET_ROLE_LABELS[role]} · ${slots[role]?.name ?? ""}`,
@@ -239,6 +242,7 @@ export function ReferenceSheetComposer({
       const composed = await window.studio.referenceSheets.compose({
         projectId,
         slots: payload,
+        styleId,
       });
       setResult(composed.asset);
       setRecipe(composed.recipe);
@@ -317,6 +321,26 @@ export function ReferenceSheetComposer({
               <strong>{selectedCount} / 4 槽位</strong>
               <span>{selectedHint.length ? selectedHint.join(" · ") : "仍可选择最多四项参考"}</span>
             </div>
+            <div className="reference-sheet-style">
+              <div className="reference-sheet-style-head">
+                <span>画风预设</span>
+                <small>{findReferenceStyle(styleId)?.summary}</small>
+              </div>
+              <div className="reference-sheet-style-chips" role="group" aria-label="画风预设">
+                {REFERENCE_STYLES.map((style) => (
+                  <button
+                    key={style.id}
+                    type="button"
+                    className={style.id === styleId ? "active" : ""}
+                    onClick={() => setStyleId(style.id)}
+                    aria-pressed={style.id === styleId}
+                    title={style.summary}
+                  >
+                    {style.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             {error && <p className="reference-sheet-error" role="alert">{error}</p>}
             {!result ? (
               <button
@@ -378,7 +402,13 @@ export function ReferenceSheetComposer({
               <header>
                 <div>
                   <strong>为「{REFERENCE_SHEET_ROLE_LABELS[activeRole]}」选素材</strong>
-                  <small>{sourceMode === "local" ? "只显示已审片、权利可用的本地图片" : "云端图库按需引用，不整库下载"}</small>
+                  <small>
+                    {sourceMode === "local"
+                      ? "只显示已审片、权利可用的本地图片"
+                      : cloudCatalog?.totalImages
+                        ? `云端图库按需引用 · 共 ${cloudCatalog.totalImages} 张 / ${cloudCatalog.items.length} 条记录`
+                        : "云端图库按需引用，不整库下载"}
+                  </small>
                 </div>
                 <span>{sourceMode === "local" ? `${activeCandidates.length} 张可用` : `${cloudCandidates.length} 张显示${cloudCatalog ? ` / ${cloudCatalog.items.length}` : ""}`}</span>
               </header>

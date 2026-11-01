@@ -1,4 +1,5 @@
 import type { CreativeCard } from "./types";
+import type { ReferenceStyle } from "./reference-styles";
 
 /**
  * 参考卡把“身份、服装、姿态、场景”从多张参考图压缩成一张本地合成的参考板。
@@ -60,6 +61,7 @@ export type ReferenceSheetRecipe = {
   layout: ReferenceSheetLayout;
   slots: ReferenceSheetSlot[];
   prompt: ReferenceSheetPrompt;
+  style?: ReferenceStyle;
   rightsBasis: string;
   createdAt: string;
 };
@@ -207,6 +209,7 @@ const roleInstruction: Record<
 
 export const buildReferenceSheetPrompt = (
   slots: ReferenceSheetSlotInput[],
+  style?: ReferenceStyle,
 ): ReferenceSheetPrompt => {
   const normalized = normalizeReferenceSheetSlots(slots);
   const layout = referenceSheetLayout(normalized);
@@ -217,7 +220,13 @@ export const buildReferenceSheetPrompt = (
       value: roleInstruction[slot.role](panel?.label ?? "参考板"),
     };
   });
-  const negative = "拼贴画、分屏、四宫格、参考板边框、分格线、文字、水印、多个主体、身份漂移、服装不一致、肢体畸形";
+  if (style) modules.push({ label: "画风", value: style.positive });
+  const negative = [
+    "拼贴画、分屏、四宫格、参考板边框、分格线、文字、水印、多个主体、身份漂移、服装不一致、肢体畸形",
+    style?.negative,
+  ]
+    .filter(Boolean)
+    .join("、");
   const presentRoles = new Set(normalized.map((slot) => slot.role));
   const references = REFERENCE_SHEET_ROLES.filter((role) =>
     presentRoles.has(role),
@@ -226,7 +235,7 @@ export const buildReferenceSheetPrompt = (
     "任务：生成一张完整的单幅新画面，不是拼贴图，也不是参考板的复制。",
     `参考图是一张${normalized.length === 3 ? "上方两格、下方整行的三格" : layout.kind === "2x2" ? "2×2 四格" : "左右两格"}素材参考板，每个分区只读取对应信息，不复制版式。`,
     ...modules.map((module) => `${module.label}：${module.value}`),
-    `输出约束：单个人物、单幅构图、无分屏、无边框、无分格线、无文字、无水印；${references.join("，")}。`,
+    `输出约束：单个人物、单幅构图、无分屏、无边框、无分格线、无文字、无水印${references.length ? `；${references.join("，")}` : ""}。`,
   ].join("\n");
   return { positive, negative, modules };
 };
