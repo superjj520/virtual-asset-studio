@@ -35,7 +35,12 @@ describe("云端参考库", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
-        if (url.includes("pose-zh")) return json([poseRow("正面"), poseRow("侧面")]);
+        if (url.includes("pose-zh"))
+          return json([
+            poseRow("正面"),
+            poseRow("侧面"),
+            { ...poseRow("正面"), id: "half_P001_front", 体系: "上半身单人" },
+          ]);
         if (url.includes("costume-zh"))
           return json([
             {
@@ -64,11 +69,9 @@ describe("云端参考库", () => {
       {} as ProjectRepository,
     );
     const catalog = await library.list();
-    expect(catalog.counts).toEqual({ portrait: 1, costume: 1, pose: 1 });
-    expect(catalog.items).toHaveLength(3);
-    expect(catalog.items.find((item) => item.kind === "pose")?.title).toBe(
-      "站姿 · 2 视角",
-    );
+    expect(catalog.counts).toEqual({ portrait: 1, costume: 1, pose: 2 });
+    expect(catalog.items).toHaveLength(4);
+    expect(catalog.items.filter((item) => item.kind === "pose")).toHaveLength(2);
   });
 
   it("引用单张时入库、确认、绑定项目并写入来源", async () => {

@@ -236,7 +236,7 @@ const assertCloudItem = (item: CloudReferenceItem): void => {
 const groupPoses = (rows: PoseRow[]): Array<Omit<CloudReferenceItem, "sourceName" | "sourceUrl">> => {
   const groups = new Map<string, PoseRow[]>();
   for (const row of rows) {
-    const key = row.姿势编号 ?? row.id;
+    const key = `${row.体系 ?? "未分组"}/${row.姿势编号 ?? row.id}`;
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
   return [...groups.entries()].map(([key, variants]) => {
@@ -244,7 +244,7 @@ const groupPoses = (rows: PoseRow[]): Array<Omit<CloudReferenceItem, "sourceName
     return {
       id: `pose-${key}`,
       kind: "pose" as const,
-      title: `${preferred.姿势名称 ?? key} · ${variants.length} 视角`,
+      title: `${preferred.姿势名称 ?? key} · 编号 ${preferred.姿势编号 ?? key} · ${variants.length} 视角`,
       category: preferred.体系 ?? preferred.分类 ?? "姿势",
       tags: [preferred.分类, preferred.角度].filter((value): value is string => Boolean(value)),
       thumbUrl: absoluteUrl(preferred.缩略图),
