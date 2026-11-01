@@ -35,6 +35,18 @@ describe("云端参考库", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
+        if (url.includes("char-db-cn/main/data.js")) {
+          return new Response(
+            `window.CHARDB=${JSON.stringify({
+              items: [
+                { id: "H001", set: "hair", cat: "髪型", catZh: "发型", zh: "长发", tags: "long hair", line: false },
+                { id: "O001", set: "outfit", cat: "制服", catZh: "制服/学生", zh: "水手服", tags: "serafuku" },
+                { id: "P001", set: "pose", cat: "立ち", catZh: "站姿", zh: "站姿", tags: "standing", line: true },
+              ],
+            })};`,
+            { status: 200, headers: { "content-type": "application/javascript" } },
+          );
+        }
         if (url.includes("pose-zh"))
           return json([
             poseRow("正面"),
@@ -69,11 +81,14 @@ describe("云端参考库", () => {
       {} as ProjectRepository,
     );
     const catalog = await library.list();
-    expect(catalog.counts).toEqual({ portrait: 1, costume: 1, pose: 2 });
-    expect(catalog.imageCounts).toEqual({ portrait: 1, costume: 1, pose: 3 });
-    expect(catalog.totalImages).toBe(5);
-    expect(catalog.items).toHaveLength(4);
-    expect(catalog.items.filter((item) => item.kind === "pose")).toHaveLength(2);
+    expect(catalog.counts).toEqual({ portrait: 1, costume: 2, hair: 1, pose: 3 });
+    expect(catalog.imageCounts).toEqual({ portrait: 1, costume: 2, hair: 1, pose: 4 });
+    expect(catalog.totalImages).toBe(8);
+    expect(catalog.items).toHaveLength(7);
+    expect(catalog.items.filter((item) => item.kind === "pose")).toHaveLength(3);
+    const linePose = catalog.items.find((item) => item.id === "char-db-P001");
+    expect(linePose?.lineUrl).toContain("/line/P001.png");
+    expect(catalog.items.find((item) => item.kind === "hair")?.sourceName).toContain("二次元");
   });
 
   it("引用单张时入库、确认、绑定项目并写入来源", async () => {

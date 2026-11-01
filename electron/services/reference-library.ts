@@ -14,6 +14,14 @@ import type { ImportService } from "./import/import-service";
 import type { ProjectRepository } from "./projects/repository";
 
 const BASE_URL = "https://ai-pose-gallery.anhao.app";
+const CHAR_DB_DATA_URL = "https://raw.githubusercontent.com/sleepy-zone/char-db-cn/main/data.js";
+const CHAR_DB_THUMB_BASE = "https://raw.githubusercontent.com/sleepy-zone/char-db-cn/main/thumbs";
+const CHAR_DB_IMAGE_BASE = "https://charadb-2fi.pages.dev";
+const CHAR_DB_SOURCE = {
+  name: "二次元角色换装库 · 中文版",
+  url: "https://sleepyzone.online/char-db-cn/",
+  attribution: "たき AI / sleepy-zone · 发型 / 服装 / 姿势检索库",
+} as const;
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const MAX_BYTES = 24 * 1024 * 1024;
 
@@ -36,6 +44,17 @@ type CostumeRow = {
   缩略图?: string;
   预览图?: string;
   原图?: string;
+};
+
+type CharDbRow = {
+  id: string;
+  set: "hair" | "outfit" | "pose";
+  cat?: string;
+  catZh?: string;
+  zh?: string;
+  jp?: string;
+  tags?: string;
+  line?: boolean;
 };
 
 type PortraitRow = {
@@ -136,10 +155,11 @@ class CloudReferenceLibrary {
   }
 
   private async load(): Promise<CloudReferenceCatalog> {
-    const [poses, costumes, portraits] = await Promise.all([
+    const [poses, costumes, portraits, charDb] = await Promise.all([
       this.fetchJson<PoseRow[]>("/data/pose-zh.json"),
       this.fetchJson<CostumeRow[]>("/data/costume-zh.json"),
       this.fetchJson<PortraitRow[]>("/data/portrait-zh.json"),
+      this.fetchCharDb(),
     ]);
     const poseItems = groupPoses(poses);
     const costumeItems = costumes.map((row) => ({
@@ -160,39 +180,77 @@ class CloudReferenceLibrary {
       thumbUrl: absoluteUrl(row.缩略图),
       imageUrl: absoluteUrl(row.原图 ?? row.缩略图),
     }));
-    const normalize = (items: Array<Omit<CloudReferenceItem, "sourceName" | "sourceUrl">>) =>
+    const normalize = (
+      items: Array<Omit<CloudReferenceItem, "sourceName" | "sourceUrl">>,
+      source: { name: string; url: string } = CLOUD_REFERENCE_SOURCE,
+    ) =>
       items
         .filter((item) => Boolean(item.thumbUrl && item.imageUrl))
         .map((item) => ({
           ...item,
-          sourceName: CLOUD_REFERENCE_SOURCE.name,
-          sourceUrl: CLOUD_REFERENCE_SOURCE.url,
+          sourceName: source.name,
+          sourceUrl: source.url,
         }));
+    const charDbItems = charDb.map((row) => {
+      const kind: CloudReferenceKind =
+        row.set === "hair" ? "hair" : row.set === "outfit" ? "costume" : "pose";
+      return {
+        id: `char-db-${row.id}`,
+        kind,
+        title: row.zh ?? row.id,
+        category: row.catZh ?? row.cat ?? "二次元换装",
+        tags: (row.tags ?? "")
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+        thumbUrl: `${CHAR_DB_THUMB_BASE}/${encodeURIComponent(row.id)}.webp`,
+        imageUrl: `${CHAR_DB_IMAGE_BASE}/img/${encodeURIComponent(row.id)}.jpg`,
+        lineUrl: row.line
+          ? `${CHAR_DB_IMAGE_BASE}/line/${encodeURIComponent(row.id)}.png`
+          : undefined,
+      };
+    });
     const items = [
       ...normalize(portraitItems),
       ...normalize(costumeItems),
       ...normalize(poseItems),
+      ...normalize(charDbItems, CHAR_DB_SOURCE),
     ];
     const value: CloudReferenceCatalog = {
-      sourceName: CLOUD_REFERENCE_SOURCE.name,
+      sourceName: `${CLOUD_REFERENCE_SOURCE.name} + ${CHAR_DB_SOURCE.name}`,
       sourceUrl: CLOUD_REFERENCE_SOURCE.url,
-      attribution: CLOUD_REFERENCE_SOURCE.attribution,
+      attribution: `${CLOUD_REFERENCE_SOURCE.attribution}；${CHAR_DB_SOURCE.attribution}`,
       fetchedAt: new Date().toISOString(),
       counts: {
         portrait: portraitItems.length,
-        costume: costumeItems.length,
-        pose: poseItems.length,
+        costume: costumeItems.length + charDb.filter((row) => row.set === "outfit").length,
+        hair: charDb.filter((row) => row.set === "hair").length,
+        pose: poseItems.length + charDb.filter((row) => row.set === "pose").length,
       },
       imageCounts: {
         portrait: portraits.length,
-        costume: costumes.length,
-        pose: poses.length,
+        costume: costumes.length + charDb.filter((row) => row.set === "outfit").length,
+        hair: charDb.filter((row) => row.set === "hair").length,
+        pose: poses.length + charDb.filter((row) => row.set === "pose").length,
       },
-      totalImages: portraits.length + costumes.length + poses.length,
+      totalImages: portraits.length + costumes.length + poses.length + charDb.length,
       items,
     };
     this.cache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
     return value;
+  }
+
+  private async fetchCharDb(): Promise<CharDbRow[]> {
+    const response = await transport(CHAR_DB_DATA_URL);
+    if (!response.ok)
+      throw new Error(`二次元换装库读取失败（${response.status}）。`);
+    const text = await response.text();
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start < 0 || end <= start)
+      throw new Error("二次元换装库数据格式无效。");
+    const parsed = JSON.parse(text.slice(start, end + 1)) as { items?: CharDbRow[] };
+    return Array.isArray(parsed.items) ? parsed.items : [];
   }
 
   private async fetchJson<T>(path: string): Promise<T> {
@@ -228,10 +286,17 @@ const extensionFor = (url: string, contentType: string): string => {
 const assetTypeFor = (kind: CloudReferenceKind): AssetType =>
   kind === "costume" ? "wardrobe" : kind === "pose" ? "pose" : "reference_image";
 
+const CLOUD_ORIGINS = new Set([
+  new URL(BASE_URL).origin,
+  new URL(CHAR_DB_SOURCE.url).origin,
+  new URL(CHAR_DB_IMAGE_BASE).origin,
+  new URL(CHAR_DB_THUMB_BASE).origin,
+]);
+
 const assertCloudUrl = (value: string): void => {
   if (!value) throw new Error("云端参考图缺少图片地址。");
   const url = new URL(value);
-  if (url.origin !== BASE_URL) throw new Error("只允许引用已登记的云端参考库。");
+  if (!CLOUD_ORIGINS.has(url.origin)) throw new Error("只允许引用已登记的云端参考库。");
 };
 
 const assertCloudItem = (item: CloudReferenceItem): void => {
