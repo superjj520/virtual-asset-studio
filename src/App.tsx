@@ -1994,6 +1994,7 @@ export default function App() {
     candidateLabel?: string;
     candidateIndex?: number;
     candidateCount?: number;
+    seedBase?: number;
   }): Promise<string | undefined> => {
     const activeBuild = prepared?.build ?? promptBuild;
     const activeTranslation = prepared?.translated ?? translation;
@@ -2014,10 +2015,11 @@ export default function App() {
         setCreativeTasks((current) => current.map((item) => item.id === updated.id ? updated : item));
       }
       const prompt = activeTranslation?.positive ?? activeBuild.positive;
+      const seedBase = prepared?.seedBase ?? generationSeed;
       const candidateSeed =
-        generationSeed === undefined
+        seedBase === undefined
           ? undefined
-          : generationSeed + Math.max(0, (prepared?.candidateIndex ?? 1) - 1);
+          : seedBase + Math.max(0, (prepared?.candidateIndex ?? 1) - 1);
       const characterId = prepared?.characterProfileId ?? activeCharacterContext?.profileId ?? activeTask?.characterProfileId;
       const characterWorkspace = characterId
         ? await window.studio.characterWorkspace.get(characterId)
@@ -2156,6 +2158,7 @@ export default function App() {
         return;
       }
       const perImageCostUsd = generationPreflight.estimatedCostUsd;
+      const candidateSeedBase = generationSeed ?? Math.floor(Math.random() * 1_000_000_000);
       setCandidateProgress({ current: 0, total: pendingVariations.length, label: "准备提示词", model: displayGenerationModel?.label });
       let remainingBudgetUsd = budget.monthlyBudgetUsd === undefined
         ? undefined
@@ -2181,6 +2184,7 @@ export default function App() {
           candidateLabel: variation.label,
           candidateIndex: index + 1,
           candidateCount: allCandidateVariations.length,
+          seedBase: candidateSeedBase,
         });
         if (!assetId) {
           stopReason = `候选 ${index + 1} 生成失败；本批已停止，已生成 ${generatedIds.length} 张。未完成部分可点“重试未完成”或在生成队列按原请求重试。`;
