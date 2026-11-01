@@ -2142,6 +2142,7 @@ export default function App() {
           // 模型适配失败时仍可使用结构化提示词完成生成。
         }
       }
+      const previousResultAssetId = activeTask?.resultAssetId;
       const generatedIds: string[] = [];
       const allCandidateVariations = buildCandidateVariations(
         creationCandidateCount,
@@ -2192,7 +2193,12 @@ export default function App() {
             seedBase: candidateSeedBase,
           });
         } catch (error) {
-          stopReason = `候选 ${index + 1} 生成失败（${error instanceof Error ? error.message : "未知错误"}）；已生成 ${generatedIds.length} 张，已保留。未完成部分可点“重试未完成”。`;
+          const message = error instanceof Error ? error.message : "未知错误";
+          if (message.includes("重复")) {
+            stopReason = `候选 ${index + 1} 与已有资产重复，已跳过；已生成 ${generatedIds.length} 张，已保留。`;
+            continue;
+          }
+          stopReason = `候选 ${index + 1} 生成失败（${message}）；已生成 ${generatedIds.length} 张，已保留。未完成部分可点“重试未完成”。`;
           break;
         }
         if (!assetId) {
@@ -2202,8 +2208,8 @@ export default function App() {
         generatedIds.push(assetId);
         if (remainingBudgetUsd !== undefined && perImageCostUsd !== undefined) remainingBudgetUsd -= perImageCostUsd;
       }
-      if (!generatedIds.length && activeTask?.resultAssetId) {
-        generatedIds.push(activeTask.resultAssetId);
+      if (!generatedIds.length && previousResultAssetId) {
+        generatedIds.push(previousResultAssetId);
       }
       if (taskId && generatedIds.length) {
         const updated = await window.studio.tasks.update(taskId, {
