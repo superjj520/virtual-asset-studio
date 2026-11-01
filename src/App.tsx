@@ -2199,6 +2199,9 @@ export default function App() {
         generatedIds.push(assetId);
         if (remainingBudgetUsd !== undefined && perImageCostUsd !== undefined) remainingBudgetUsd -= perImageCostUsd;
       }
+      if (!generatedIds.length && activeTask?.resultAssetId) {
+        generatedIds.push(activeTask.resultAssetId);
+      }
       if (taskId && generatedIds.length) {
         const updated = await window.studio.tasks.update(taskId, {
           status: "review",
