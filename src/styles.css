@@ -3558,6 +3558,19 @@ button:active { transform: translateY(1px); }
 .creation-resume-banner > span:nth-of-type(2) { margin-right: auto; }
 .creation-resume-pill { padding: 3px 7px; border-radius: 5px; background: var(--accent-soft); color: var(--accent-strong); font-weight: 700; }
 .creation-resume-banner button { min-height: 36px; padding: 0 16px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.creation-recipe-dock { display: grid; gap: 8px; margin: 0 0 16px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 9px; }
+.creation-recipe-dock-head { display: flex; align-items: baseline; gap: 8px; }
+.creation-recipe-dock-head strong { color: var(--ink); font-size: 12px; }
+.creation-recipe-dock-head span { color: var(--ink-muted); font-size: 10px; }
+.creation-recipe-dock-list { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+.creation-recipe-card { display: flex; flex: 0 0 210px; align-items: center; gap: 8px; padding: 6px; text-align: left; color: var(--ink); background: var(--surface-raised); border: 1px solid var(--line); border-radius: 7px; cursor: pointer; }
+.creation-recipe-card img, .creation-recipe-placeholder { width: 46px; height: 46px; flex: 0 0 46px; object-fit: cover; border-radius: 5px; background: var(--surface); }
+.creation-recipe-placeholder { display: grid; place-items: center; color: var(--ink-muted); font-size: 10px; }
+.creation-recipe-card span { min-width: 0; display: grid; gap: 2px; }
+.creation-recipe-card strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.creation-recipe-card small { color: var(--ink-muted); font-size: 9px; }
+.creation-recipe-new { flex: 0 0 auto; min-height: 58px; padding: 0 12px; color: var(--accent); font-size: 10px; background: transparent; border: 1px dashed var(--line); border-radius: 7px; cursor: pointer; }
+@media (max-width: 700px) { .creation-recipe-card { flex-basis: 180px; } .creation-recipe-dock-head span { display: none; } }
 @media (max-width: 700px) {
   .creation-resume-banner { flex-wrap: wrap; }
   .creation-resume-banner > span:nth-of-type(2) { flex: 1 0 100%; margin-right: 0; }

@@ -1,7 +1,9 @@
+import { useEffect, useState } from "react";
 import characterArtwork from "../assets/character-creator/oriental-moon-v2.webp";
 import imageArtwork from "../assets/character-creator/city-couture-v2.webp";
 import sceneArtwork from "../assets/character-creator/rain-noir-v2.webp";
 import seriesArtwork from "../assets/character-creator/natural-day-v2.webp";
+import type { Asset } from "../shared/types";
 
 export type CreationLaunchKind = "character" | "image" | "scene" | "series";
 
@@ -13,6 +15,8 @@ type CreationLaunchpadProps = {
   onExit: () => void;
   onOpenAssets?: () => void;
   onComposeReference?: () => void;
+  recipes?: Asset[];
+  onUseRecipe?: (asset: Asset) => void;
   embedded?: boolean;
   onDiscardResume?: () => void;
   resume?: { kindLabel: string; updatedAt: string; onResume: () => void };
@@ -55,7 +59,19 @@ const LAUNCH_OPTIONS: Array<{
   },
 ];
 
-export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, onSelect, onExit, onOpenAssets, onComposeReference, embedded = false, resume, onDiscardResume }: CreationLaunchpadProps) {
+function RecipeThumb({ asset }: { asset: Asset }) {
+  const [preview, setPreview] = useState<string>();
+  useEffect(() => {
+    let current = true;
+    window.studio.assets.preview(asset.id)
+      .then((source) => { if (current) setPreview(source); })
+      .catch(() => undefined);
+    return () => { current = false; };
+  }, [asset.id]);
+  return preview ? <img src={preview} alt="" /> : <span className="creation-recipe-placeholder" aria-hidden="true">格</span>;
+}
+
+export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, onSelect, onExit, onOpenAssets, onComposeReference, recipes = [], onUseRecipe, embedded = false, resume, onDiscardResume }: CreationLaunchpadProps) {
   return <section className={`creation-launchpad${embedded ? " creation-launchpad-embedded" : ""}`} aria-label="新建创作">
     <header className="creation-launchpad-header">
       {!embedded && <button type="button" className="creator-exit" onClick={onExit} aria-label="退出新建创作">←</button>}
@@ -81,6 +97,28 @@ export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, 
       <button type="button" onClick={resume.onResume}>继续</button>
       {onDiscardResume && <button type="button" className="creation-resume-discard" onClick={onDiscardResume}>重新开始</button>}
     </div>}
+    {recipes.length > 0 && <section className="creation-recipe-dock" aria-label="最近配方">
+      <div className="creation-recipe-dock-head">
+        <strong>最近配方</strong>
+        <span>已保存的四格参考卡，一键继续</span>
+      </div>
+      <div className="creation-recipe-dock-list">
+        {recipes.map((recipe) => <button
+          type="button"
+          key={recipe.id}
+          className="creation-recipe-card"
+          onClick={() => onUseRecipe?.(recipe)}
+          title={`用「${recipe.name}」开始创作`}
+        >
+          <RecipeThumb asset={recipe} />
+          <span>
+            <strong>{recipe.name}</strong>
+            <small>四格参考卡 · 已确认</small>
+          </span>
+        </button>)}
+        {onComposeReference && <button type="button" className="creation-recipe-new" onClick={onComposeReference}>+ 新建配方</button>}
+      </div>
+    </section>}
     <div className="creation-launch-grid">
       {LAUNCH_OPTIONS.map((option, index) => <button
         type="button"

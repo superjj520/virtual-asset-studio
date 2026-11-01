@@ -1589,6 +1589,9 @@ export default function App() {
     );
   };
   const selectableImages = assets.filter(canReuseAsset);
+  const recentRecipes = selectableImages
+    .filter((asset) => Boolean(asset.metadata?.referenceSheet))
+    .slice(0, 3);
   const characterReferenceIssues = activeTask?.characterProfileId
     ? (() => {
       const references = card.referenceAssetIds.map((id) => assets.find((asset) => asset.id === id));
@@ -4158,6 +4161,8 @@ export default function App() {
           onSelect={startCreationFlow}
           onExit={() => setScreen("workspace")}
           onComposeReference={() => setReferenceSheetOpen(true)}
+          recipes={recentRecipes}
+          onUseRecipe={useReferenceSheetForCreation}
           resume={effectiveResumableSession ? {
             kindLabel: creationKindLabel[effectiveResumableSession.kind],
             updatedAt: effectiveResumableSession.updatedAt,
@@ -4626,6 +4631,8 @@ export default function App() {
             onSelect={startCreationFlow}
             onOpenAssets={() => setScreen("assets")}
             onComposeReference={() => setReferenceSheetOpen(true)}
+            recipes={recentRecipes}
+            onUseRecipe={useReferenceSheetForCreation}
             onExit={() => document.getElementById("creation-projects")?.scrollIntoView({ behavior: "smooth", block: "start" })}
             resume={effectiveResumableSession ? {
               kindLabel: creationKindLabel[effectiveResumableSession.kind],
