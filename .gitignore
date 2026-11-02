@@ -15,3 +15,7 @@ artifacts/**/*.jpg
 artifacts/**/*.jpeg
 artifacts/**/*.webp
 artifacts/**/*.json
+
+# Python 侧节点包运行产生的字节码，不进仓库
+__pycache__/
+*.pyc
