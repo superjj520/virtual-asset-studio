@@ -10,7 +10,9 @@ import {
 import type { ProviderStatus } from "./types";
 
 const providers = (
-  configured: Partial<Record<"fal" | "gemini" | "openai" | "flux" | "local", boolean>>,
+  configured: Partial<
+    Record<"fal" | "gemini" | "openai" | "flux" | "local" | "comfyui" | "magpie", boolean>
+  >,
 ) =>
   [
     { id: "fal", configured: configured.fal ?? false, capabilities: ["image", "image_edit"] },
@@ -18,6 +20,8 @@ const providers = (
     { id: "openai", configured: configured.openai ?? false, capabilities: ["image", "image_edit"] },
     { id: "flux", configured: configured.flux ?? false, capabilities: ["image"] },
     { id: "local", configured: configured.local ?? false, capabilities: ["image"] },
+    { id: "comfyui", configured: configured.comfyui ?? false, capabilities: ["image", "video"] },
+    { id: "magpie", configured: configured.magpie ?? false, capabilities: ["text", "image"] },
   ] as ProviderStatus["providers"];
 
 describe("generation model registry", () => {
@@ -86,6 +90,27 @@ describe("generation model registry", () => {
     expect(options.find((model) => model.id === "fal-moss-image")?.available).toBe(true);
     expect(options.find((model) => model.id === "gemini-image")?.available).toBe(false);
     expect(options.find((model) => model.id === "gemini-image")?.unavailableReason).toContain("gemini");
+  });
+
+  it("ComfyUI 里的每个 checkpoint 都会展开成一条可选项", () => {
+    const options = listGenerationModels(providers({ comfyui: true }), [
+      "sd_xl_turbo_1.0_fp16.safetensors",
+      "flux1-dev-fp8.safetensors",
+    ]);
+    const comfy = options.filter((model) => model.providerId === "comfyui");
+    expect(comfy.map((model) => model.model)).toEqual([
+      "sd_xl_turbo_1.0_fp16.safetensors",
+      "flux1-dev-fp8.safetensors",
+    ]);
+    // 有了真实 checkpoint 就不再保留“本机 ComfyUI”占位条目。
+    expect(options.some((model) => model.id === "comfyui-local")).toBe(false);
+    expect(comfy[0].label).toBe("sd_xl_turbo_1.0_fp16");
+  });
+
+  it("探测不到 checkpoint 时保留占位条目与云端兜底", () => {
+    const options = listGenerationModels(providers({ comfyui: true }), []);
+    expect(options.some((model) => model.id === "comfyui-local")).toBe(true);
+    expect(options.find((model) => model.id === "magpie-sana")?.providerId).toBe("magpie");
   });
 
   it("任务映射覆盖参考图与系列", () => {

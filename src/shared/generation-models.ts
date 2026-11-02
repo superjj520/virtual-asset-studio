@@ -13,7 +13,7 @@ export type GenerationTaskKind =
 
 export type GenerationModel = {
   id: string;
-  providerId: Extract<ProviderId, "openai" | "flux" | "fal" | "gemini" | "local" | "custom" | "comfyui">;
+  providerId: Extract<ProviderId, "openai" | "flux" | "fal" | "gemini" | "local" | "custom" | "comfyui" | "magpie">;
   model: string;
   label: string;
   description: string;
@@ -177,6 +177,20 @@ const MODEL_LIST: GenerationModel[] = [
     qualityMode: "tiered",
     supportedAspectRatios: ALL_RATIOS,
   },
+  {
+    id: "magpie-sana",
+    providerId: "magpie",
+    model: "freeimg/flux",
+    label: "Pollinations Sana（云端兜底）",
+    description: "经本机 Magpie 网关调云端免费出图，不占本机显卡；每 45 秒一张，适合临时补图。",
+    tasks: ["portrait", "scene", "series"],
+    supportsReference: false,
+    maxReferences: 0,
+    estimatedCostUsd: 0,
+    costNote: "免费额度，每 IP 45 秒一张",
+    qualityMode: "fixed",
+    supportedAspectRatios: ALL_RATIOS,
+  },
 ];
 
 export const GENERATION_MODELS: readonly GenerationModel[] = MODEL_LIST;
@@ -230,10 +244,48 @@ export const generationModelAvailability = (
   return { ...model, available: true };
 };
 
+/** ComfyUI 里可用的 checkpoint 会展开成独立的可选项：装一个模型就多一条通道。 */
+const comfyCheckpointModel = (file: string): GenerationModel => ({
+  id: `comfyui-${file
+    .replace(/\.(safetensors|ckpt)$/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")}`,
+  providerId: "comfyui",
+  model: file,
+  label: file.replace(/\.(safetensors|ckpt)$/i, ""),
+  description: `本机 ComfyUI 加载 ${file}，不经过任何云端服务。`,
+  tasks: ["portrait", "scene", "series", "edit"],
+  supportsReference: false,
+  maxReferences: 0,
+  estimatedCostUsd: 0,
+  costNote: "本机显卡，不计费",
+  qualityMode: "tiered",
+  supportedAspectRatios: ALL_RATIOS,
+});
+
+/** 把 ComfyUI 探测到的 checkpoint 并进清单，替换掉默认的占位条目。 */
+export const withComfyCheckpoints = (
+  checkpoints?: readonly string[],
+): readonly GenerationModel[] => {
+  const files = (checkpoints ?? []).filter((file) => /\.(safetensors|ckpt)$/i.test(file));
+  if (!files.length) return MODEL_LIST;
+  const base = MODEL_LIST.filter((model) => model.id !== "comfyui-local");
+  return [...base, ...files.map(comfyCheckpointModel)];
+};
+
+/** 本机 ComfyUI 探测到的 checkpoint 由设置页注入，避免四个组件层层传参。 */
+let comfyCheckpointCache: readonly string[] = [];
+
+export const setComfyCheckpoints = (checkpoints?: readonly string[]): void => {
+  comfyCheckpointCache = checkpoints ?? [];
+};
+
 export const listGenerationModels = (
   providers?: ProviderStatus["providers"],
+  comfyCheckpoints: readonly string[] = comfyCheckpointCache,
 ): GenerationModelOption[] =>
-  MODEL_LIST.map((model) => {
+  withComfyCheckpoints(comfyCheckpoints).map((model) => {
     const availability = generationModelAvailability(model, providers);
     return {
       ...model,

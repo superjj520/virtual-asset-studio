@@ -470,6 +470,12 @@ textarea:focus {
   border-radius: 14px;
   background: linear-gradient(110deg, rgba(31, 42, 75, 0.58), rgba(20, 25, 35, 0.88));
 }
+.task-board-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .task-board-header { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .task-board-header strong { color: #eef1ff; font-size: 15px; }
 .task-board-header button { height: 34px; padding: 0 12px; }

@@ -1044,7 +1044,7 @@ export type ProviderStatus = {
   localImage?: { baseUrl: string; model: string };
   customImage?: { baseUrl: string; model: string };
   /** 本机 ComfyUI 配置：地址为空即未启用，不上传任何素材。 */
-  comfyui?: { baseUrl: string; checkpoint: string; hasWorkflow: boolean };
+  comfyui?: { baseUrl: string; checkpoint: string; hasWorkflow: boolean; /** 本机 ComfyUI 里可用的 checkpoint，用来展开成多个出图模型。 */ checkpoints?: string[] };
 };
 
 export type ProviderVerificationResult = {

@@ -14,7 +14,7 @@ import { SeriesDirectionComparison } from "./creation/SeriesDirectionComparison"
 import { GenerationModelPicker } from "./creation/GenerationModelPicker";
 import { GenerationModelCatalog } from "./settings/GenerationModelCatalog";
 import { readGenerationModelPreference, writeGenerationModelPreference } from "./creation/generation-model-preference";
-import { findGenerationModel, generationTaskFor, preflightGeneration } from "./shared/generation-models";
+import { findGenerationModel, generationTaskFor, preflightGeneration, setComfyCheckpoints } from "./shared/generation-models";
 import { resolveGenerationReadiness } from "./creation/generation-readiness";
 import { AssetVersionChain } from "./assets/AssetVersionChain";
 import { classifyGenerationError } from "./shared/generation-errors";
@@ -378,6 +378,9 @@ const CHARACTER_SHEET_TEMPLATE: CreativeCard = {
   referenceAssetIds: [],
 };
 
+/** 项目总览先露 6 个任务；再多就折叠，不能让人以为只有这些。 */
+const TASK_PREVIEW_SIZE = 6;
+
 const EMPTY_SHOT: ShotContract = {
   deliveryType: "image",
   subjectAnchor: "",
@@ -513,6 +516,7 @@ export default function App() {
   const [collectionEditDescription, setCollectionEditDescription] = useState("");
   const [collectionAssetFilters, setCollectionAssetFilters] = useState<CollectionAssetFilters>({ query: "", moduleKey: "all", confirmation: "all", rights: "all" });
   const [creativeTasks, setCreativeTasks] = useState<CreativeTask[]>([]);
+  const [showAllTasks, setShowAllTasks] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState("");
   const [guideMode, setGuideMode] = useState<"new" | "saved" | "reference">("new");
   const [creationLaunchKind, setCreationLaunchKind] = useState<CreationLaunchKind>("character");
@@ -746,6 +750,7 @@ export default function App() {
       .providerStatus()
       .then((status) => {
         setProvider(status);
+        setComfyCheckpoints(status.comfyui?.checkpoints);
         setLocalImageBaseUrl(status.localImage?.baseUrl ?? "");
         setLocalImageModel(status.localImage?.model ?? "");
         setComfyuiBaseUrl(status.comfyui?.baseUrl ?? "");
@@ -1706,7 +1711,9 @@ export default function App() {
     setNotice("");
     try {
       const result = await window.studio.settings.migrateLegacyKeys();
-      setProvider(await window.studio.settings.providerStatus());
+      const status = await window.studio.settings.providerStatus();
+      setProvider(status);
+      setComfyCheckpoints(status.comfyui?.checkpoints);
       if (result.unavailable) {
         setNotice("当前系统无法访问旧钥匙串，请在下方重新粘贴一次密钥。");
       } else if (result.migrated.length) {
@@ -4848,10 +4855,17 @@ export default function App() {
               <section className="task-board" aria-label="创作任务">
                 <div className="task-board-header">
                   <div><p className="eyebrow">创作任务</p><strong>每次创作都有记录</strong></div>
-                  <button className="primary-button" onClick={openCreationLaunchpad}>新建任务</button>
+                  <div className="task-board-actions">
+                    {creativeTasks.length > TASK_PREVIEW_SIZE && (
+                      <button onClick={() => setShowAllTasks((current) => !current)}>
+                        {showAllTasks ? `只看最近 ${TASK_PREVIEW_SIZE} 个` : `查看全部 ${creativeTasks.length} 个`}
+                      </button>
+                    )}
+                    <button className="primary-button" onClick={openCreationLaunchpad}>新建任务</button>
+                  </div>
                 </div>
                 <div className="task-grid">
-                  {creativeTasks.slice(0, 6).map((task) => (
+                  {(showAllTasks ? creativeTasks : creativeTasks.slice(0, TASK_PREVIEW_SIZE)).map((task) => (
                     <button className={activeTaskId === task.id ? "task-card task-current" : "task-card"} key={task.id} onClick={() => void openCreativeTask(task)}>
                       <span>{taskStatusLabel(task.status)}</span>
                       <strong>{task.name}</strong>
