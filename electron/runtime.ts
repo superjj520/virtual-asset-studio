@@ -175,11 +175,12 @@ export const createStudioRuntime = (
     apiKey: () => apiKeyFor("custom"),
   });
   // ComfyUI 走本机 HTTP 接口，不涉及密钥；地址为空即视为未配置。
-  const comfyui = new ComfyUiImageProvider({
+  const comfyuiOptions = {
     baseUrl: () => settings.get("comfyui_base_url"),
     checkpoint: () => settings.get("comfyui_checkpoint"),
     workflow: () => settings.get("comfyui_workflow"),
-  });
+  };
+  const comfyui = new ComfyUiImageProvider(comfyuiOptions);
   // Magpie 免费池：地址与 key 共用 `magpie_api_key` 一个凭据槽。
   // 存 http(s) 地址就当地址用（本机 loopback 网关对 key 不敏感），否则当 key、地址走默认 3425。
   const magpieCredential = () => apiKeyFor("magpie");
@@ -187,12 +188,13 @@ export const createStudioRuntime = (
     const value = magpieCredential();
     return value && /^https?:\/\//i.test(value) ? value : undefined;
   };
-  const magpie = new MagpieProvider({
+  const magpieOptions = {
     apiKey: () => (magpieBaseUrl() ? "magpie" : magpieCredential()),
     baseUrl: magpieBaseUrl,
     imageModel: () => settings.get("magpie_image_model") ?? undefined,
     textModel: () => settings.get("magpie_text_model") ?? undefined,
-  });
+  };
+  const magpie = new MagpieProvider(magpieOptions);
   const imageProviders: Partial<
     Record<
       ProviderId,
@@ -226,6 +228,15 @@ export const createStudioRuntime = (
       }
     >
   > = { openai };
+  /**
+   * 同一个 provider 下可能有多个模型：ComfyUI 靠 checkpoint 文件名区分，Magpie 靠网关里的模型 id 区分。
+   * 选中模型时派生一个只改模型来源的实例，其余配置（地址、凭据、工作流）全部沿用。
+   */
+  const imageProviderFor = (providerId: ProviderId, model?: string) => {
+    if (providerId === "comfyui" && model) return new ComfyUiImageProvider({ ...comfyuiOptions, checkpoint: () => model });
+    if (providerId === "magpie" && model) return new MagpieProvider({ ...magpieOptions, imageModel: () => model });
+    return imageProviders[providerId];
+  };
   const generateWith = (
     providerId: ProviderId,
     input: {
@@ -235,15 +246,16 @@ export const createStudioRuntime = (
       quality?: "medium" | "high";
       seed?: number;
     },
+    model?: string,
   ) => {
-    const provider = imageProviders[providerId];
+    const provider = imageProviderFor(providerId, undefined);
     if (!provider)
       throw new Error(`模型 ${providerId} 尚未安装图片生成适配器。`);
     return provider.generateImage(input);
   };
   const generateWithResult = async (
     providerId: ProviderId,
-    input: { prompt: string; negative?: string; size: ImageGenerationSize; quality?: "medium" | "high"; falModel?: string; seed?: number; onRemoteTask?: (task: FalRemoteTask) => void },
+    input: { prompt: string; negative?: string; size: ImageGenerationSize; quality?: "medium" | "high"; falModel?: string; providerModel?: string; seed?: number; onRemoteTask?: (task: FalRemoteTask) => void },
   ): Promise<{ image: Buffer; remoteTask?: FalRemoteTask }> => {
     if (providerId === "fal") {
       const result = await fal.generateImageWithTask({ ...input, model: input.falModel });
@@ -251,13 +263,17 @@ export const createStudioRuntime = (
     }
     // 画幅、种子与画质一路透传，本地服务才能按当前创作选择真实出图。
     return {
-      image: await generateWith(providerId, {
-        prompt: input.prompt,
-        negative: input.negative,
-        size: input.size,
-        quality: input.quality,
-        seed: input.seed,
-      }),
+      image: await generateWith(
+        providerId,
+        {
+          prompt: input.prompt,
+          negative: input.negative,
+          size: input.size,
+          quality: input.quality,
+          seed: input.seed,
+        },
+        input.providerModel,
+      ),
     };
   };
   const refineWithResult = async (
@@ -1092,7 +1108,7 @@ export const createStudioRuntime = (
                     model: batchModel?.model,
                     onRemoteTask: (remoteTask) => jobs.update(job!.id, { status: "in_progress", result: { remoteTask, requestedAspectRatio: batch.aspectRatio, actualSize: size, batchId, variantId: item.id } }),
                   })
-                : await generateWithResult(batch.providerId, { prompt: item.prompt, size, seed: batch.seed, quality: batch.qualityTier === "draft" ? "medium" : batch.qualityTier ? "high" : undefined, falModel: batchModel?.providerId === "fal" ? batchModel.model : undefined, onRemoteTask: (remoteTask) => jobs.update(job!.id, { status: "in_progress", result: { remoteTask, requestedAspectRatio: batch.aspectRatio, actualSize: size, batchId, variantId: item.id } }) });
+                : await generateWithResult(batch.providerId, { prompt: item.prompt, size, seed: batch.seed, quality: batch.qualityTier === "draft" ? "medium" : batch.qualityTier ? "high" : undefined, falModel: batchModel?.providerId === "fal" ? batchModel.model : undefined, providerModel: batchModel?.model, onRemoteTask: (remoteTask) => jobs.update(job!.id, { status: "in_progress", result: { remoteTask, requestedAspectRatio: batch.aspectRatio, actualSize: size, batchId, variantId: item.id } }) });
               const asset = writeGeneratedAsset(generated.image, {
                 type: "image",
                 mediaType: "image/png",
@@ -1640,6 +1656,7 @@ export const createStudioRuntime = (
                     quality,
                     seed: input.seed,
                     falModel: requestedModel?.providerId === "fal" ? requestedModel.model : undefined,
+                    providerModel: requestedModel?.model,
                     onRemoteTask: (remoteTask) => jobs.update(job.id, { status: "in_progress", result: { remoteTask, progressStage: "remote", requestedAspectRatio: input.aspectRatio, actualSize: size } }),
                   });
             jobs.update(job.id, {

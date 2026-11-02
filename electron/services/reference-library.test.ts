@@ -81,8 +81,8 @@ describe("云端参考库", () => {
       {} as ProjectRepository,
     );
     const catalog = await library.list();
-    expect(catalog.counts).toEqual({ portrait: 1, costume: 2, hair: 1, pose: 3, depth: 0 });
-    expect(catalog.imageCounts).toEqual({ portrait: 1, costume: 2, hair: 1, pose: 4, depth: 0 });
+    expect(catalog.counts).toEqual({ portrait: 1, costume: 2, hair: 1, pose: 3, depth: 0, "anime-costume": 0 });
+    expect(catalog.imageCounts).toEqual({ portrait: 1, costume: 2, hair: 1, pose: 4, depth: 0, "anime-costume": 0 });
     expect(catalog.totalImages).toBe(8);
     expect(catalog.items).toHaveLength(7);
     expect(catalog.items.filter((item) => item.kind === "pose")).toHaveLength(3);
@@ -194,6 +194,46 @@ describe("云端参考库", () => {
     });
     expect(depth?.title).toContain("正面");
     expect(depth?.category).toBe("立ち");
+  });
+
+  it("解析动漫衣装库的内联数据并作为独立分类", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("char-db-cn/main/data.js"))
+          return new Response(`window.CHARDB=${JSON.stringify({ items: [] })};`, {
+            status: 200,
+            headers: { "content-type": "application/javascript" },
+          });
+        if (url.includes("pose-zh")) return json([]);
+        if (url.includes("costume-zh")) return json([]);
+        if (url.includes("portrait-zh")) return json([]);
+        if (url.includes("ai-costume-anime-gallery"))
+          return new Response(
+            `<!doctype html><script>const META={"total":1,"cats":["春"]}; const D=[{"id":"SPR-0001","カテゴリ":"春","キーワード":"ivory frill knit denim mini skirt","サムネ":"thumbs/SPR-0001.webp","画像":"img/SPR-0001.webp","原寸":"png/SPR-0001.png"}];</script>`,
+            { status: 200, headers: { "content-type": "text/html" } },
+          );
+        throw new Error(`未预期的请求：${url}`);
+      }),
+    );
+    const library = new CloudReferenceLibrary(
+      {} as ImportService,
+      {} as AssetRepository,
+      {} as ProjectRepository,
+    );
+    const catalog = await library.list();
+    expect(catalog.counts["anime-costume"]).toBe(1);
+    const item = catalog.items.find((entry) => entry.kind === "anime-costume");
+    expect(item).toMatchObject({
+      id: "anime-costume-SPR-0001",
+      thumbUrl: "https://ai-costume-anime-gallery.pages.dev/thumbs/SPR-0001.webp",
+      imageUrl: "https://ai-costume-anime-gallery.pages.dev/img/SPR-0001.webp",
+      sourceName: "COSTUME-ANIME-DB",
+    });
+    expect(item?.category).toBe("春");
+    // 关键词拆成标签，搜索框能命中「denim」这类词。
+    expect(item?.tags).toContain("denim");
+    expect(catalog.totalImages).toBe(1);
   });
 
   it("深度姿势集读取失败时不影响其余素材", async () => {

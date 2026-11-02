@@ -23,6 +23,12 @@ const DEPTH_SOURCE = {
   url: "https://ai-pose-depth-gallery.pages.dev/",
   attribution: "depth ポーズ集 POSE-DB-02 · 姿势深度图，供 ControlNet Depth 使用",
 } as const;
+const ANIME_BASE = "https://ai-costume-anime-gallery.pages.dev";
+const ANIME_SOURCE = {
+  name: "COSTUME-ANIME-DB",
+  url: "https://ai-costume-anime-gallery.pages.dev/",
+  attribution: "衣装集 アニメ版 COSTUME-ANIME-DB · 动漫服装参考库",
+} as const;
 const CHAR_DB_SOURCE = {
   name: "二次元角色换装库 · 中文版",
   url: "https://sleepyzone.online/char-db-cn/",
@@ -40,6 +46,15 @@ type PoseRow = {
   角度?: string;
   缩略图?: string;
   原图?: string;
+};
+
+type AnimeCostumeRow = {
+  id: string;
+  カテゴリ?: string;
+  キーワード?: string;
+  サムネ?: string;
+  画像?: string;
+  原寸?: string;
 };
 
 type DepthRow = {
@@ -172,12 +187,13 @@ class CloudReferenceLibrary {
   }
 
   private async load(): Promise<CloudReferenceCatalog> {
-    const [poses, costumes, portraits, charDb, depths] = await Promise.all([
+    const [poses, costumes, portraits, charDb, depths, animeCostumes] = await Promise.all([
       this.fetchJson<PoseRow[]>("/data/pose-zh.json"),
       this.fetchJson<CostumeRow[]>("/data/costume-zh.json"),
       this.fetchJson<PortraitRow[]>("/data/portrait-zh.json"),
       this.fetchCharDb(),
       this.fetchDepthPoses(),
+      this.fetchAnimeCostumes(),
     ]);
     const poseItems = groupPoses(poses);
     const costumeItems = costumes.map((row) => ({
@@ -237,17 +253,30 @@ class CloudReferenceLibrary {
       thumbUrl: depthUrl(row.サムネ),
       imageUrl: depthUrl(row.原寸 ?? row.サムネ),
     }));
+    const animeItems = animeCostumes.map((row) => ({
+      id: `anime-costume-${row.id}`,
+      kind: "anime-costume" as const,
+      title: `${row.カテゴリ ?? "衣装"} · ${row.id}`,
+      category: row.カテゴリ ?? "动漫衣装",
+      tags: [
+        row.カテゴリ,
+        ...(row.キーワード ?? "").split(/\s+/).filter(Boolean),
+      ].filter((value): value is string => Boolean(value)),
+      thumbUrl: animeUrl(row.サムネ),
+      imageUrl: animeUrl(row.画像 ?? row.サムネ),
+    }));
     const items = [
       ...normalize(portraitItems),
       ...normalize(costumeItems),
       ...normalize(poseItems),
       ...normalize(charDbItems, CHAR_DB_SOURCE),
       ...normalize(depthItems, DEPTH_SOURCE),
+      ...normalize(animeItems, ANIME_SOURCE),
     ];
     const value: CloudReferenceCatalog = {
-      sourceName: `${CLOUD_REFERENCE_SOURCE.name} + ${CHAR_DB_SOURCE.name} + ${DEPTH_SOURCE.name}`,
+      sourceName: `${CLOUD_REFERENCE_SOURCE.name} + ${CHAR_DB_SOURCE.name} + ${DEPTH_SOURCE.name} + ${ANIME_SOURCE.name}`,
       sourceUrl: CLOUD_REFERENCE_SOURCE.url,
-      attribution: `${CLOUD_REFERENCE_SOURCE.attribution}；${CHAR_DB_SOURCE.attribution}；${DEPTH_SOURCE.attribution}`,
+      attribution: `${CLOUD_REFERENCE_SOURCE.attribution}；${CHAR_DB_SOURCE.attribution}；${DEPTH_SOURCE.attribution}；${ANIME_SOURCE.attribution}`,
       fetchedAt: new Date().toISOString(),
       counts: {
         portrait: portraitItems.length,
@@ -255,6 +284,7 @@ class CloudReferenceLibrary {
         hair: charDb.filter((row) => row.set === "hair").length,
         pose: poseItems.length + charDb.filter((row) => row.set === "pose").length,
         depth: depthItems.length,
+        "anime-costume": animeItems.length,
       },
       imageCounts: {
         portrait: portraits.length,
@@ -262,8 +292,10 @@ class CloudReferenceLibrary {
         hair: charDb.filter((row) => row.set === "hair").length,
         pose: poses.length + charDb.filter((row) => row.set === "pose").length,
         depth: depths.length,
+        "anime-costume": animeCostumes.length,
       },
-      totalImages: portraits.length + costumes.length + poses.length + charDb.length + depths.length,
+      totalImages:
+        portraits.length + costumes.length + poses.length + charDb.length + depths.length + animeCostumes.length,
       items,
     };
     this.cache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
@@ -284,46 +316,25 @@ class CloudReferenceLibrary {
   }
 
   /**
-   * 深度姿势集把全部数据内联在首页脚本里（`const D=[...]`），没有独立的 JSON 端点。
-   * 它属于增量素材：读取失败时退化为空列表，不影响主库其余部分。
+   * 动漫衣装库同样把数据内联在首页脚本里（`const D=[...]`），1,320 条。
+   * 属于增量素材：读取失败退化为空列表，不影响主库其余部分。
    */
+  private async fetchAnimeCostumes(): Promise<AnimeCostumeRow[]> {
+    try {
+      const response = await transport(ANIME_BASE);
+      if (!response.ok) return [];
+      return parseInlineArray<AnimeCostumeRow>(await response.text(), "const D=");
+    } catch {
+      return [];
+    }
+  }
+
+  /** 深度姿势集：1,439 条，同样内联在首页。失败时同样退化为空列表。 */
   private async fetchDepthPoses(): Promise<DepthRow[]> {
     try {
       const response = await transport(DEPTH_BASE);
       if (!response.ok) return [];
-      const html = await response.text();
-      const marker = "const D=";
-      const start = html.indexOf(marker);
-      if (start < 0) return [];
-      const from = start + marker.length;
-      let depth = 0;
-      let inString = false;
-      let escaped = false;
-      let end = -1;
-      for (let index = from; index < html.length; index += 1) {
-        const char = html[index];
-        if (inString) {
-          if (escaped) escaped = false;
-          else if (char === "\\") escaped = true;
-          else if (char === '"') inString = false;
-          continue;
-        }
-        if (char === '"') {
-          inString = true;
-          continue;
-        }
-        if (char === "[" || char === "{") depth += 1;
-        else if (char === "]" || char === "}") {
-          depth -= 1;
-          if (depth === 0) {
-            end = index + 1;
-            break;
-          }
-        }
-      }
-      if (end < 0) return [];
-      const parsed = JSON.parse(html.slice(from, end)) as DepthRow[];
-      return Array.isArray(parsed) ? parsed : [];
+      return parseInlineArray<DepthRow>(await response.text(), "const D=");
     } catch {
       return [];
     }
@@ -343,6 +354,54 @@ const transport = async (url: string): Promise<Response> => {
     return net.fetch(url);
   }
   return fetch(url);
+};
+
+/**
+ * pages.dev 的静态站把全部数据内联在首页脚本里（`const D=[...]`），没有独立 JSON 端点。
+ * 用括号配对扫描取出数组字面量，字符串里的括号不算层级。
+ */
+const parseInlineArray = <T>(html: string, marker: string): T[] => {
+  const start = html.indexOf(marker);
+  if (start < 0) return [];
+  const from = start + marker.length;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let end = -1;
+  for (let index = from; index < html.length; index += 1) {
+    const char = html[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === "[" || char === "{") depth += 1;
+    else if (char === "]" || char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        end = index + 1;
+        break;
+      }
+    }
+  }
+  if (end < 0) return [];
+  try {
+    const parsed = JSON.parse(html.slice(from, end));
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+const animeUrl = (path?: string): string => {
+  if (!path) return "";
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${ANIME_BASE}/${path.replace(/^\/+/, "")}`;
 };
 
 const depthUrl = (path?: string): string => {
@@ -374,6 +433,7 @@ const CLOUD_ORIGINS = new Set([
   new URL(CHAR_DB_IMAGE_BASE).origin,
   new URL(CHAR_DB_THUMB_BASE).origin,
   new URL(DEPTH_BASE).origin,
+  new URL(ANIME_BASE).origin,
 ]);
 
 const assertCloudUrl = (value: string): void => {

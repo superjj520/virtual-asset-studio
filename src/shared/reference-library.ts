@@ -4,7 +4,7 @@ export const CLOUD_REFERENCE_SOURCE = {
   attribution: "anhao · 姿势 / 服装 / 人像云端参考库",
 } as const;
 
-export const CLOUD_REFERENCE_KINDS = ["portrait", "costume", "hair", "pose", "depth"] as const;
+export const CLOUD_REFERENCE_KINDS = ["portrait", "costume", "hair", "pose", "depth", "anime-costume"] as const;
 export type CloudReferenceKind = (typeof CLOUD_REFERENCE_KINDS)[number];
 
 export const CLOUD_REFERENCE_KIND_LABELS: Record<CloudReferenceKind, string> = {
@@ -13,12 +13,19 @@ export const CLOUD_REFERENCE_KIND_LABELS: Record<CloudReferenceKind, string> = {
   pose: "姿势",
   hair: "发型",
   depth: "深度",
+  "anime-costume": "动漫衣装",
 };
 
 export const DEPTH_REFERENCE_SOURCE = {
   name: "POSE-DB Depth",
   url: "https://ai-pose-depth-gallery.pages.dev/",
   attribution: "depth ポーズ集 POSE-DB-02 · 姿势深度图，供 ControlNet Depth 使用",
+} as const;
+
+export const ANIME_COSTUME_REFERENCE_SOURCE = {
+  name: "COSTUME-ANIME-DB",
+  url: "https://ai-costume-anime-gallery.pages.dev/",
+  attribution: "衣装集 アニメ版 COSTUME-ANIME-DB · 动漫服装参考库",
 } as const;
 
 export type CloudReferenceVariant = {
