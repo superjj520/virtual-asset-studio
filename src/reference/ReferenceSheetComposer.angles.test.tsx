@@ -48,7 +48,7 @@ const catalog: CloudReferenceCatalog = {
   sourceUrl: `${BASE}/`,
   attribution: "测试用云端参考库",
   fetchedAt: "2026-11-02T00:00:00.000Z",
-  counts: { portrait: 0, costume: 0, hair: 0, pose: 1 },
+  counts: { portrait: 0, costume: 0, hair: 0, pose: 1, depth: 0 },
   items: [poseItem],
 };
 

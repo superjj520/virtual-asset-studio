@@ -17,6 +17,12 @@ const BASE_URL = "https://ai-pose-gallery.anhao.app";
 const CHAR_DB_DATA_URL = "https://raw.githubusercontent.com/sleepy-zone/char-db-cn/main/data.js";
 const CHAR_DB_THUMB_BASE = "https://raw.githubusercontent.com/sleepy-zone/char-db-cn/main/thumbs";
 const CHAR_DB_IMAGE_BASE = "https://charadb-2fi.pages.dev";
+const DEPTH_BASE = "https://ai-pose-depth-gallery.pages.dev";
+const DEPTH_SOURCE = {
+  name: "POSE-DB Depth",
+  url: "https://ai-pose-depth-gallery.pages.dev/",
+  attribution: "depth ポーズ集 POSE-DB-02 · 姿势深度图，供 ControlNet Depth 使用",
+} as const;
 const CHAR_DB_SOURCE = {
   name: "二次元角色换装库 · 中文版",
   url: "https://sleepyzone.online/char-db-cn/",
@@ -34,6 +40,17 @@ type PoseRow = {
   角度?: string;
   缩略图?: string;
   原图?: string;
+};
+
+type DepthRow = {
+  id: string;
+  系統?: string;
+  ポーズ番号?: string;
+  分類?: string;
+  ポーズ名?: string;
+  アングル?: string;
+  サムネ?: string;
+  原寸?: string;
 };
 
 type CostumeRow = {
@@ -155,11 +172,12 @@ class CloudReferenceLibrary {
   }
 
   private async load(): Promise<CloudReferenceCatalog> {
-    const [poses, costumes, portraits, charDb] = await Promise.all([
+    const [poses, costumes, portraits, charDb, depths] = await Promise.all([
       this.fetchJson<PoseRow[]>("/data/pose-zh.json"),
       this.fetchJson<CostumeRow[]>("/data/costume-zh.json"),
       this.fetchJson<PortraitRow[]>("/data/portrait-zh.json"),
       this.fetchCharDb(),
+      this.fetchDepthPoses(),
     ]);
     const poseItems = groupPoses(poses);
     const costumeItems = costumes.map((row) => ({
@@ -210,30 +228,42 @@ class CloudReferenceLibrary {
           : undefined,
       };
     });
+    const depthItems = depths.map((row) => ({
+      id: `depth-${row.id}`,
+      kind: "depth" as const,
+      title: `${row.ポーズ名 ?? row.ポーズ番号 ?? row.id} · ${row.アングル ?? "视角"}`,
+      category: row.分類 ?? "姿势深度",
+      tags: [row.系統, row.アングル].filter((value): value is string => Boolean(value)),
+      thumbUrl: depthUrl(row.サムネ),
+      imageUrl: depthUrl(row.原寸 ?? row.サムネ),
+    }));
     const items = [
       ...normalize(portraitItems),
       ...normalize(costumeItems),
       ...normalize(poseItems),
       ...normalize(charDbItems, CHAR_DB_SOURCE),
+      ...normalize(depthItems, DEPTH_SOURCE),
     ];
     const value: CloudReferenceCatalog = {
-      sourceName: `${CLOUD_REFERENCE_SOURCE.name} + ${CHAR_DB_SOURCE.name}`,
+      sourceName: `${CLOUD_REFERENCE_SOURCE.name} + ${CHAR_DB_SOURCE.name} + ${DEPTH_SOURCE.name}`,
       sourceUrl: CLOUD_REFERENCE_SOURCE.url,
-      attribution: `${CLOUD_REFERENCE_SOURCE.attribution}；${CHAR_DB_SOURCE.attribution}`,
+      attribution: `${CLOUD_REFERENCE_SOURCE.attribution}；${CHAR_DB_SOURCE.attribution}；${DEPTH_SOURCE.attribution}`,
       fetchedAt: new Date().toISOString(),
       counts: {
         portrait: portraitItems.length,
         costume: costumeItems.length + charDb.filter((row) => row.set === "outfit").length,
         hair: charDb.filter((row) => row.set === "hair").length,
         pose: poseItems.length + charDb.filter((row) => row.set === "pose").length,
+        depth: depthItems.length,
       },
       imageCounts: {
         portrait: portraits.length,
         costume: costumes.length + charDb.filter((row) => row.set === "outfit").length,
         hair: charDb.filter((row) => row.set === "hair").length,
         pose: poses.length + charDb.filter((row) => row.set === "pose").length,
+        depth: depths.length,
       },
-      totalImages: portraits.length + costumes.length + poses.length + charDb.length,
+      totalImages: portraits.length + costumes.length + poses.length + charDb.length + depths.length,
       items,
     };
     this.cache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
@@ -253,6 +283,52 @@ class CloudReferenceLibrary {
     return Array.isArray(parsed.items) ? parsed.items : [];
   }
 
+  /**
+   * 深度姿势集把全部数据内联在首页脚本里（`const D=[...]`），没有独立的 JSON 端点。
+   * 它属于增量素材：读取失败时退化为空列表，不影响主库其余部分。
+   */
+  private async fetchDepthPoses(): Promise<DepthRow[]> {
+    try {
+      const response = await transport(DEPTH_BASE);
+      if (!response.ok) return [];
+      const html = await response.text();
+      const marker = "const D=";
+      const start = html.indexOf(marker);
+      if (start < 0) return [];
+      const from = start + marker.length;
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      let end = -1;
+      for (let index = from; index < html.length; index += 1) {
+        const char = html[index];
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (char === "\\") escaped = true;
+          else if (char === '"') inString = false;
+          continue;
+        }
+        if (char === '"') {
+          inString = true;
+          continue;
+        }
+        if (char === "[" || char === "{") depth += 1;
+        else if (char === "]" || char === "}") {
+          depth -= 1;
+          if (depth === 0) {
+            end = index + 1;
+            break;
+          }
+        }
+      }
+      if (end < 0) return [];
+      const parsed = JSON.parse(html.slice(from, end)) as DepthRow[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
   private async fetchJson<T>(path: string): Promise<T> {
     const response = await transport(`${BASE_URL}${path}`);
     if (!response.ok)
@@ -267,6 +343,12 @@ const transport = async (url: string): Promise<Response> => {
     return net.fetch(url);
   }
   return fetch(url);
+};
+
+const depthUrl = (path?: string): string => {
+  if (!path) return "";
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${DEPTH_BASE}/${path.replace(/^\/+/, "")}`;
 };
 
 const absoluteUrl = (path?: string): string => {
@@ -291,6 +373,7 @@ const CLOUD_ORIGINS = new Set([
   new URL(CHAR_DB_SOURCE.url).origin,
   new URL(CHAR_DB_IMAGE_BASE).origin,
   new URL(CHAR_DB_THUMB_BASE).origin,
+  new URL(DEPTH_BASE).origin,
 ]);
 
 const assertCloudUrl = (value: string): void => {
