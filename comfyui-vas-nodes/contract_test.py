@@ -114,4 +114,48 @@ if failures:
     for item in failures:
         print("   -", item)
     raise SystemExit(1)
+def check_returns(module) -> list[str]:
+    """run() 返回的元组长度必须等于 RETURN_TYPES 长度。
+
+    ComfyUI 严格按 RETURN_TYPES 截取，多出来的会被静默丢掉——
+    VASCharacterPack 就曾经声明 2 个输出、实际返回 3 个，提示词一直没送到下游，
+    但界面和加载都不报错，只有把返回值个数和声明对上才看得出来。
+    """
+    import ast
+    import pathlib
+
+    problems: list[str] = []
+    tree = ast.parse(pathlib.Path(HERE / "nodes.py").read_text(encoding="utf-8"))
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        declared = 0
+        for item in node.body:
+            if isinstance(item, ast.Assign):
+                for target in item.targets:
+                    if isinstance(target, ast.Name) and target.id == "RETURN_TYPES":
+                        if isinstance(item.value, ast.Tuple):
+                            declared = len(item.value.elts)
+        if not declared:
+            continue
+        for item in node.body:
+            if not isinstance(item, ast.FunctionDef) or item.name not in {"run", "compose"}:
+                continue
+            for sub in ast.walk(item):
+                if isinstance(sub, ast.Return) and isinstance(sub.value, ast.Tuple):
+                    got = len(sub.value.elts)
+                    if got != declared:
+                        problems.append(
+                            f"{node.name}.{item.name}() 返回 {got} 个值，但 RETURN_TYPES 只声明了 {declared} 个"
+                        )
+    return problems
+
+
 print(f"✓ {len(nodes.NODE_CLASS_MAPPINGS)} 个节点全部符合 ComfyUI 加载规范")
+
+return_problems = check_returns(nodes)
+if return_problems:
+    for problem in return_problems:
+        print(f"  ✗ {problem}")
+    raise SystemExit(f"✗ {len(return_problems)} 处返回值个数与 RETURN_TYPES 不一致")
+print("✓ 每个 run() 的返回值个数都和 RETURN_TYPES 对得上")

@@ -80,6 +80,23 @@ def _build_prompt(site: str, row: dict[str, Any]) -> str:
     return str(row.get("name") or row.get("id") or "")
 
 
+def _english_prompt(site: str, row: dict[str, Any]) -> str:
+    """服装 / 动漫衣装的标签本身就是英文关键词，单独拼一份给 CLIP 更省 token。"""
+    if site == "costume":
+        tags = row.get("标签") or []
+        return ", ".join(str(tag) for tag in tags[:12])
+    if site == "anime":
+        return str(row.get("キーワード", "") or "")
+    return ""
+
+
+def _english_for(site: str, choice: str) -> str:
+    for row in load_rows(site):
+        if label(site, row) == choice:
+            return _english_prompt(site, row)
+    return ""
+
+
 def _load_image(
     site: str,
     choice: str,
@@ -225,9 +242,25 @@ class VASDepthGallery(_GalleryBase):
 
 
 class VASCostumeGallery(_GalleryBase):
-    """服装库：1,407 套，另含 char-db-cn 的 440 套。"""
+    """服装库：1,407 套，另含 char-db-cn 的 440 套。多给一份英文关键词。"""
 
     SITE = "costume"
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("图片", "名称", "中文描述", "英文关键词")
+
+    def run(  # noqa: N803
+        self,
+        选择: str,
+        尺寸模式: str = "原图尺寸",
+        宽度: int = 1024,
+        高度: int = 1280,
+        水平镜像: bool = False,
+        刷新数据: bool = False,
+    ):
+        tensor, label_text, prompt = super().run(
+            选择, 尺寸模式, 宽度, 高度, 水平镜像, 刷新数据
+        )
+        return tensor, label_text, prompt, _english_for(self.SITE, 选择)
 
 
 class VASPortraitGallery(_GalleryBase):
@@ -237,9 +270,25 @@ class VASPortraitGallery(_GalleryBase):
 
 
 class VASAnimeCostumeGallery(_GalleryBase):
-    """动漫衣装库：1,320 套。"""
+    """动漫衣装库：1,320 套。多给一份英文关键词。"""
 
     SITE = "anime"
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("图片", "名称", "中文描述", "英文关键词")
+
+    def run(  # noqa: N803
+        self,
+        选择: str,
+        尺寸模式: str = "原图尺寸",
+        宽度: int = 1024,
+        高度: int = 1280,
+        水平镜像: bool = False,
+        刷新数据: bool = False,
+    ):
+        tensor, label_text, prompt = super().run(
+            选择, 尺寸模式, 宽度, 高度, 水平镜像, 刷新数据
+        )
+        return tensor, label_text, prompt, _english_for(self.SITE, 选择)
 
 
 class VASCharacterPack:
@@ -258,8 +307,8 @@ class VASCharacterPack:
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "STRING")
-    RETURN_NAMES = ("图片", "名称")
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING")
+    RETURN_NAMES = ("图片", "名称", "提示词")
     FUNCTION = "run"
     CATEGORY = "虚拟资产"
 
