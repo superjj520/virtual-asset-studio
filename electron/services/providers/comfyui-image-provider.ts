@@ -12,6 +12,9 @@ export type ComfyWorkflow = Record<string, WorkflowNode>;
 /** 参考图占位符：第一张是 {{reference_image}}，之后 {{reference_image_1}}…{{reference_image_n}}。 */
 const USES_REFERENCE_PLACEHOLDER = /\{\{reference_image(_\d+)?\}\}/;
 
+/** 深度图占位符：接 ControlNet Depth，对应云端参考库的「深度」分类。 */
+const USES_DEPTH_PLACEHOLDER = /\{\{depth_image\}\}/;
+
 const referenceVariables = (names?: string[]): Record<string, string> => {
   if (!names?.length) return {};
   const variables: Record<string, string> = { reference_image: names[0] };
@@ -169,6 +172,7 @@ export class ComfyUiImageProvider {
     seed?: number;
     quality?: "medium" | "high";
     referenceNames?: string[];
+    depthName?: string;
   }): ComfyWorkflow {
     const { width, height } = dimensionsForImageSize(input.size);
     const variables = {
@@ -180,6 +184,7 @@ export class ComfyUiImageProvider {
       steps: input.quality === "high" ? 28 : 20,
       checkpoint: this.checkpoint() ?? "",
       ...referenceVariables(input.referenceNames),
+      ...(input.depthName ? { depth_image: input.depthName } : {}),
     };
     const custom = this.options.workflow?.()?.trim();
     let base: unknown = COMFYUI_BUILTIN_WORKFLOW;
@@ -199,6 +204,11 @@ export class ComfyUiImageProvider {
       throw new Error(
         "当前 ComfyUI 工作流没有 {{reference_image}} 占位符，参考图会被忽略。请加一个 LoadImage 节点，把它的 image 写成 {{reference_image}}。",
       );
+    // 同理：勾了深度图但工作流里没占位符，ControlNet 拿不到图，等于没开。
+    if (input.depthName && !USES_DEPTH_PLACEHOLDER.test(JSON.stringify(base)))
+      throw new Error(
+        "当前 ComfyUI 工作流没有 {{depth_image}} 占位符，深度图会被忽略。请加一个 LoadImage 节点接 ControlDepth，把它的 image 写成 {{depth_image}}。",
+      );
     return applyWorkflowPlaceholders(base, variables) as ComfyWorkflow;
   }
 
@@ -209,6 +219,7 @@ export class ComfyUiImageProvider {
     seed?: number;
     quality?: "medium" | "high";
     referenceNames?: string[];
+    depthName?: string;
   }): Promise<Buffer> {
     const baseUrl = this.baseUrl();
     if (!baseUrl) throw new Error("尚未配置 ComfyUI 地址。");
@@ -292,12 +303,17 @@ export class ComfyUiImageProvider {
     referencePath: string;
     referenceMediaType: string;
     references?: Array<{ path: string; mediaType: string }>;
+    depthPath?: string;
+    depthMediaType?: string;
   }): Promise<Buffer> {
     const files = input.references?.length
       ? input.references
       : [{ path: input.referencePath, mediaType: input.referenceMediaType }];
     const referenceNames: string[] = [];
     for (const file of files) referenceNames.push(await this.uploadImage(file));
-    return this.generateImage({ ...input, referenceNames });
+    const depthName = input.depthPath
+      ? await this.uploadImage({ path: input.depthPath, mediaType: input.depthMediaType ?? "image/png" })
+      : undefined;
+    return this.generateImage({ ...input, referenceNames, depthName });
   }
 }

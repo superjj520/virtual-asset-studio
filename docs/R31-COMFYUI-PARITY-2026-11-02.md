@@ -1,0 +1,105 @@
+# R31 · 素材库完整性核查 + ComfyUI 底层能力对齐（2026-11-02）
+
+用户的要求是「素材库是否都添加好了，并且跟人家一样的底层能力，不是应付我」。这份文档逐条给出证据和差距，不做修辞。
+
+## 一、素材库：六个源全部接进来了
+
+以应用内真实分类行截图（`artifacts/screenshots/anime-costume.png`、`cloud-load-more.png`）为准——那是用户能看到的界面，不是后台日志：
+
+```
+全部 6980 | 人像 1499 | 服装 1847 | 发型 306 | 姿势 569 | 深度 1439 | 动漫衣装 1320
+共 8131 张 / 6980 条记录
+```
+
+| 源 | 数据位置 | 条数 | 接入版本 |
+|---|---|---|---|
+| anhao 姿势 | `/data/pose-zh.json` | 1,439（聚成 288 组 × 5 视角） | R16 |
+| anhao 服装 | `/data/costume-zh.json` | 1,407 | 已有 |
+| anhao 人像 | `/data/portrait-zh.json` | 1,499 | 已有 |
+| 深度图库 | 首页内联 `const D=[...]` | 1,439 | R17 |
+| 动漫衣装 | 首页内联 `const D=[...]` | 1,320 | R23 |
+| char-db-cn | GitHub `data.js` 的 `window.CHARDB` | 1,027（发型 306 / 服装 440 / 姿势 281） | 已有 |
+
+对着 anhao 抄的部分它有的我们都有；动漫衣装 1,320 是我们多出来的。唯一素材 **8,131 vs anhao 5,784**。
+
+顺带核到一件重要的事：本轮用 curl 重新拉 anhao 的三份 JSON 时，`pose-zh.json` 第一次**返回 000（超时）**，`costume-zh.json`/`portrait-zh.json` 各下到 129 KB / 188 KB 就断了（`Unterminated string in JSON`）。重试才拿到完整文件。这说明上游限速很凶——我们的实现必须有降级（`fetchDepthPoses` 等失败返回 `[]`，不拖垮其他源），这一点在 R17 已经做了。
+
+## 二、底层能力：四项对照
+
+| 能力 | anhao 的 ComfyUI 插件 | 我们（R31 之前） | 我们（现在） |
+|---|---|---|---|
+| 驱动本机工作流 | `/upload/image` + `/prompt` | ✅ 有 | ✅ 有 |
+| 参考图进工作流 | `{{composite_image}}` | ✅ `{{reference_image}}` | ✅ 有 |
+| 深度图进工作流 | `use_depth` 开关 | ❌ 无 | ✅ `{{depth_image}}` |
+| 工作流导入 | `.api.json` 导入导出 | ⚠️ 只有粘贴 textarea | ✅ 可从文件导入 |
+| ComfyUI 内选图 | 4 个原生节点 | ❌ 无 | ✅ 6 个节点（见下） |
+
+### 2.1 `{{depth_image}}`
+
+`electron/services/providers/comfyui-image-provider.ts`：
+
+- 新增 `USES_DEPTH_PLACEHOLDER = /\{\{depth_image\}\}/`；
+- `buildWorkflow` 入参加 `depthName`，只在该值存在时注入 `depth_image` 变量；
+- `refineImage` 入参加 `depthPath` / `depthMediaType`，先 `uploadImage` 再往下传；
+- **和参考图同样的保护**：给了深度图但工作流里没有 `{{depth_image}}` 时直接抛错，不发 `/prompt`——否则 ControlNet 拿不到图，用户会以为深度锁定了。
+
+错误文案：「当前 ComfyUI 工作流没有 {{depth_image}} 占位符，深度图会被忽略。请加一个 LoadImage 节点接 ControlDepth，把它的 image 写成 {{depth_image}}。」
+
+### 2.2 `.api.json` 从文件导入
+
+设置页 ComfyUI 区块的 textarea 上方加「从 .json 文件导入」按钮，走新 IPC `settings:read-workflow-file`：
+
+```ts
+ipcMain.handle("settings:read-workflow-file", (_event, filePath: string) => {
+  const target = absolutePath(filePath, "工作流文件路径");
+  if (!target.toLowerCase().endsWith(".json"))
+    throw new Error("请选择 ComfyUI 导出的 .json 工作流文件。");
+  // 读失败 / 非 JSON / 顶层不是对象，各有中文报错
+  return JSON.stringify(parsed, null, 2);
+});
+```
+
+ComfyUI 里「导出（API）」出来的就是这种对象，粘进来即可。仍然不存在「导出」侧——我们的设置页没有把当前工作流写回文件，这条留着。
+
+### 2.3 ComfyUI 原生节点包 `comfyui-vas-nodes/`
+
+对齐 anhao 的 4 个节点，一次给了 6 个：
+
+| 节点 | 作用 |
+|---|---|
+| `VAS · 姿势库` | 1,439 条五视角姿势 |
+| `VAS · 深度图库` | 1,439 张 ControlNet Depth 专用图 |
+| `VAS · 服装库` | 1,407 套 |
+| `VAS · 人像库` | 1,499 张 |
+| `VAS · 动漫衣装` | 1,320 套 |
+| `VAS · 参考板合成` | 身份 + 服装 + 姿态 + 深度拼成 1024×1024 参考板 |
+
+安装：把 `comfyui-vas-nodes/` 整个目录拷进 `ComfyUI/custom_nodes/`，重启 ComfyUI，节点出现在「虚拟资产」分类。
+
+实现要点：
+
+- 数据源与主应用完全一致（同一批 JSON / 同一套内联解析），**不另起一份数据**；
+- 首次选择某条素材时下载并缓存到 `~/.cache/vas-nodes/`，之后离线可用；
+- 找不到目标图时返回一张 64×64 灰图而不是抛异常——ComfyUI 的工作流不该因为选错一条就整个崩掉；
+- `刷新数据` 开关可清掉该站缓存重新拉。
+
+**这个包没有在真实 ComfyUI 环境里跑过**（本机没装 ComfyUI）。语法检查通过，逻辑与主应用同源，但第一次装进 ComfyUI 时请留意控制台。
+
+## 三、还没做的
+
+1. **真实出图验证身份一致性** —— 约 $0.15/张，需要授权。
+2. **真实 ComfyUI 出图** —— 需要运行中的 ComfyUI + checkpoint；R22 与 R31 都只有 mock 验证。
+3. `.api.json` 只做了导入，没做导出。
+
+## 四、门禁
+
+```
+npx tsc --noEmit   无输出
+npm test           93 文件 / 458 测试通过
+npm run build      通过
+```
+
+新增测试（`electron/services/providers/comfyui-image-provider.test.ts`，10 → 12 项）：
+
+- 深度图会上传并填进 `{{depth_image}}`，同时参考图照常注入（断言 `/prompt` 里两个 LoadImage 节点的 image 分别是两张上传结果）；
+- 给了深度图但工作流没有占位符时直接报错，且 `/prompt` 请求数为 0。

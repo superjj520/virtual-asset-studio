@@ -351,7 +351,12 @@ interface Window {
         baseUrl: string;
         checkpoint: string;
         workflow: string;
+        /** 本机视频引擎：animate（AnimateDiff Lightning）或 wan（Wan2.1）。 */
+        videoMode?: "animate" | "wan";
+        videoCheckpoint?: string;
+        videoMotion?: string;
       }) => Promise<import("./shared/types").ProviderStatus>;
+      readWorkflowFile: (filePath: string) => Promise<string>;
       saveRoute: (
         capability: import("./shared/types").ProviderCapability,
         providerId: import("./shared/types").ProviderId,

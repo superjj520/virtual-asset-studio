@@ -634,6 +634,9 @@ export default function App() {
   const [comfyuiBaseUrl, setComfyuiBaseUrl] = useState("");
   const [comfyuiCheckpoint, setComfyuiCheckpoint] = useState("");
   const [comfyuiWorkflow, setComfyuiWorkflow] = useState("");
+  const [comfyuiVideoMode, setComfyuiVideoMode] = useState<"animate" | "wan">("animate");
+  const [comfyuiVideoCheckpoint, setComfyuiVideoCheckpoint] = useState("");
+  const [comfyuiVideoMotion, setComfyuiVideoMotion] = useState("");
   const [customImageBaseUrl, setCustomImageBaseUrl] = useState("");
   const [customImageModel, setCustomImageModel] = useState("");
   const [budget, setBudget] = useState<BudgetStatus>({ plannedSpendUsd: 0 });
@@ -755,6 +758,9 @@ export default function App() {
         setLocalImageModel(status.localImage?.model ?? "");
         setComfyuiBaseUrl(status.comfyui?.baseUrl ?? "");
         setComfyuiCheckpoint(status.comfyui?.checkpoint ?? "");
+        setComfyuiVideoMode(status.comfyui?.videoMode ?? "animate");
+        setComfyuiVideoCheckpoint(status.comfyui?.videoCheckpoint ?? "");
+        setComfyuiVideoMotion(status.comfyui?.videoMotion ?? "");
         setCustomImageBaseUrl(status.customImage?.baseUrl ?? "");
         setCustomImageModel(status.customImage?.model ?? "");
       })
@@ -1769,10 +1775,16 @@ export default function App() {
         baseUrl: comfyuiBaseUrl,
         checkpoint: comfyuiCheckpoint,
         workflow: comfyuiWorkflow,
+        videoMode: comfyuiVideoMode,
+        videoCheckpoint: comfyuiVideoCheckpoint,
+        videoMotion: comfyuiVideoMotion,
       });
       setProvider(status);
       setComfyuiBaseUrl(status.comfyui?.baseUrl ?? "");
       setComfyuiCheckpoint(status.comfyui?.checkpoint ?? "");
+      setComfyuiVideoMode(status.comfyui?.videoMode ?? "animate");
+      setComfyuiVideoCheckpoint(status.comfyui?.videoCheckpoint ?? "");
+      setComfyuiVideoMotion(status.comfyui?.videoMotion ?? "");
       setNotice(
         status.comfyui?.baseUrl
           ? "ComfyUI 已保存；创作页可直接选择“本机 ComfyUI”，走你自己装的工作流。"
@@ -1782,6 +1794,18 @@ export default function App() {
       setNotice(error instanceof Error ? error.message : "保存 ComfyUI 配置失败。");
     }
   };
+  const importComfyuiWorkflowFile = async () => {
+    const [chosen] = await window.studio.selectFiles().catch(() => [] as string[]);
+    if (!chosen) return;
+    try {
+      const text = await window.studio.settings.readWorkflowFile(chosen);
+      setComfyuiWorkflow(text);
+      setNotice("工作流已读入，记得点保存。");
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : "读取工作流文件失败。");
+    }
+  };
+
   const verifyProviderConnection = async (providerId: ProviderId) => {
     setVerifyingProviderId(providerId);
     try {
@@ -7011,6 +7035,14 @@ export default function App() {
             </div>
             <label>
               API 格式工作流 JSON（可选）
+              <button
+                type="button"
+                className="comfyui-import-workflow"
+                onClick={() => void importComfyuiWorkflowFile()}
+                aria-label="从文件导入 ComfyUI 工作流"
+              >
+                从 .json 文件导入
+              </button>
               <textarea
                 value={comfyuiWorkflow}
                 onChange={(event) => setComfyuiWorkflow(event.target.value)}
@@ -7019,6 +7051,40 @@ export default function App() {
                 rows={4}
               />
             </label>
+            <p className="result-note">
+              本机视频引擎：<strong>AnimateDiff Lightning</strong> 用 SD1.5 底模 4 步出 16 帧短片（横版 512×512 约 1 分钟、竖版 512×768 约 5 分钟；单条上限 2 秒，推荐）；
+              <strong>Wan2.1</strong> 画质更好，但需常驻约 9 GB 内存，小内存机器会卡在采样阶段。
+            </p>
+            <div className="provider-row">
+              <div>
+                <strong>本机视频</strong>
+                <p className="result-note">
+                  {provider?.comfyui?.videoMode === "wan"
+                    ? `当前：Wan2.1 · ${provider?.comfyui?.videoCheckpoint || "未设置底模"}`
+                    : `当前：AnimateDiff · 底模 ${provider?.comfyui?.videoCheckpoint || provider?.comfyui?.checkpoint || "未设置"}`}
+                </p>
+              </div>
+              <select
+                value={comfyuiVideoMode}
+                onChange={(event) => setComfyuiVideoMode(event.target.value === "wan" ? "wan" : "animate")}
+                aria-label="本机视频引擎"
+              >
+                <option value="animate">AnimateDiff Lightning（推荐）</option>
+                <option value="wan">Wan2.1（需大内存）</option>
+              </select>
+              <input
+                value={comfyuiVideoCheckpoint}
+                onChange={(event) => setComfyuiVideoCheckpoint(event.target.value)}
+                placeholder="动画底模，例如 Counterfeit-V2.5_fp16.safetensors"
+                aria-label="本机视频底模"
+              />
+              <input
+                value={comfyuiVideoMotion}
+                onChange={(event) => setComfyuiVideoMotion(event.target.value)}
+                placeholder="motion module，例如 animatediff_lightning_4step_comfyui.safetensors"
+                aria-label="AnimateDiff motion module"
+              />
+            </div>
           </section>
           <GenerationModelCatalog providers={provider?.providers} selectedModelId={generationModelId} onSelect={selectGenerationModel} />
           <section className="form-panel">

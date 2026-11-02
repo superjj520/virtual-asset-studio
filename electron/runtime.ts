@@ -422,6 +422,9 @@ export const createStudioRuntime = (
         checkpoint: comfyui.checkpoint() ?? "",
         hasWorkflow: Boolean(settings.get("comfyui_workflow")?.trim()),
         checkpoints: [...comfyCheckpoints],
+        videoMode: settings.get("comfyui_video_mode") === "wan" ? "wan" : "animate",
+        videoCheckpoint: settings.get("comfyui_video_ckpt") ?? "",
+        videoMotion: settings.get("comfyui_video_motion") ?? "",
       },
     };
   };
@@ -1415,9 +1418,40 @@ export const createStudioRuntime = (
           return providerStatus();
         },
       );
+      // 从 ComfyUI「导出（API）」得到的 .json 直接读进来，省得用户手动复制粘贴。
+      ipcMain.handle("settings:read-workflow-file", (_event, filePath: string) => {
+        const target = absolutePath(filePath, "工作流文件路径");
+        if (!target.toLowerCase().endsWith(".json"))
+          throw new Error("请选择 ComfyUI 导出的 .json 工作流文件。");
+        let text: string;
+        try {
+          text = readFileSync(target, "utf8");
+        } catch {
+          throw new Error("读不到这个文件，确认它还在原位置。");
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          throw new Error("这个文件不是有效的 JSON。");
+        }
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+          throw new Error("ComfyUI 的 API 格式工作流应该是一个对象。");
+        return JSON.stringify(parsed, null, 2);
+      });
       ipcMain.handle(
         "settings:save-comfyui",
-        (_event, input: { baseUrl?: string; checkpoint?: string; workflow?: string }) => {
+        (
+          _event,
+          input: {
+            baseUrl?: string;
+            checkpoint?: string;
+            workflow?: string;
+            videoMode?: string;
+            videoCheckpoint?: string;
+            videoMotion?: string;
+          },
+        ) => {
           if (!input || typeof input !== "object")
             throw new Error("ComfyUI 配置格式不正确。");
           const baseUrl = (typeof input.baseUrl === "string" ? input.baseUrl : "")
@@ -1445,10 +1479,19 @@ export const createStudioRuntime = (
               throw new Error("自定义工作流需要是 ComfyUI 导出的 API 格式 JSON。");
           }
           const checkpoint = (typeof input.checkpoint === "string" ? input.checkpoint : "").trim();
+          // 视频引擎：animate（SD1.5 + AnimateDiff，16 GB 机器可用）或 wan（需要更大内存）。
+          const videoMode = input.videoMode === "wan" ? "wan" : "animate";
+          const videoCheckpoint =
+            typeof input.videoCheckpoint === "string" ? input.videoCheckpoint.trim() : "";
+          const videoMotion =
+            typeof input.videoMotion === "string" ? input.videoMotion.trim() : "";
           // 地址为空即关闭，不保留旧的 checkpoint 与工作流，避免下次误连。
           settings.set("comfyui_base_url", baseUrl);
           settings.set("comfyui_checkpoint", baseUrl ? checkpoint : "");
           settings.set("comfyui_workflow", baseUrl ? workflow : "");
+          settings.set("comfyui_video_mode", baseUrl ? videoMode : "");
+          settings.set("comfyui_video_ckpt", baseUrl ? videoCheckpoint : "");
+          settings.set("comfyui_video_motion", baseUrl ? videoMotion : "");
           return providerStatus();
         },
       );

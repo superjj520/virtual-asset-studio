@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, expect, it } from "vitest";
 import { createServer, type ServerResponse } from "node:http";
-import { writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -298,5 +298,86 @@ it("工作流没有参考图占位符时直接报错，不静默丢掉参考图"
       referenceMediaType: "image/png",
     }),
   ).rejects.toThrow(/没有 \{\{reference_image\}\} 占位符/);
+  expect(server.requests.some((request) => request.url === "/prompt")).toBe(false);
+});
+
+it("深度图会上传并填进 {{depth_image}}，同时参考图照常注入", async () => {
+  const workflow = {
+    "3": { class_type: "KSampler", inputs: { seed: "{{seed}}" } },
+    "10": { class_type: "LoadImage", inputs: { image: "{{reference_image}}" } },
+    "11": { class_type: "LoadImage", inputs: { image: "{{depth_image}}" } },
+    "9": { class_type: "SaveImage", inputs: { images: ["3", 0] } },
+  };
+  const server = await startMock((request, response) => {
+    if (request.url === "/upload/image") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ name: request.raw.includes("depth-ref.png") ? "uploaded-depth.png" : "uploaded-ref.png" }));
+      return;
+    }
+    if (request.url === "/prompt") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ prompt_id: "task-1" }));
+      return;
+    }
+    if (request.url?.startsWith("/history/")) {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({ "task-1": { status: { status_str: "success", completed: true }, outputs: { "9": { images: [{ filename: "out.png", subfolder: "", type: "output" }] } } } }),
+      );
+      return;
+    }
+    response.writeHead(200, { "content-type": "image/png" });
+    response.end(ONE_PIXEL_PNG);
+  });
+
+  const dir = mkdtempSync(join(tmpdir(), "comfy-depth-"));
+  const referencePath = join(dir, "ref.png");
+  const depthPath = join(dir, "depth-ref.png");
+  writeFileSync(referencePath, ONE_PIXEL_PNG);
+  writeFileSync(depthPath, ONE_PIXEL_PNG);
+
+  const provider = providerFor({ baseUrl: server.url, checkpoint: "sd_xl_base_1.0.safetensors", workflow: JSON.stringify(workflow) });
+  const image = await provider.refineImage({
+    prompt: "深度图锁姿态",
+    size: "1:1",
+    referencePath,
+    referenceMediaType: "image/png",
+    depthPath,
+    depthMediaType: "image/png",
+  });
+  expect(image.length).toBeGreaterThan(0);
+
+  const prompt = server.requests.find((request) => request.url === "/prompt");
+  const sent = (prompt?.body as { prompt: Record<string, { inputs: Record<string, string> }> }).prompt;
+  expect(sent["10"].inputs.image).toBe("uploaded-ref.png");
+  expect(sent["11"].inputs.image).toBe("uploaded-depth.png");
+});
+
+it("给了深度图但工作流没有 {{depth_image}} 时直接报错，不发 /prompt", async () => {
+  const server = await startMock((_request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ name: "uploaded.png" }));
+  });
+  const dir = mkdtempSync(join(tmpdir(), "comfy-depth-miss-"));
+  const referencePath = join(dir, "ref.png");
+  const depthPath = join(dir, "depth.png");
+  writeFileSync(referencePath, ONE_PIXEL_PNG);
+  writeFileSync(depthPath, ONE_PIXEL_PNG);
+
+  const provider = providerFor({
+    baseUrl: server.url,
+    checkpoint: "sd_xl_base_1.0.safetensors",
+    workflow: JSON.stringify({ "10": { class_type: "LoadImage", inputs: { image: "{{reference_image}}" } } }),
+  });
+
+  await expect(
+    provider.refineImage({
+      prompt: "缺占位符",
+      size: "1:1",
+      referencePath,
+      referenceMediaType: "image/png",
+      depthPath,
+    }),
+  ).rejects.toThrow(/没有 \{\{depth_image\}\} 占位符/);
   expect(server.requests.some((request) => request.url === "/prompt")).toBe(false);
 });
