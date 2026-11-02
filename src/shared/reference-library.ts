@@ -60,6 +60,8 @@ export type CloudImageProbe = {
   url: string;
   ok: boolean;
   status?: number;
+  /** 服务器声明的类型；返回 200 但类型不是 image/* 时说明拿到的是错误页。 */
+  contentType?: string;
   error?: string;
 };
 

@@ -240,7 +240,18 @@ class CloudReferenceLibrary {
   private async probeImage(url: string): Promise<CloudImageProbe> {
     try {
       const response = await transport(url);
-      return { url, ok: response.ok, status: response.status };
+      const contentType = response.headers.get("content-type") ?? "";
+      // 只看状态码不够：上游把图换成 404 页面时通常还是 200，靠类型区分。
+      const isImage = contentType.toLowerCase().startsWith("image/");
+      if (response.ok && !isImage)
+        return {
+          url,
+          ok: false,
+          status: response.status,
+          contentType,
+          error: `返回的不是图片（${contentType || "没有 content-type"}）`,
+        };
+      return { url, ok: response.ok, status: response.status, contentType };
     } catch (error) {
       return { url, ok: false, error: error instanceof Error ? error.message : String(error) };
     }

@@ -112,6 +112,39 @@ describe("云端参考库", () => {
     expect(health.sources.every((row) => typeof row.durationMs === "number")).toBe(true);
   });
 
+  it("样图抽检看类型：返回 200 但内容不是图片时判失败", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("pose-zh"))
+          return new Response(
+            JSON.stringify([{ ...poseRow("正面"), 缩略图: "thumbs/a.jpg", 原图: "img/a.png" }]),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        if (url.includes("costume-zh") || url.includes("portrait-zh"))
+          return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+        if (url.includes("char-db-cn")) return new Response("window.CHARDB={\"items\":[]}", { status: 200 });
+        if (url.includes("depth-gallery") || url.includes("anime-gallery"))
+          return new Response("<html></html>", { status: 200 });
+        // 图片地址：故意回一个 200 的 HTML 错误页
+        return new Response("<html>not an image</html>", {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }),
+    );
+    const library = new CloudReferenceLibrary(
+      {} as ImportService,
+      {} as AssetRepository,
+      {} as ProjectRepository,
+    );
+    const health = await library.health();
+    const pose = health.sources.find((row) => row.key === "pose");
+    expect(pose?.status).toBe("ok"); // 条目本身读到了
+    expect(pose?.images?.[0]?.ok).toBe(false);
+    expect(pose?.images?.[0]?.error).toContain("不是图片");
+  });
+
   it("同一姿势保留全部视角，正面排首位作为默认预览", async () => {
     vi.stubGlobal(
       "fetch",

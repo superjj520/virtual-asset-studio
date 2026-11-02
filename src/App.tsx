@@ -7048,7 +7048,7 @@ export default function App() {
                               return failed.length === 0
                                 ? `抽检 ${row.images.length} 张均可打开`
                                 : `抽检 ${row.images.length} 张，${failed.length} 张打不开：${failed
-                                    .map((probe) => probe.status ?? probe.error ?? "unknown")
+                                    .map((probe) => probe.error ?? String(probe.status ?? "unknown"))
                                     .join(" / ")}`;
                             })()
                           : "无图可抽"}
