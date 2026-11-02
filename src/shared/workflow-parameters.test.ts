@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   applyWorkflowOverrides,
+  checkReferenceCombinations,
+  declaredReferenceCombinations,
   listWorkflowParameters,
   parameterKey,
+  referencePlaceholderNodes,
 } from "./workflow-parameters";
 
 const workflow = {
@@ -209,4 +212,32 @@ describe("占位符与隐藏字段", () => {
     expect(batch?.label).toBe("每批张数");
     expect(batch?.recommended).toBe(true);
   });
+});
+
+it("找出哪些节点的字段吃参考图占位符", () => {
+  const workflow = {
+    "1": { class_type: "LoadImage", inputs: { image: "{{reference_image}}" } },
+    "2": { class_type: "LoadImage", inputs: { image: "{{reference_image_2}}" } },
+    "3": { class_type: "LoadImage", inputs: { image: "{{depth_image}}" } },
+    "4": { class_type: "KSampler", inputs: { seed: "{{seed}}" } },
+  };
+  expect(referencePlaceholderNodes(workflow)).toEqual(["1", "2"]);
+});
+
+it("声明的参考组合能匹配上，也能拦住不在名单里的组合", () => {
+  const workflow = {
+    "31": { class_type: "LoadImage", inputs: { image: "{{reference_image}}" }, _meta: { studio: { referenceCombinations: [["1", "2"], ["31"]] } } },
+  };
+  expect(declaredReferenceCombinations(workflow)).toEqual([["1", "2"], ["31"]]);
+  expect(checkReferenceCombinations(workflow, ["31"]).allowed).toBe(true);
+  expect(checkReferenceCombinations(workflow, ["1", "2"]).allowed).toBe(true);
+  const blocked = checkReferenceCombinations(workflow, ["1", "2", "31"]);
+  expect(blocked.allowed).toBe(false);
+  expect(blocked.message).toContain("只接受这些参考图组合");
+});
+
+it("没声明参考组合就放行，旧工作流不用改", () => {
+  const workflow = { "1": { class_type: "LoadImage", inputs: { image: "{{reference_image}}" } } };
+  expect(declaredReferenceCombinations(workflow)).toEqual([]);
+  expect(checkReferenceCombinations(workflow, ["1", "2", "3"]).allowed).toBe(true);
 });

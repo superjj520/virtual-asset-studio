@@ -418,3 +418,53 @@ it("覆盖一个工作流里没有的节点时什么都不改", () => {
 
   expect(Object.keys(workflow)).not.toContain("99");
 });
+
+it("工作流声明的参考组合不含当前组合时报错，且不发 /prompt", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "vas-comfy-refcomb-"));
+  const first = join(dir, "ref-1.png");
+  const second = join(dir, "ref-2.png");
+  writeFileSync(first, ONE_PIXEL_PNG);
+  writeFileSync(second, ONE_PIXEL_PNG);
+
+  const workflow = {
+    "3": { class_type: "KSampler", inputs: { model: ["6", 0], seed: "{{seed}}" } },
+    "4": { class_type: "LoadImage", inputs: { image: "{{reference_image}}" } },
+    "5": { class_type: "LoadImage", inputs: { image: "{{reference_image_2}}" } },
+    "6": {
+      class_type: "CheckpointLoaderSimple",
+      inputs: { ckpt_name: "{{checkpoint}}" },
+      _meta: { studio: { referenceCombinations: [["4"]] } },
+    },
+  };
+
+  let uploads = 0;
+  const server = await startMock((request, response) => {
+    if (request.url === "/upload/image") {
+      uploads += 1;
+      response.writeHead(200, { "Content-Type": "application/json" });
+      return response.end(JSON.stringify({ name: `uploaded-${uploads}.png`, subfolder: "" }));
+    }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({}));
+  });
+
+  const provider = new ComfyUiImageProvider({
+    baseUrl: () => server.url,
+    checkpoint: () => "sd_xl.safetensors",
+    workflow: () => JSON.stringify(workflow),
+    pollIntervalMs: 5,
+    timeoutMs: 2000,
+  });
+
+  await expect(
+    provider.refineImage({
+      prompt: "a",
+      size: "1:1",
+      references: [
+        { path: first, mediaType: "image/png" },
+        { path: second, mediaType: "image/png" },
+      ],
+    }),
+  ).rejects.toThrow(/只接受这些参考图组合/);
+  expect(server.requests.filter((r) => r.url === "/prompt").length).toBe(0);
+});

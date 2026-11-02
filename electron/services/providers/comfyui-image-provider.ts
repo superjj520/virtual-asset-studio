@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import type { GenerationSize } from "../../../src/shared/generation-requests";
-import { applyWorkflowOverrides } from "../../../src/shared/workflow-parameters";
+import { applyWorkflowOverrides, checkReferenceCombinations } from "../../../src/shared/workflow-parameters";
 import { dimensionsForImageSize } from "../../../src/shared/types";
 
 export const COMFYUI_DEFAULT_BASE_URL = "http://127.0.0.1:8188";
@@ -214,7 +214,19 @@ export class ComfyUiImageProvider {
       throw new Error(
         "当前 ComfyUI 工作流没有 {{depth_image}} 占位符，深度图会被忽略。请加一个 LoadImage 节点接 ControlDepth，把它的 image 写成 {{depth_image}}。",
       );
-    const filled = applyWorkflowPlaceholders(base, variables);
+    const filled = applyWorkflowPlaceholders(base, variables) as Record<string, unknown>;
+    // 工作流可以用 _meta.studio.referenceCombinations 声明「只接受哪几种参考图组合」。
+    // 用户挂的组合不在名单里时提前报错，别等出图才发现身份没锁住。
+    if (input.referenceNames?.length) {
+      const providedNodes: string[] = [];
+      for (const [nodeId, node] of Object.entries(filled)) {
+        const values = Object.values((node as { inputs?: Record<string, unknown> })?.inputs ?? {});
+        if (values.some((value) => typeof value === "string" && input.referenceNames!.includes(value)))
+          providedNodes.push(nodeId);
+      }
+      const check = checkReferenceCombinations(base, providedNodes);
+      if (!check.allowed) throw new Error(check.message ?? "这张工作流不接受当前的参考图组合。");
+    }
     // 参数覆盖放在占位符之后：用户手改的值优先于模板里的默认值。
     const overrides = { ...(this.options.overrides?.() ?? {}), ...(input.overrides ?? {}) };
     if (Object.keys(overrides).length === 0) return filled as ComfyWorkflow;

@@ -226,3 +226,67 @@ export const applyWorkflowOverrides = (
 
 /** 把工作流恢复成导入时的样子：清掉所有覆盖值。 */
 export const resetWorkflowOverrides = (): Record<string, string | number | boolean> => ({});
+
+/** 工作流声明的「允许哪些参考图节点一起出现」。`_meta.studio.referenceCombinations`。 */
+export type ReferenceCombinationCheck = {
+  /** 工作流里声明过的组合，每项是一组节点 id。 */
+  declared: string[][];
+  /** 本次实际提供了参考图的节点 id。 */
+  provided: string[];
+  /** 没声明就不拦（旧工作流保持原行为）。 */
+  allowed: boolean;
+  message?: string;
+};
+
+const REFERENCE_PLACEHOLDER = /\{\{reference_image(_\d+)?\}\}/;
+
+/** 找出工作流里哪些节点的哪个字段吃参考图占位符。 */
+export function referencePlaceholderNodes(workflow: unknown): string[] {
+  if (!workflow || typeof workflow !== "object" || Array.isArray(workflow)) return [];
+  const nodes: string[] = [];
+  for (const [nodeId, node] of Object.entries(workflow as Record<string, unknown>)) {
+    if (!node || typeof node !== "object") continue;
+    const inputs = (node as { inputs?: unknown }).inputs;
+    if (!inputs || typeof inputs !== "object") continue;
+    const values = JSON.stringify(Object.values(inputs as Record<string, unknown>));
+    if (REFERENCE_PLACEHOLDER.test(values)) nodes.push(nodeId);
+  }
+  return nodes;
+}
+
+/** 读 `_meta.studio.referenceCombinations`，节点级声明，允许写在任意节点上。 */
+export function declaredReferenceCombinations(workflow: unknown): string[][] {
+  if (!workflow || typeof workflow !== "object" || Array.isArray(workflow)) return [];
+  const found: string[][] = [];
+  for (const node of Object.values(workflow as Record<string, unknown>)) {
+    if (!node || typeof node !== "object") continue;
+    const studio = (node as { _meta?: { studio?: { referenceCombinations?: unknown } } })._meta?.studio;
+    const raw = studio?.referenceCombinations;
+    if (!Array.isArray(raw)) continue;
+    for (const entry of raw) {
+      if (!Array.isArray(entry)) continue;
+      const ids = entry.filter((value): value is string => typeof value === "string" || typeof value === "number").map(String);
+      if (ids.length) found.push(ids);
+    }
+  }
+  return found;
+}
+
+/**
+ * 用户挂了 N 张参考图，工作流却只声明接受其中某些组合时，提前拦下来。
+ * 不声明就放行——这样旧工作流不用改。
+ */
+export function checkReferenceCombinations(workflow: unknown, provided: string[]): ReferenceCombinationCheck {
+  const declared = declaredReferenceCombinations(workflow);
+  if (!declared.length || !provided.length) return { declared, provided, allowed: true };
+  const wanted = [...provided].sort().join("+");
+  const allowed = declared.some((entry) => [...entry].sort().join("+") === wanted);
+  return {
+    declared,
+    provided,
+    allowed,
+    message: allowed
+      ? undefined
+      : `这张工作流只接受这些参考图组合：${declared.map((entry) => entry.join(" + ")).join("；")}。现在提供的是 ${provided.join(" + ")}。`,
+  };
+}
