@@ -2663,6 +2663,31 @@ export default function App() {
     setScreen("creation");
     setNotice(`已加载配方「${recipe.name}」；适用范围：${recipe.applicability}。命中失效条件时请停止套用并重新验证。`);
   };
+  const exportRecipePackage = async (recipe: CreativeRecipe) => {
+    try {
+      const directory = await window.studio.selectDirectory();
+      if (!directory) return;
+      const file = await window.studio.recipes.exportPackage(recipe.id, directory);
+      setNotice(`配方包已导出：${file}`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "导出配方包失败。");
+    }
+  };
+  const importRecipePackage = async () => {
+    try {
+      const [file] = await window.studio.selectFiles();
+      if (!file) return;
+      const { recipe, warnings } = await window.studio.recipes.importPackage(file);
+      setRecipes(await window.studio.recipes.list(selectedProjectId || undefined));
+      setNotice(
+        warnings.length
+          ? `已导入「${recipe.name}」；${warnings.join(" ")}`
+          : `已导入「${recipe.name}」，状态为待验证。`,
+      );
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "导入配方包失败。");
+    }
+  };
   const reviewRecipe = async (recipe: CreativeRecipe, status: "validated" | "rejected") => {
     const evidence = status === "validated"
       ? recipeReviewSelections[recipe.id] ?? ""
@@ -6049,7 +6074,10 @@ export default function App() {
               <p className="eyebrow">创作配方 / 被实际结果验证过的创作起点</p>
               <h2>沉淀可复用配方</h2>
             </div>
-            <button className="primary-button" onClick={() => setScreen("creation")}>新建配方</button>
+            <div className="form-actions">
+              <button onClick={() => void importRecipePackage()}>导入配方包</button>
+              <button className="primary-button" onClick={() => setScreen("creation")}>新建配方</button>
+            </div>
           </header>
           <section className="form-panel">
             <p className="result-note">保存创作卡、提示词和参考资产；验证后再复用。</p>
@@ -6079,6 +6107,7 @@ export default function App() {
                   {recipe.evidence.length > 0 && <p>验证记录：{recipe.evidence.join("；")}</p>}
                   <div className="pattern-actions">
                     <button onClick={() => loadRecipe(recipe)}>加载到创作卡</button>
+                    <button onClick={() => void exportRecipePackage(recipe)}>导出配方包</button>
                     {recipe.status === "draft" && <>
                       <select aria-label={`${recipe.name}验证成图`} value={recipeReviewSelections[recipe.id] ?? ""}
                         onChange={(event) => setRecipeReviewSelections((current) => ({ ...current, [recipe.id]: event.target.value }))}>

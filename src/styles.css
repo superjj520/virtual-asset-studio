@@ -1206,15 +1206,24 @@ textarea:focus {
 }
 .pattern-actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin-top: 12px;
 }
 .pattern-actions button {
+  flex: 0 0 auto;
   padding: 7px 10px;
   color: #dce4ff;
   border-radius: 7px;
   background: #303a64;
   font-size: 12px;
+  /* 操作区按钮不换行，否则宽度不够时会被压成逐字竖排。 */
+  white-space: nowrap;
+}
+.pattern-actions select {
+  flex: 1 1 220px;
+  min-width: 180px;
 }
 
 /* B 端工作台的统一表面、表单和数据密度。所有页面共用同一套语义色。 */

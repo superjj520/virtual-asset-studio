@@ -61,6 +61,10 @@ contextBridge.exposeInMainWorld("studio", {
     list: (projectId) => ipcRenderer.invoke("recipes:list", projectId),
     updateStatus: (id, status, evidence) =>
       ipcRenderer.invoke("recipes:update-status", id, status, evidence),
+    exportPackage: (id, directory) =>
+      ipcRenderer.invoke("recipes:export-package", id, directory),
+    importPackage: (filePath) =>
+      ipcRenderer.invoke("recipes:import-package", filePath),
   },
   creation: {
     compilePrompt: (card) =>

@@ -32,7 +32,7 @@ beforeEach(() => {
       export: vi.fn(),
     },
     data: { createBackup: vi.fn(), restoreBackup: vi.fn() },
-    recipes: { create: vi.fn(), list: vi.fn().mockResolvedValue([]), updateStatus: vi.fn() },
+    recipes: { create: vi.fn(), list: vi.fn().mockResolvedValue([]), updateStatus: vi.fn(), exportPackage: vi.fn(), importPackage: vi.fn() },
     creation: { compilePrompt: vi.fn(), enrichCard: vi.fn(), translatePrompt: vi.fn(), compileShot: vi.fn() },
     characters: { create: vi.fn(), list: vi.fn().mockResolvedValue([]), detail: vi.fn(), importAssetPack: vi.fn(), createVariant: vi.fn(), upsertFact: vi.fn(), update: vi.fn() },
     characterWorkspace: {
@@ -1739,4 +1739,91 @@ it('创作卡明确区分实际送模主参考与仅记录参考', async () => {
   expect(screen.getByText('实际送模')).toBeInTheDocument();
   expect(screen.getByText('仅记录')).toBeInTheDocument();
   expect(screen.getByText(/只有已确认且使用权为原创或已授权/)).toBeInTheDocument();
+});
+
+it('设置页可以保存本机 ComfyUI 地址与 checkpoint', async () => {
+  vi.mocked(window.studio.settings.saveComfyui).mockResolvedValue({
+    providers: [{ id: 'comfyui', configured: true, capabilities: ['image'] }],
+    routes: { image: 'comfyui' },
+    comfyui: {
+      baseUrl: 'http://127.0.0.1:8188',
+      checkpoint: 'sd_xl_base_1.0.safetensors',
+      hasWorkflow: false,
+    },
+  } as never);
+
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '设置' }));
+  fireEvent.change(await screen.findByLabelText('ComfyUI 服务地址'), {
+    target: { value: 'http://127.0.0.1:8188' },
+  });
+  fireEvent.change(screen.getByLabelText('ComfyUI checkpoint 文件名'), {
+    target: { value: 'sd_xl_base_1.0.safetensors' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '保存 ComfyUI 配置' }));
+
+  expect(window.studio.settings.saveComfyui).toHaveBeenCalledWith({
+    baseUrl: 'http://127.0.0.1:8188',
+    checkpoint: 'sd_xl_base_1.0.safetensors',
+    workflow: '',
+  });
+  expect(
+    await screen.findByText(
+      '已配置：http://127.0.0.1:8188 · checkpoint sd_xl_base_1.0.safetensors · 使用内置工作流',
+    ),
+  ).toBeInTheDocument();
+});
+
+it('配方页可以把配方导出成配方包，也能导入别处分享的包', async () => {
+  const recipe = {
+    id: 'recipe-1',
+    name: '午后侧逆光人像',
+    purpose: '角色主视觉',
+    applicability: '同一角色身份，只换场景',
+    invalidationConditions: ['更换角色身份'],
+    card: {
+      intent: '角色主视觉',
+      subject: '短发女性',
+      identityAnchor: '圆脸',
+      bodyAndWardrobe: '米色针织衫',
+      expressionAndPose: '自然站立',
+      scene: '落地窗前',
+      lighting: '侧逆光',
+      camera: '85mm 半身',
+      style: '电影写实',
+      avoid: '塑料皮肤',
+      aspectRatio: '2:3',
+      referenceAssetIds: [],
+    },
+    prompt: 'a short-haired woman, backlit',
+    negative: 'plastic skin',
+    sourceAssetIds: [],
+    status: 'validated',
+    evidence: [],
+    createdAt: '2026-10-01T00:00:00.000Z',
+    updatedAt: '2026-10-02T00:00:00.000Z',
+  };
+  vi.mocked(window.studio.recipes.list).mockResolvedValue([recipe] as never);
+  vi.mocked(window.studio.selectDirectory).mockResolvedValue('/tmp/out');
+  vi.mocked(window.studio.recipes.exportPackage).mockResolvedValue('/tmp/out/午后侧逆光人像.recipe.json');
+  vi.mocked(window.studio.selectFiles).mockResolvedValue(['/tmp/in.recipe.json']);
+  vi.mocked(window.studio.recipes.importPackage).mockResolvedValue({
+    recipe,
+    warnings: [],
+  } as never);
+
+  render(<App />);
+  fireEvent.click(await screen.findByRole('button', { name: '模板' }));
+  fireEvent.click(await screen.findByRole('button', { name: '方法卡' }));
+
+  fireEvent.click(await screen.findByRole('button', { name: '导出配方包' }));
+  await waitFor(() =>
+    expect(window.studio.recipes.exportPackage).toHaveBeenCalledWith('recipe-1', '/tmp/out'),
+  );
+
+  fireEvent.click(screen.getByRole('button', { name: '导入配方包' }));
+  await waitFor(() =>
+    expect(window.studio.recipes.importPackage).toHaveBeenCalledWith('/tmp/in.recipe.json'),
+  );
+  await waitFor(() => expect(window.studio.recipes.list).toHaveBeenCalledTimes(2));
 });

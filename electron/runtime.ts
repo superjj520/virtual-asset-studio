@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import sharp from "sharp";
 import { nativeImage, safeStorage, type IpcMain } from "electron";
@@ -11,6 +11,11 @@ import {
 } from "./services/import/import-service";
 import { ProjectRepository } from "./services/projects/repository";
 import { createCloudReferenceLibrary } from "./services/reference-library";
+import {
+  parseRecipePackage,
+  recipePackageFileName,
+  serializeRecipePackage,
+} from "../src/shared/recipe-package";
 import { LearningPatternRepository } from "./services/learning/repository";
 import { extractPromptPattern } from "./services/learning/prompt-learning";
 import {
@@ -723,6 +728,40 @@ export const createStudioRuntime = (
         },
       );
       ipcMain.handle("recipes:list", (_event, projectId?: string) => recipes.list(projectId));
+      ipcMain.handle("recipes:export-package", (_event, id: string, directory: string) => {
+        const recipe = recipes.list().find((item) => item.id === id);
+        if (!recipe) throw new Error("配方不存在，可能已经被删除。");
+        const target = absolutePath(directory, "导出位置");
+        const file = join(target, recipePackageFileName(recipe.name));
+        writeFileSync(file, serializeRecipePackage(recipe), "utf8");
+        return file;
+      });
+      ipcMain.handle("recipes:import-package", (_event, filePath: string) => {
+        const file = absolutePath(filePath, "配方包位置");
+        let text: string;
+        try {
+          text = readFileSync(file, "utf8");
+        } catch {
+          throw new Error(`读不到配方包：${file}`);
+        }
+        const { recipe: imported, warnings } = parseRecipePackage(text);
+        const saved = recipes.create({
+          name: imported.name,
+          purpose: imported.purpose,
+          applicability: imported.applicability,
+          // 导入的配方还没在本机验证过，至少要留一条失效条件约束套用。
+          invalidationConditions:
+            imported.invalidationConditions.length > 0
+              ? imported.invalidationConditions
+              : ["导入后尚未在本机验证"],
+          card: imported.card,
+          prompt: imported.prompt,
+          negative: imported.negative,
+          sourceAssetIds: [],
+          providerId: imported.providerId,
+        });
+        return { recipe: saved, warnings };
+      });
       ipcMain.handle(
         "recipes:update-status",
         (_event, id: string, status: "validated" | "rejected", evidence: string) =>

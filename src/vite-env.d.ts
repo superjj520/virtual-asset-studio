@@ -115,6 +115,11 @@ interface Window {
       create: (input: Pick<import("./shared/types").CreativeRecipe, "name" | "projectId" | "creativeTaskId" | "providerId" | "purpose" | "applicability" | "invalidationConditions" | "card" | "prompt" | "negative" | "sourceAssetIds">) => Promise<import("./shared/types").CreativeRecipe>;
       list: (projectId?: string) => Promise<import("./shared/types").CreativeRecipe[]>;
       updateStatus: (id: string, status: "validated" | "rejected", evidence: string) => Promise<import("./shared/types").CreativeRecipe>;
+      exportPackage: (id: string, directory: string) => Promise<string>;
+      importPackage: (filePath: string) => Promise<{
+        recipe: import("./shared/types").CreativeRecipe;
+        warnings: string[];
+      }>;
     };
     creation: {
       compilePrompt: (
