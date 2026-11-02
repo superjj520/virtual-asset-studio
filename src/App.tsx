@@ -28,6 +28,7 @@ import { CreationStudioJourney, type CreationStudioStage } from "./creation/Crea
 import { CreationLaunchpad, type CreationLaunchKind } from "./creation/CreationLaunchpad";
 import { ReferenceSheetComposer } from "./reference/ReferenceSheetComposer";
 import { applyReferenceSheetToCard, type ReferenceSheetRecipe } from "./shared/reference-sheet";
+import { identityAnchorWarning } from "./shared/identity-anchor";
 import { CREATION_PRESET_ARTWORKS, SCENE_ARTWORKS, VisualCharacterCreator } from "./creation/VisualCharacterCreator";
 import {
   buildCharacterStateTrackers,
@@ -6030,6 +6031,11 @@ export default function App() {
                 ["lighting", "光线"], ["camera", "镜头与构图"], ["style", "成图质感"], ["avoid", "避免项"],
               ] as [keyof CreativeCard, string][]).map(([key, label]) => <label key={key}>{label}<textarea value={card[key] as string} onChange={(event) => updateCard(key, event.target.value)} /></label>)}
             </div>
+            {identityAnchorWarning(card.identityAnchor) && (
+              <p className="result-note identity-anchor-hint" role="status">
+                {identityAnchorWarning(card.identityAnchor)}
+              </p>
+            )}
             <ReferenceBindingsPanel card={card} assets={assets} onChange={setCard} />
             <div className="form-actions">
               <button disabled={!canUse("text")} onClick={() => void enrichCard()}>{canUse("text") ? "重新智能补全" : "创作模型未连接"}</button>

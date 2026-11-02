@@ -3852,3 +3852,15 @@ button:active { transform: translateY(1px); }
 @media (max-width: 700px) {
   .reference-sheet-board.board-3x2 { grid-template-columns: 1fr 1fr; }
 }
+
+/* 身份锚点提示：只在锚点缺发色发型或为空时出现，用警告色区别于普通说明。 */
+.identity-anchor-hint {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  color: var(--warning);
+  border-left: 3px solid var(--warning);
+  border-radius: 0 6px 6px 0;
+  background: var(--accent-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
