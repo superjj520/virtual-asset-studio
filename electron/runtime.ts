@@ -53,6 +53,8 @@ import { GeminiProvider } from "./services/providers/gemini-provider";
 import { DeepSeekProvider } from "./services/providers/deepseek-provider";
 import { MagpieProvider } from "./services/providers/magpie-provider";
 import { ComfyUiImageProvider } from "./services/providers/comfyui-image-provider";
+import { ComfyUiVideoProvider } from "./services/providers/comfyui-video-provider";
+import { fetchProvider } from "./services/providers/request";
 import { LocalImageProvider } from "./services/providers/local-image-provider";
 import { CustomImageProvider } from "./services/providers/custom-image-provider";
 import { GenerationBatchRepository } from "./services/batches/repository";
@@ -181,6 +183,18 @@ export const createStudioRuntime = (
     workflow: () => settings.get("comfyui_workflow"),
   };
   const comfyui = new ComfyUiImageProvider(comfyuiOptions);
+  // 本机 ComfyUI 也能出视频：Wan2.1 文生视频，走同一套网关地址与设置页开关。
+  const comfyuiVideo = new ComfyUiVideoProvider({
+    baseUrl: () => settings.get("comfyui_base_url"),
+    // 默认走 AnimateDiff Lightning：16 GB 机器 66 秒就能出一条 2 秒短片；
+    // Wan2.1 需要约 9 GB 常驻内存，只有大内存机器才建议切过去。
+    mode: () => settings.get("comfyui_video_mode"),
+    checkpoint: () => settings.get("comfyui_video_ckpt") || settings.get("comfyui_checkpoint"),
+    motion: () => settings.get("comfyui_video_motion"),
+    unet: () => settings.get("comfyui_video_unet"),
+    clip: () => settings.get("comfyui_video_clip"),
+    vae: () => settings.get("comfyui_video_vae"),
+  });
   // Magpie 免费池：地址与 key 共用 `magpie_api_key` 一个凭据槽。
   // 存 http(s) 地址就当地址用（本机 loopback 网关对 key 不敏感），否则当 key、地址走默认 3425。
   const magpieCredential = () => apiKeyFor("magpie");
@@ -227,7 +241,7 @@ export const createStudioRuntime = (
         downloadVideo: OpenAIProvider["downloadVideo"];
       }
     >
-  > = { openai };
+  > = { openai, comfyui: comfyuiVideo };
   /**
    * 同一个 provider 下可能有多个模型：ComfyUI 靠 checkpoint 文件名区分，Magpie 靠网关里的模型 id 区分。
    * 选中模型时派生一个只改模型来源的实例，其余配置（地址、凭据、工作流）全部沿用。
@@ -248,11 +262,43 @@ export const createStudioRuntime = (
     },
     model?: string,
   ) => {
-    const provider = imageProviderFor(providerId, undefined);
+    const provider = imageProviderFor(providerId, model);
     if (!provider)
       throw new Error(`模型 ${providerId} 尚未安装图片生成适配器。`);
     return provider.generateImage(input);
   };
+  /**
+   * ComfyUI 里装了哪些 checkpoint，决定设置页能列出多少个本机出图模型。
+   * 探测失败或未配置地址时沿用上一次结果，避免下拉框忽明忽暗。
+   */
+  let comfyCheckpoints: string[] = [];
+  let comfyCheckpointsCheckedAt = 0;
+  const refreshComfyCheckpoints = async () => {
+    const base = comfyui.baseUrl();
+    if (!base) {
+      comfyCheckpoints = [];
+      comfyCheckpointsCheckedAt = 0;
+      return;
+    }
+    if (Date.now() - comfyCheckpointsCheckedAt < 60_000) return;
+    comfyCheckpointsCheckedAt = Date.now();
+    try {
+      const response = await fetchProvider(
+        "comfyui",
+        `${base.replace(/\/+$/, "")}/object_info/CheckpointLoaderSimple`,
+        { method: "GET" },
+        8_000,
+      );
+      const payload = (await response.json()) as {
+        CheckpointLoaderSimple?: { input?: { required?: { ckpt_name?: [unknown, unknown] } } };
+      };
+      const names = payload.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0];
+      comfyCheckpoints = Array.isArray(names) ? names.filter((name): name is string => typeof name === "string") : [];
+    } catch {
+      // 探测失败时保留上一次的结果。
+    }
+  };
+
   const generateWithResult = async (
     providerId: ProviderId,
     input: { prompt: string; negative?: string; size: ImageGenerationSize; quality?: "medium" | "high"; falModel?: string; providerModel?: string; seed?: number; onRemoteTask?: (task: FalRemoteTask) => void },
@@ -375,6 +421,7 @@ export const createStudioRuntime = (
         baseUrl: comfyui.baseUrl() ?? "",
         checkpoint: comfyui.checkpoint() ?? "",
         hasWorkflow: Boolean(settings.get("comfyui_workflow")?.trim()),
+        checkpoints: [...comfyCheckpoints],
       },
     };
   };
@@ -1816,7 +1863,8 @@ export const createStudioRuntime = (
           try {
             const remote = await videoProvider.createVideo({
               prompt: input.prompt,
-              model: "sora-2-pro",
+              // 只有 OpenAI 区分 sora-2 / sora-2-pro；本机 ComfyUI 用 Wan，型号由工作流决定。
+              model: providerId === "openai" ? "sora-2-pro" : "sora-2",
               size,
               seconds: input.seconds,
               referencePath: reference?.managedPath,

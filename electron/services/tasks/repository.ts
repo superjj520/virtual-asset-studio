@@ -28,8 +28,9 @@ export class CreativeTaskRepository {
 
   list(projectId?: string): CreativeTask[] {
     const statement = projectId
-      ? this.db.database.prepare('SELECT * FROM creative_tasks WHERE project_id = ? ORDER BY updated_at DESC')
-      : this.db.database.prepare('SELECT * FROM creative_tasks ORDER BY updated_at DESC');
+      // updated_at 只精确到毫秒，批量创建会撞成同一时间；补 created_at 与 id 兜底，顺序才不会随机。
+      ? this.db.database.prepare('SELECT * FROM creative_tasks WHERE project_id = ? ORDER BY updated_at DESC, created_at DESC, id DESC')
+      : this.db.database.prepare('SELECT * FROM creative_tasks ORDER BY updated_at DESC, created_at DESC, id DESC');
     const rows = projectId ? statement.all(projectId) : statement.all();
     return (rows as TaskRow[]).map(mapTask);
   }

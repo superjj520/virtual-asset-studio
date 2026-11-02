@@ -51,3 +51,27 @@ it('创作任务连接创作基线和生产结果，并按状态回到审片流�
   expect(repository.list(project.id)).toHaveLength(1);
   database.close();
 });
+
+it('同一毫秒内建的任务按 created_at 与 id 稳定排序，不会每次刷新乱跳', () => {
+  const database = new StudioDatabase(join(mkdtempSync(join(tmpdir(), 'studio-task-order-')), 'db.sqlite'));
+  const repository = new CreativeTaskRepository(database);
+  const created = [1, 2, 3, 4, 5, 6, 7, 8].map((index) => repository.create({
+    name: `任务 ${index}`,
+    objective: '验证排序',
+    status: 'draft',
+    card,
+  }));
+
+  // 把 8 个任务的 updated_at 压成同一毫秒，模拟批量创建
+  const stamp = '2026-11-02T09:00:00.000Z';
+  const statement = database.database.prepare('UPDATE creative_tasks SET updated_at = ?');
+  statement.run(stamp);
+  database.database.prepare('UPDATE creative_tasks SET created_at = ?').run(stamp);
+
+  const first = repository.list().map((task) => task.id);
+  const second = repository.list().map((task) => task.id);
+  expect(first).toEqual(second);
+  expect(first).toHaveLength(8);
+  // id DESC 兜底：全部时间戳相同时按 id 倒序
+  expect(first).toEqual([...created].map((task) => task.id).sort().reverse());
+});
