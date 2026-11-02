@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import sys
 import types
+from pathlib import Path
 from typing import Any
+
+HERE = Path(__file__).resolve().parent
 
 # ---- 假依赖：够让 nodes.py 被 import 即可 ----
 torch = types.ModuleType("torch")
@@ -36,12 +39,12 @@ PIL.Image = Image
 sys.modules["PIL"] = PIL
 sys.modules["PIL.Image"] = Image
 
-# 让相对 import 生效：把本目录当成包
-sys.path.insert(0, ".")
+# 让相对 import 生效：把脚本所在目录当成包（从任何 cwd 跑都成立）
+sys.path.insert(0, str(HERE))
 import importlib
 
 package = types.ModuleType("vas_nodes")
-package.__path__ = ["."]
+package.__path__ = [str(HERE)]
 sys.modules["vas_nodes"] = package
 nodes = importlib.import_module("vas_nodes.nodes")
 
