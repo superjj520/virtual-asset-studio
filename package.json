@@ -22,7 +22,8 @@
     "magpie:configure": "node scripts/configure-magpie.mjs",
     "magpie:probe": "electron scripts/magpie-probe.cjs",
     "clean:tmp": "node scripts/clean-tmp.mjs",
-    "verify:nodes": "node scripts/verify-nodes.mjs"
+    "verify:nodes": "node scripts/verify-nodes.mjs",
+    "smoke:restore": "D=$(mktemp -d /tmp/vas-restore-XXXX) && SMOKE_USERDATA=$D node scripts/smoke-packaged.mjs && SMOKE_USERDATA=$D SMOKE_PHASE=verify node scripts/smoke-packaged.mjs; rc=$?; rm -rf \"$D\"; exit $rc"
   },
   "dependencies": {
     "@img/sharp-libvips-darwin-arm64": "^1.3.3",

@@ -66,6 +66,7 @@
 | `npm run verify:nodes` | 节点契约/提示词/深度匹配/路由/弹窗 | 否 |
 | `npm run verify:nodes -- --online` | 上面 + 六个上游源 | 是 |
 | `npm run package:mac` | 打包 + 唯一性校验 | 否 |
-| `npm run smoke:packaged` | 四入口 + 重启恢复 | 否 |
+| `npm run smoke:packaged` | 四入口能进入对应创作 | 否 |
+| `npm run smoke:restore` | 上面 + 退出重启后能恢复上次创作 | 否 |
 
-注意 `smoke:packaged` 的 `SMOKE_PHASE=verify` 会检查「重启后能恢复上次创作」，这不是只看入口能不能点。
+`smoke:packaged` 只到「四个入口都能进」。`smoke:restore` 用同一个 user-data 目录跑两遍：第一遍走一遍新建创作，第二遍重启后检查启动页有「继续上次创作」、点进去能回到原阶段。2026-11-03 实跑两阶段都过。
