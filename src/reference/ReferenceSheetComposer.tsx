@@ -651,6 +651,11 @@ export function ReferenceSheetComposer({
                       )}
                     </div>
                   )}
+                  {cloudKind === "depth" && (
+                    <p className="reference-sheet-depth-note" role="note">
+                      深度图是给 ComfyUI 的 ControlNet 用的：选进参考板只会被拼进那张图里当普通参考图，不会变成深度约束。要按深度出图，请在 ComfyUI 的「姿势库」节点上打开「用深度图」开关，它会按 id 换成同一张图的深度版。
+                    </p>
+                  )}
                   <p className="reference-sheet-attribution">
                     {cloudCatalog?.attribution ?? "云端参考库"} · 仅引用选中的单张图片，不整库同步
                   </p>

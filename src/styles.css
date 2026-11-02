@@ -3872,6 +3872,16 @@ button:active { transform: translateY(1px); }
 .reference-sheet-assets.cloud .reference-sheet-asset > .reference-sheet-asset-pick { grid-template-rows: 92px auto auto; }
 .reference-sheet-assets.cloud .reference-sheet-asset img { height: 92px; }
 .reference-sheet-attribution { margin: 8px 0 0; color: var(--rs-muted); font-size: 9px; }
+.reference-sheet-depth-note {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--rs-accent, #7a6cff);
+  border-radius: 4px;
+  background: var(--rs-surface-sunken, rgba(255, 255, 255, 0.05));
+  color: var(--rs-ink-2, #c9c9d4);
+  font-size: 11px;
+  line-height: 1.5;
+}
 @media (max-width: 900px) {
   .reference-sheet-cloud-controls { grid-template-columns: 1fr; }
   .reference-sheet-assets.cloud { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: none; }
