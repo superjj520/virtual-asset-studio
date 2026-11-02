@@ -332,3 +332,40 @@ describe("云端参考库", () => {
     ).rejects.toThrow("只允许引用已登记的云端参考库");
   });
 });
+
+it("缩略图缓存有上限，翻太多张时淘汰最旧的，不会一直涨内存", async () => {
+  let imageFetches = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      if (url.includes("/thumbs/")) {
+        imageFetches += 1;
+        return new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { "content-type": "image/webp" },
+        });
+      }
+      throw new Error(`未预期的请求：${url}`);
+    }),
+  );
+  const library = new CloudReferenceLibrary(
+    {} as ImportService,
+    {} as AssetRepository,
+    {} as ProjectRepository,
+    { maxThumbnails: 2 },
+  );
+  const base = "https://ai-pose-gallery.anhao.app/thumbs/";
+  await library.thumbnail(`${base}a.webp`);
+  await library.thumbnail(`${base}b.webp`);
+  // a、b 都在缓存里
+  expect(imageFetches).toBe(2);
+  await library.thumbnail(`${base}a.webp`);
+  expect(imageFetches).toBe(2);
+  // 第三张进来，最旧的 b 被淘汰
+  await library.thumbnail(`${base}c.webp`);
+  expect(imageFetches).toBe(3);
+  await library.thumbnail(`${base}c.webp`);
+  expect(imageFetches).toBe(3);
+  await library.thumbnail(`${base}b.webp`);
+  expect(imageFetches).toBe(4);
+});

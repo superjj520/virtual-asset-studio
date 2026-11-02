@@ -102,13 +102,21 @@ type PortraitRow = {
 class CloudReferenceLibrary {
   private cache?: { value: CloudReferenceCatalog; expiresAt: number };
   private inflight?: Promise<CloudReferenceCatalog>;
+  /**
+   * 缩略图常驻内存：一张 base64 约 10–40KB，整库 6,980 张全翻一遍就是上百 MB。
+   * 用上限 + LRU 淘汰，翻回旧位置时重新拉一张图，比一直涨内存便宜。
+   */
   private readonly thumbnailCache = new Map<string, string>();
+  private readonly maxThumbnails: number;
 
   constructor(
     private readonly importer: ImportService,
     private readonly assets: AssetRepository,
     private readonly projects: ProjectRepository,
-  ) {}
+    options: { maxThumbnails?: number } = {},
+  ) {
+    this.maxThumbnails = Math.max(1, options.maxThumbnails ?? 300);
+  }
 
   async list(): Promise<CloudReferenceCatalog> {
     if (this.cache && this.cache.expiresAt > Date.now()) return this.cache.value;
@@ -122,7 +130,12 @@ class CloudReferenceLibrary {
   async thumbnail(url: string): Promise<string> {
     assertCloudUrl(url);
     const cached = this.thumbnailCache.get(url);
-    if (cached) return cached;
+    if (cached) {
+      // 命中即提到最新，配合下面按插入顺序淘汰
+      this.thumbnailCache.delete(url);
+      this.thumbnailCache.set(url, cached);
+      return cached;
+    }
     const response = await transport(url);
     if (!response.ok)
       throw new Error(`云端缩略图读取失败（${response.status}）。`);
@@ -134,6 +147,11 @@ class CloudReferenceLibrary {
       throw new Error("云端缩略图超过 4MB。");
     const dataUrl = `data:${contentType};base64,${buffer.toString("base64")}`;
     this.thumbnailCache.set(url, dataUrl);
+    while (this.thumbnailCache.size > this.maxThumbnails) {
+      const oldest = this.thumbnailCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.thumbnailCache.delete(oldest);
+    }
     return dataUrl;
   }
 
