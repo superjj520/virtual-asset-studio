@@ -29,6 +29,7 @@ import { CreationLaunchpad, type CreationLaunchKind } from "./creation/CreationL
 import { ReferenceSheetComposer } from "./reference/ReferenceSheetComposer";
 import { applyReferenceSheetToCard, type ReferenceSheetRecipe } from "./shared/reference-sheet";
 import { identityAnchorWarning } from "./shared/identity-anchor";
+import type { CloudHealthReport } from "./shared/reference-library";
 import { CREATION_PRESET_ARTWORKS, SCENE_ARTWORKS, VisualCharacterCreator } from "./creation/VisualCharacterCreator";
 import {
   buildCharacterStateTrackers,
@@ -637,6 +638,8 @@ export default function App() {
   const [comfyuiVideoMode, setComfyuiVideoMode] = useState<"animate" | "wan">("animate");
   const [comfyuiVideoCheckpoint, setComfyuiVideoCheckpoint] = useState("");
   const [comfyuiVideoMotion, setComfyuiVideoMotion] = useState("");
+  const [cloudHealth, setCloudHealth] = useState<CloudHealthReport | null>(null);
+  const [cloudHealthBusy, setCloudHealthBusy] = useState(false);
   const [customImageBaseUrl, setCustomImageBaseUrl] = useState("");
   const [customImageModel, setCustomImageModel] = useState("");
   const [budget, setBudget] = useState<BudgetStatus>({ plannedSpendUsd: 0 });
@@ -1769,6 +1772,17 @@ export default function App() {
       setNotice(error instanceof Error ? error.message : "保存本地图像服务失败。");
     }
   };
+  const runCloudHealth = async () => {
+    setCloudHealthBusy(true);
+    try {
+      setCloudHealth(await window.studio.referenceLibrary.health());
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "素材库体检失败。");
+    } finally {
+      setCloudHealthBusy(false);
+    }
+  };
+
   const saveComfyui = async () => {
     try {
       const status = await window.studio.settings.saveComfyui({
@@ -6984,6 +6998,53 @@ export default function App() {
               <input type="password" value={providerKeys.custom} onChange={(event) => setProviderKeys((current) => ({ ...current, custom: event.target.value }))} placeholder="粘贴兼容协议 API 密钥" />
               <button onClick={() => void saveCustomImage()}>保存协议</button>
             </div>
+          </section>
+          <section className="form-panel">
+            <p className="eyebrow">素材库体检 / 六个来源逐个测</p>
+            <p className="result-note">
+              点一下会把六个来源各拉一遍，显示真实条数与失败原因。上游改了结构、限流或者挂掉，这里会直接说出来——不用听我转述。
+            </p>
+            <div className="provider-row">
+              <div>
+                <strong>云端素材库</strong>
+                <p className="result-note">
+                  {cloudHealth
+                    ? `上次体检 ${new Date(cloudHealth.checkedAt).toLocaleString("zh-CN")} · 共 ${cloudHealth.totalItems} 条 / ${cloudHealth.totalImages} 张`
+                    : "还没体检过。"}
+                </p>
+              </div>
+              <button aria-label="开始素材库体检" onClick={() => void runCloudHealth()} disabled={cloudHealthBusy}>
+                {cloudHealthBusy ? "正在体检…" : "开始体检"}
+              </button>
+            </div>
+            {cloudHealth ? (
+              <table className="cloud-health-table">
+                <thead>
+                  <tr>
+                    <th scope="col">来源</th>
+                    <th scope="col">条数</th>
+                    <th scope="col">状态</th>
+                    <th scope="col">耗时</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cloudHealth.sources.map((row) => (
+                    <tr key={row.key} data-status={row.status}>
+                      <td>{row.label}</td>
+                      <td>{row.count}</td>
+                      <td>
+                        {row.status === "ok"
+                          ? "正常"
+                          : row.status === "empty"
+                            ? "读到 0 条"
+                            : `失败：${row.error ?? "未知原因"}`}
+                      </td>
+                      <td>{row.durationMs} ms</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : null}
           </section>
           <section className="form-panel">
             <p className="eyebrow">本地图像服务 / 不需要云端密钥</p>

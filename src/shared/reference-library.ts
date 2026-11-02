@@ -55,6 +55,25 @@ export type CloudReferenceItem = {
   variants?: CloudReferenceVariant[];
 };
 
+/** 素材库体检：每个源单独测，不会因为一个源坏了就看不到别的源的状态。 */
+export type CloudSourceHealth = {
+  key: string;
+  label: string;
+  /** 读到的条目数；失败时为 0，不等于「这个源是空的」。 */
+  count: number;
+  status: "ok" | "empty" | "error";
+  /** 失败原因，直接给用户看，不做二次包装。 */
+  error?: string;
+  durationMs: number;
+};
+
+export type CloudHealthReport = {
+  checkedAt: string;
+  totalItems: number;
+  totalImages: number;
+  sources: CloudSourceHealth[];
+};
+
 export type CloudReferenceCatalog = {
   sourceName: string;
   sourceUrl: string;

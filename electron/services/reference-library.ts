@@ -5,9 +5,11 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import type { Asset, AssetType } from "../../src/shared/types";
 import {
   CLOUD_REFERENCE_SOURCE,
+  type CloudHealthReport,
   type CloudReferenceCatalog,
   type CloudReferenceItem,
   type CloudReferenceKind,
+  type CloudSourceHealth,
 } from "../../src/shared/reference-library";
 import type { AssetRepository } from "./assets/repository";
 import type { ImportService } from "./import/import-service";
@@ -116,6 +118,109 @@ class CloudReferenceLibrary {
     options: { maxThumbnails?: number } = {},
   ) {
     this.maxThumbnails = Math.max(1, options.maxThumbnails ?? 300);
+  }
+
+  /**
+   * 逐源体检。刻意不复用 `load()`：`load()` 里增量源失败会退化成空数组，
+   * 那样体检就永远显示「正常但 0 条」，等于自己骗自己。
+   */
+  async health(): Promise<CloudHealthReport> {
+    const probe = async <T>(
+      key: string,
+      label: string,
+      run: () => Promise<T[]>,
+    ): Promise<{ health: CloudSourceHealth; rows: T[] }> => {
+      const startedAt = Date.now();
+      try {
+        const rows = await run();
+        const count = rows.length;
+        return {
+          rows,
+          health: {
+            key,
+            label,
+            count,
+            status: count > 0 ? "ok" : "empty",
+            durationMs: Date.now() - startedAt,
+          },
+        };
+      } catch (error) {
+        return {
+          rows: [],
+          health: {
+            key,
+            label,
+            count: 0,
+            status: "error",
+            error: error instanceof Error ? error.message : String(error),
+            durationMs: Date.now() - startedAt,
+          },
+        };
+      }
+    };
+
+    const [poses, costumes, portraits, charDb, depths, animeCostumes] = await Promise.all([
+      probe("pose", "姿势", () => this.fetchJson<PoseRow[]>("/data/pose-zh.json")),
+      probe("costume", "服装", () => this.fetchJson<CostumeRow[]>("/data/costume-zh.json")),
+      probe("portrait", "人像", () => this.fetchJson<PortraitRow[]>("/data/portrait-zh.json")),
+      probe("char-db", "二次元换装", () => this.fetchCharDb()),
+      probe("depth", "深度图", () => this.fetchDepthPosesStrict()),
+      probe("anime-costume", "动漫衣装", () => this.fetchAnimeCostumesStrict()),
+    ]);
+
+    const charDbOnly = charDb.rows.filter(
+      (row) => row.set === "hair" || row.set === "outfit" || row.set === "pose",
+    );
+    const sources = [
+      poses.health,
+      costumes.health,
+      portraits.health,
+      { ...charDb.health, count: charDbOnly.length },
+      depths.health,
+      animeCostumes.health,
+    ];
+    // 口径必须和 list() 的 counts 一致：姿势按组算（288），不是按张算（1,439）。
+    const poseGroups = groupPoses(poses.rows).length;
+    const charDbHair = charDbOnly.filter((row) => row.set === "hair").length;
+    const charDbCostume = charDbOnly.filter((row) => row.set === "outfit").length;
+    const charDbPose = charDbOnly.filter((row) => row.set === "pose").length;
+    return {
+      checkedAt: new Date().toISOString(),
+      totalItems:
+        poseGroups +
+        charDbPose +
+        costumes.rows.length +
+        charDbCostume +
+        portraits.rows.length +
+        charDbHair +
+        depths.rows.length +
+        animeCostumes.rows.length,
+      totalImages:
+        poses.rows.length +
+        costumes.rows.length +
+        portraits.rows.length +
+        charDbOnly.length +
+        depths.rows.length +
+        animeCostumes.rows.length,
+      sources,
+    };
+  }
+
+  /** 体检专用：不吞错，让失败原因能显示出来。 */
+  private async fetchDepthPosesStrict(): Promise<DepthRow[]> {
+    const response = await transport(DEPTH_BASE);
+    if (!response.ok) throw new Error(`深度图库读取失败（${response.status}）。`);
+    const rows = parseInlineArray<DepthRow>(await response.text(), "const D=");
+    if (rows.length === 0) throw new Error("深度图库返回了 0 条，可能页面结构变了。");
+    return rows;
+  }
+
+  private async fetchAnimeCostumesStrict(): Promise<AnimeCostumeRow[]> {
+    const response = await transport(ANIME_BASE);
+    if (!response.ok) throw new Error(`动漫衣装库读取失败（${response.status}）。`);
+    const rows = parseInlineArray<AnimeCostumeRow>(await response.text(), "const D=");
+    if (rows.length === 0) throw new Error("动漫衣装库返回了 0 条，可能页面结构变了。");
+    return rows;
   }
 
   async list(): Promise<CloudReferenceCatalog> {

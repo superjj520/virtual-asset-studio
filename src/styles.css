@@ -3937,3 +3937,35 @@ button:active { transform: translateY(1px); }
   margin: 6px 0 0;
   padding: 6px 10px;
 }
+
+.cloud-health-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.cloud-health-table th,
+.cloud-health-table td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cloud-health-table th {
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+
+.cloud-health-table td:first-child {
+  white-space: nowrap;
+}
+
+.cloud-health-table tr[data-status="error"] td:last-child,
+.cloud-health-table tr[data-status="error"] td:nth-child(3) {
+  color: var(--danger, #b42318);
+}
+
+.cloud-health-table tr[data-status="empty"] td:nth-child(3) {
+  color: var(--warning);
+}

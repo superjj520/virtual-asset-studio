@@ -692,6 +692,7 @@ export const createStudioRuntime = (
         },
       );
       ipcMain.handle("reference-library:list", () => cloudReferenceLibrary.list());
+      ipcMain.handle("reference-library:health", () => cloudReferenceLibrary.health());
       ipcMain.handle("reference-library:thumbnail", (_event, url: string) =>
         cloudReferenceLibrary.thumbnail(url),
       );

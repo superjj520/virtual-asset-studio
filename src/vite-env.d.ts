@@ -37,6 +37,7 @@ interface Window {
       ) => Promise<import("./shared/types").Asset>;
     };
     referenceLibrary: {
+      health: () => Promise<import("./shared/reference-library").CloudHealthReport>;
       list: () => Promise<import("./shared/reference-library").CloudReferenceCatalog>;
       thumbnail: (url: string) => Promise<string>;
       import: (

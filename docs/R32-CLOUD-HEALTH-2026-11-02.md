@@ -1,0 +1,58 @@
+# R32 素材库体检：让「素材库是否都添加好了」变成用户自己能验的事
+
+## 问题
+
+前面几轮我一直用「我查过了，六个源都在」来回答「素材库是否都添加好了」。这个答案的问题在于：**它依赖我，不依赖用户**。上游改结构、限流、某个源挂掉，我看不到，用户更看不到——只能等界面某天突然变空。
+
+而且这一轮真出过事：`char-db-cn` 悄悄加了 `outfit2` 的 1,320 条，是被我手工比对发现的。如果那天没比对，姿势分类里就会混进一堆动漫衣装。
+
+## 做法
+
+新增 IPC `reference-library:health`，逐源体检，设置页加一张表。
+
+关键设计：**不用 `load()`**。`load()` 里增量源失败会退化成空数组（R17 起的设计，为了一个源坏了不拖垮别的），但那样体检就永远显示「正常但 0 条」，等于自己骗自己。所以另写 `fetchDepthPosesStrict` / `fetchAnimeCostumesStrict`，失败直接抛，把原因带出来。
+
+```ts
+async health(): Promise<CloudHealthReport>
+```
+
+`CloudSourceHealth` 每行：`key` / `label` / `count` / `status`（ok / empty / error）/ `error` / `durationMs`。
+
+**口径陷阱**：第一版 `totalItems` 把「姿势 1,439 张」和「姿势 288 组」都加了一遍，算出 8,419 条，而分类行加起来是 6,980。真机一跑就露馅了。改成和 `counts` 同一口径——姿势按组算（288），char-db 按 set 拆（hair 306 / outfit 440 / pose 281）。
+
+## 真机结果
+
+```
+来源        条数    状态   耗时
+姿势        1439    正常   535 ms
+服装        1407    正常   742 ms
+人像        1499    正常   551 ms
+二次元换装  1027    正常   744 ms
+深度图      1439    正常   688 ms
+动漫衣装    1320    正常   574 ms
+
+上次体检 2026/11/2 22:49:10 · 共 6980 条 / 8131 张
+```
+
+6,980 与界面分类行求和一致，8,131 与「共 N 张」一致。截图 `artifacts/screenshots/cloud-health.png`。
+
+## 一个绕了很久的坑
+
+CDP 一直连到**残留的旧 Electron 进程**上——端口 9491 上有别的东西在响应 `/json`，页面 href 显示的是项目路径，但实际加载的 `script` 是 `index-B7pd7Z5b.js`，而磁盘上只有 `index-wm-SibVL.js`。表现就是：代码明明改了、bundle 里明明有那段字符串、页面就是不渲染。
+
+排查顺序：查 bundle 内容（有）→ 查 index.html 引用（对）→ 清 Electron 缓存（没用）→ **打印页面实际加载的 script 名（对不上磁盘）**→ 换一个新端口（4507→9513）→ 立刻正常。
+
+**教训**：CDP 端口每次都要换新的，或者先确认 `/json` 里的 target 是自己刚 spawn 的那个进程。只看 href 不够，要看 `document.querySelector("script[src]").getAttribute("src")`。
+
+## 门禁
+
+```
+npx tsc --noEmit  无输出
+npm test          93 文件 / 458 测试通过
+npm run build     通过
+```
+
+## 没做到的
+
+- 体检只看「条数」，不看「图片能不能打开」。图片挂掉时条数照常正常。
+- 没做定时体检，得手动点。

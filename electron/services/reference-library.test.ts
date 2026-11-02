@@ -93,6 +93,23 @@ describe("云端参考库", () => {
     expect(catalog.items.find((item) => item.kind === "hair")?.sourceName).toContain("二次元");
     // outfit2 与动漫衣装站同批，不能进 items，也不能算进任何分类。
     expect(catalog.items.some((item) => item.id === "char-db-AUT-0001")).toBe(false);
+
+    // 体检：逐源报条数，总量口径必须和 counts 一致。
+    const health = await library.health();
+    expect(health.sources.map((row) => row.key)).toEqual([
+      "pose",
+      "costume",
+      "portrait",
+      "char-db",
+      "depth",
+      "anime-costume",
+    ]);
+    const byKey = new Map(health.sources.map((row) => [row.key, row]));
+    expect(byKey.get("pose")?.count).toBe(3);
+    expect(byKey.get("char-db")?.count).toBe(3); // hair + outfit + pose，outfit2 已排除
+    expect(health.totalItems).toBe(Object.values(catalog.counts).reduce((sum, n) => sum + n, 0));
+    expect(health.totalImages).toBe(catalog.totalImages);
+    expect(health.sources.every((row) => typeof row.durationMs === "number")).toBe(true);
   });
 
   it("同一姿势保留全部视角，正面排首位作为默认预览", async () => {

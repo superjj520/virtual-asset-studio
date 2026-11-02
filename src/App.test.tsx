@@ -21,7 +21,7 @@ beforeEach(() => {
       review: vi.fn(),
     },
     referenceSheets: { compose: vi.fn() },
-    referenceLibrary: { list: vi.fn().mockResolvedValue({ sourceName: "", sourceUrl: "", attribution: "", fetchedAt: "", counts: { portrait: 0, costume: 0, pose: 0 }, items: [] }), thumbnail: vi.fn(), import: vi.fn() },
+    referenceLibrary: { health: vi.fn().mockResolvedValue({ checkedAt: "", totalItems: 0, totalImages: 0, sources: [] }), list: vi.fn().mockResolvedValue({ sourceName: "", sourceUrl: "", attribution: "", fetchedAt: "", counts: { portrait: 0, costume: 0, pose: 0 }, items: [] }), thumbnail: vi.fn(), import: vi.fn() },
     imageReviews: { workspace: vi.fn().mockResolvedValue({ projectId: "", candidates: [], reviews: [], promotions: [] }), create: vi.fn(), promote: vi.fn() },
     collections: { create: vi.fn(), list: vi.fn().mockResolvedValue([]), detail: vi.fn(), update: vi.fn(), attachAsset: vi.fn(), detachAsset: vi.fn() },
     projects: {
