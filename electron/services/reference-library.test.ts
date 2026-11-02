@@ -290,6 +290,43 @@ describe("云端参考库", () => {
     expect(catalog.totalImages).toBe(1);
   });
 
+  it("用 char-db 的中文分类替换动漫衣装站的日文分类", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("char-db-cn/main/data.js"))
+          return new Response(
+            `window.CHARDB=${JSON.stringify({
+              items: [
+                { id: "SPR-0001", set: "outfit2", catZh: "内衣", zh: "SPR-0001" },
+              ],
+            })};`,
+            { status: 200, headers: { "content-type": "application/javascript" } },
+          );
+        if (url.includes("pose-zh")) return json([]);
+        if (url.includes("costume-zh")) return json([]);
+        if (url.includes("portrait-zh")) return json([]);
+        if (url.includes("ai-costume-anime-gallery"))
+          return new Response(
+            `<!doctype html><script>const META={"total":1,"cats":["ランジェリー"]}; const D=[{"id":"SPR-0001","カテゴリ":"ランジェリー","キーワード":"lace black","サムネ":"thumbs/SPR-0001.webp","画像":"img/SPR-0001.webp"}];</script>`,
+            { status: 200, headers: { "content-type": "text/html" } },
+          );
+        throw new Error(`未预期的请求：${url}`);
+      }),
+    );
+    const library = new CloudReferenceLibrary(
+      {} as ImportService,
+      {} as AssetRepository,
+      {} as ProjectRepository,
+    );
+    const catalog = await library.list();
+    const item = catalog.items.find((entry) => entry.kind === "anime-costume");
+    // 站上写的是日文「ランジェリー」，界面要显示中文「内衣」。
+    expect(item?.category).toBe("内衣");
+    expect(item?.title).toBe("内衣 · SPR-0001");
+    expect(item?.tags).toContain("内衣");
+  });
+
   it("深度姿势集读取失败时不影响其余素材", async () => {
     vi.stubGlobal(
       "fetch",

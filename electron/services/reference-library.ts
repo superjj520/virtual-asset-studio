@@ -433,18 +433,31 @@ class CloudReferenceLibrary {
       thumbUrl: depthUrl(row.サムネ),
       imageUrl: depthUrl(row.原寸 ?? row.サムネ),
     }));
-    const animeItems = animeCostumes.map((row) => ({
+    /**
+     * 动漫衣装站的分类是日文（ランジェリー / パーティ / 水着 / セクシー）。
+     * char-db-cn 的 outfit2 是同一批 1,320 条，id 一一对应，`catZh` 就是中文分类，
+     * 拿它做翻译表，界面才不用中日混排。
+     */
+    const animeCategoryZh = new Map(
+      charDb
+        .filter((row) => row.set === "outfit2")
+        .map((row) => [row.id, row.catZh ?? ""]),
+    );
+    const animeItems = animeCostumes.map((row) => {
+      const category = animeCategoryZh.get(row.id) || row.カテゴリ || "动漫衣装";
+      return {
       id: `anime-costume-${row.id}`,
       kind: "anime-costume" as const,
-      title: `${row.カテゴリ ?? "衣装"} · ${row.id}`,
-      category: row.カテゴリ ?? "动漫衣装",
+      title: `${category} · ${row.id}`,
+      category,
       tags: [
-        row.カテゴリ,
+        category,
         ...(row.キーワード ?? "").split(/\s+/).filter(Boolean),
       ].filter((value): value is string => Boolean(value)),
       thumbUrl: animeUrl(row.サムネ),
       imageUrl: animeUrl(row.画像 ?? row.サムネ),
-    }));
+      };
+    });
     const items = [
       ...normalize(portraitItems),
       ...normalize(costumeItems),
