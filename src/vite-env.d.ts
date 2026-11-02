@@ -383,6 +383,7 @@ interface Window {
         aspectRatio: import("./shared/types").CreativeCard["aspectRatio"];
         referenceAssetIds?: string[];
         referenceBindings?: import("./shared/types").ReferenceAssetBinding[];
+        depthAssetId?: string;
         qualityTier?: import("./shared/types").GenerationQualityTier;
         modelId?: string;
         seed?: number;

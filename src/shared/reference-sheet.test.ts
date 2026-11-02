@@ -300,3 +300,32 @@ describe("深度图独立通道", () => {
     expect(next.mustKeep).toContain("没有被拼进参考板");
   });
 });
+
+describe("深度图落到创作卡", () => {
+  it("合成后把深度图资产 id 写进卡，出图时才知道要送哪一张", () => {
+    const card = { identityAnchor: "", bodyAndWardrobe: "", expressionAndPose: "", scene: "", mustKeep: "", avoid: "" } as unknown as CreativeCard;
+    const recipe = {
+      version: 1 as const,
+      layout: referenceSheetLayout([{ role: "identity", assetId: "a1" }]),
+      slots: [{ role: "identity" as const, assetId: "a1", name: "身份图" }],
+      depth: { role: "extra1" as const, assetId: "depth-9", name: "深度图 B" },
+      prompt: { positive: "", negative: "", modules: [] },
+      rightsBasis: "",
+      createdAt: "",
+    };
+    expect(applyReferenceSheetToCard(card, recipe).depthAssetId).toBe("depth-9");
+  });
+
+  it("没有深度图时不写这个字段，避免出图链路去查一个空 id", () => {
+    const card = { identityAnchor: "", bodyAndWardrobe: "", expressionAndPose: "", scene: "", mustKeep: "", avoid: "" } as unknown as CreativeCard;
+    const recipe = {
+      version: 1 as const,
+      layout: referenceSheetLayout([{ role: "identity", assetId: "a1" }]),
+      slots: [{ role: "identity" as const, assetId: "a1", name: "身份图" }],
+      prompt: { positive: "", negative: "", modules: [] },
+      rightsBasis: "",
+      createdAt: "",
+    };
+    expect(applyReferenceSheetToCard(card, recipe).depthAssetId).toBeUndefined();
+  });
+});

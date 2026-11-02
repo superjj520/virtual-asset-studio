@@ -332,6 +332,7 @@ export const applyReferenceSheetToCard = (
     .map((item) => item.name);
   return {
     ...card,
+    ...(recipe.depth ? { depthAssetId: recipe.depth.assetId } : {}),
     identityAnchor: identityLabel
       ? `${identityLabel}人物身份：沿用参考板中的脸型、五官、肤色、年龄感、发色与发型走向，不重新设计`
       : card.identityAnchor,

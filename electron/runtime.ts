@@ -336,7 +336,7 @@ export const createStudioRuntime = (
   };
   const refineWithResult = async (
     providerId: ProviderId,
-    input: { prompt: string; size: ImageGenerationSize; referencePath: string; referenceMediaType: string; references?: Array<{ path: string; mediaType: string }>; model?: string; onRemoteTask?: (task: FalRemoteTask) => void },
+    input: { prompt: string; size: ImageGenerationSize; referencePath: string; referenceMediaType: string; references?: Array<{ path: string; mediaType: string }>; depthPath?: string; depthMediaType?: string; model?: string; onRemoteTask?: (task: FalRemoteTask) => void },
   ): Promise<{ image: Buffer; remoteTask?: FalRemoteTask }> => {
     if (providerId === "fal") {
       const result = await fal.refineImageWithTask(input);
@@ -1650,6 +1650,7 @@ export const createStudioRuntime = (
             aspectRatio: CreativeCard["aspectRatio"];
             referenceAssetIds?: string[];
             referenceBindings?: ReferenceAssetBinding[];
+            depthAssetId?: string;
             qualityTier?: "draft" | "standard" | "premium";
             modelId?: string;
             seed?: number;
@@ -1673,6 +1674,10 @@ export const createStudioRuntime = (
           const references = referenceAssetIds.map((id) =>
             referenceForGeneration(id, input.projectId),
           );
+          // 深度图单独走一条通道：它不进参考板拼图，只作为 ControlNet 的深度输入。
+          const depthReference = input.depthAssetId
+            ? referenceForGeneration(input.depthAssetId, input.projectId)
+            : undefined;
           const primaryReference = references[0];
           const sheetRecipe = primaryReference?.metadata?.referenceSheet as
             | ReferenceSheetRecipe
@@ -1784,6 +1789,9 @@ export const createStudioRuntime = (
                     referencePath: generationReferences[0].managedPath,
                     referenceMediaType: generationReferences[0].mediaType,
                     references: generationReferences.map((reference) => ({ path: reference.managedPath, mediaType: reference.mediaType })),
+                    ...(depthReference
+                      ? { depthPath: depthReference.managedPath, depthMediaType: depthReference.mediaType }
+                      : {}),
                     model: requestedModel?.model,
                     onRemoteTask: (remoteTask) => jobs.update(job.id, { status: "in_progress", result: { remoteTask, progressStage: "remote", requestedAspectRatio: input.aspectRatio, actualSize: size } }),
                   })

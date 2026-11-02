@@ -460,6 +460,8 @@ export type CreativeCard = {
   referenceAssetIds: string[];
   /** 与 referenceAssetIds 同步；旧数据缺失时会自动迁移为首张主参考。 */
   referenceBindings?: ReferenceAssetBinding[];
+  /** 深度图资产：不参与参考板拼图，出图时作为 ControlNet 的深度输入单独送出。 */
+  depthAssetId?: string;
   /** 用户在系列规划中确认的镜头顺序与生成策略。 */
   candidatePlan?: CreativeCandidatePlanItem[];
   /** 已采用、允许进入后续生产的系列镜头标签；仅 series_pack 使用。 */
@@ -1044,7 +1046,18 @@ export type ProviderStatus = {
   localImage?: { baseUrl: string; model: string };
   customImage?: { baseUrl: string; model: string };
   /** 本机 ComfyUI 配置：地址为空即未启用，不上传任何素材。 */
-  comfyui?: { baseUrl: string; checkpoint: string; hasWorkflow: boolean; /** 本机 ComfyUI 里可用的 checkpoint，用来展开成多个出图模型。 */ checkpoints?: string[] };
+  comfyui?: {
+    baseUrl: string;
+    checkpoint: string;
+    hasWorkflow: boolean;
+    /** 本机 ComfyUI 里可用的 checkpoint，用来展开成多个出图模型。 */
+    checkpoints?: string[];
+    /** 本机视频引擎：animate 用 SD1.5 + AnimateDiff，wan 用 Wan2.1。 */
+    videoMode?: "animate" | "wan";
+    /** 动画引擎的底模与 motion module。 */
+    videoCheckpoint?: string;
+    videoMotion?: string;
+  };
 };
 
 export type ProviderVerificationResult = {

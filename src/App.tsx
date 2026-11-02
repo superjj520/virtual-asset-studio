@@ -2182,6 +2182,7 @@ export default function App() {
         aspectRatio: normalizedCard.aspectRatio,
         referenceAssetIds: normalizedCard.referenceAssetIds,
         referenceBindings: normalizedCard.referenceBindings,
+        ...(normalizedCard.depthAssetId ? { depthAssetId: normalizedCard.depthAssetId } : {}),
         qualityTier,
         modelId: effectiveGenerationModelId,
         seed: candidateSeed,
