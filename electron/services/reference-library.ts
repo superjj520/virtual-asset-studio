@@ -6,6 +6,7 @@ import type { Asset, AssetType } from "../../src/shared/types";
 import {
   CLOUD_REFERENCE_SOURCE,
   type CloudHealthReport,
+  type CloudImageProbe,
   type CloudReferenceCatalog,
   type CloudReferenceItem,
   type CloudReferenceKind,
@@ -129,11 +130,15 @@ class CloudReferenceLibrary {
       key: string,
       label: string,
       run: () => Promise<T[]>,
+      pickUrls: (rows: T[]) => string[] = () => [],
     ): Promise<{ health: CloudSourceHealth; rows: T[] }> => {
       const startedAt = Date.now();
       try {
         const rows = await run();
         const count = rows.length;
+        const urls = count > 0 ? pickSample(pickUrls(rows), 3) : [];
+        const images =
+          urls.length > 0 ? await Promise.all(urls.map((url) => this.probeImage(url))) : [];
         return {
           rows,
           health: {
@@ -142,6 +147,7 @@ class CloudReferenceLibrary {
             count,
             status: count > 0 ? "ok" : "empty",
             durationMs: Date.now() - startedAt,
+            images,
           },
         };
       } catch (error) {
@@ -160,12 +166,36 @@ class CloudReferenceLibrary {
     };
 
     const [poses, costumes, portraits, charDb, depths, animeCostumes] = await Promise.all([
-      probe("pose", "姿势", () => this.fetchJson<PoseRow[]>("/data/pose-zh.json")),
-      probe("costume", "服装", () => this.fetchJson<CostumeRow[]>("/data/costume-zh.json")),
-      probe("portrait", "人像", () => this.fetchJson<PortraitRow[]>("/data/portrait-zh.json")),
-      probe("char-db", "二次元换装", () => this.fetchCharDb()),
-      probe("depth", "深度图", () => this.fetchDepthPosesStrict()),
-      probe("anime-costume", "动漫衣装", () => this.fetchAnimeCostumesStrict()),
+      probe(
+        "pose",
+        "姿势",
+        () => this.fetchJson<PoseRow[]>("/data/pose-zh.json"),
+        (rows) => rows.map((row) => absoluteUrl(row.缩略图 ?? row.原图)),
+      ),
+      probe(
+        "costume",
+        "服装",
+        () => this.fetchJson<CostumeRow[]>("/data/costume-zh.json"),
+        (rows) => rows.map((row) => absoluteUrl(row.缩略图 ?? row.预览图 ?? row.原图)),
+      ),
+      probe(
+        "portrait",
+        "人像",
+        () => this.fetchJson<PortraitRow[]>("/data/portrait-zh.json"),
+        (rows) => rows.map((row) => absoluteUrl(row.缩略图)),
+      ),
+      probe(
+        "char-db",
+        "二次元换装",
+        () => this.fetchCharDb(),
+        (rows) => rows.map((row) => `${CHAR_DB_THUMB_BASE}/${encodeURIComponent(row.id)}.webp`),
+      ),
+      probe("depth", "深度图", () => this.fetchDepthPosesStrict(), (rows) =>
+        rows.map((row) => depthUrl(row.サムネ ?? row.原寸)),
+      ),
+      probe("anime-costume", "动漫衣装", () => this.fetchAnimeCostumesStrict(), (rows) =>
+        rows.map((row) => animeUrl(row.サムネ ?? row.画像)),
+      ),
     ]);
 
     const charDbOnly = charDb.rows.filter(
@@ -204,6 +234,16 @@ class CloudReferenceLibrary {
         animeCostumes.rows.length,
       sources,
     };
+  }
+
+  /** 抽一张图看能不能真的打开：只取首 1KB，不把整张图读进内存。 */
+  private async probeImage(url: string): Promise<CloudImageProbe> {
+    try {
+      const response = await transport(url);
+      return { url, ok: response.ok, status: response.status };
+    } catch (error) {
+      return { url, ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   /** 体检专用：不吞错，让失败原因能显示出来。 */
@@ -488,6 +528,13 @@ const transport = async (url: string): Promise<Response> => {
     return net.fetch(url);
   }
   return fetch(url);
+};
+
+/** 从列表里均匀抽三张（首、中、尾），用来验图是否还打得开。 */
+const pickSample = <T>(values: T[], size: number): T[] => {
+  if (values.length <= size) return values;
+  const step = (values.length - 1) / (size - 1);
+  return Array.from({ length: size }, (_, index) => values[Math.round(index * step)]);
 };
 
 /**

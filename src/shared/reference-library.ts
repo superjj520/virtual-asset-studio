@@ -55,6 +55,14 @@ export type CloudReferenceItem = {
   variants?: CloudReferenceVariant[];
 };
 
+/** 抽查某一张图能不能真的打开：条数对不代表图片没挂。 */
+export type CloudImageProbe = {
+  url: string;
+  ok: boolean;
+  status?: number;
+  error?: string;
+};
+
 /** 素材库体检：每个源单独测，不会因为一个源坏了就看不到别的源的状态。 */
 export type CloudSourceHealth = {
   key: string;
@@ -65,6 +73,8 @@ export type CloudSourceHealth = {
   /** 失败原因，直接给用户看，不做二次包装。 */
   error?: string;
   durationMs: number;
+  /** 每个源抽三张图验证可访问性；空数组表示这个源没图可抽。 */
+  images?: CloudImageProbe[];
 };
 
 export type CloudHealthReport = {

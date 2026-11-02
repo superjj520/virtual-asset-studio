@@ -7025,6 +7025,7 @@ export default function App() {
                     <th scope="col">条数</th>
                     <th scope="col">状态</th>
                     <th scope="col">耗时</th>
+                    <th scope="col">样图</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -7040,6 +7041,18 @@ export default function App() {
                             : `失败：${row.error ?? "未知原因"}`}
                       </td>
                       <td>{row.durationMs} ms</td>
+                      <td>
+                        {row.images && row.images.length > 0
+                          ? (() => {
+                              const failed = row.images.filter((probe) => !probe.ok);
+                              return failed.length === 0
+                                ? `抽检 ${row.images.length} 张均可打开`
+                                : `抽检 ${row.images.length} 张，${failed.length} 张打不开：${failed
+                                    .map((probe) => probe.status ?? probe.error ?? "unknown")
+                                    .join(" / ")}`;
+                            })()
+                          : "无图可抽"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
