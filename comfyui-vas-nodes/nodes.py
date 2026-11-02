@@ -31,6 +31,39 @@ from .vas_data import (
 )
 
 
+# 与客户端 src/shared/reference-styles.ts 的 12 种画风保持一致，
+# 名字对不上就会变成工作流里选不到、或者选到了却和界面上不是同一个。
+STYLE_PRESETS = [
+    "电影写实",
+    "时装大片",
+    "棚拍肖像",
+    "自然日光",
+    "暗调氛围",
+    "东方水墨",
+    "动画赛璐璐",
+    "漫画墨线",
+    "古典油画",
+    "水彩插画",
+    "赛博霓虹",
+    "胶片颗粒",
+]
+
+STYLE_PRESET_EN = {
+    "电影写实": "cinematic photography, natural skin texture, realistic lens falloff, shallow depth of field",
+    "时装大片": "high fashion editorial, dramatic lighting, glossy finish",
+    "棚拍肖像": "studio portrait, soft key light, seamless backdrop",
+    "自然日光": "natural daylight, soft shadows, outdoor",
+    "暗调氛围": "low-key lighting, moody atmosphere, dark tones",
+    "东方水墨": "eastern ink wash painting, flowing brush strokes, rice paper texture",
+    "动画赛璐璐": "anime cel shading, flat color blocks, clean lineart",
+    "漫画墨线": "manga ink lineart, high contrast, screentone",
+    "古典油画": "classical oil painting, chiaroscuro, visible brushwork",
+    "水彩插画": "watercolor illustration, soft edges, paper texture",
+    "赛博霓虹": "cyberpunk neon, magenta and cyan rim light",
+    "胶片颗粒": "film grain, analog color rendition, slight halation",
+}
+
+
 RESIZE_MODES = ["原图尺寸", "缩放到指定尺寸", "裁切填满"]
 
 
@@ -364,11 +397,20 @@ class VASCharacterRecipe:
                 "姿态": ("IMAGE", {}),
                 "深度": ("IMAGE", {}),
                 "底色": ("STRING", {"default": "#101014"}),
+                "画风预设": (STYLE_PRESETS, {"default": STYLE_PRESETS[0]}),
+                "补充提示词": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "placeholder": "可选补充，例如：银色双眸、教室窗边逆光、微风吹拂发丝",
+                    },
+                ),
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "INT", "INT")
-    RETURN_NAMES = ("参考板", "宽", "高")
+    RETURN_TYPES = ("IMAGE", "INT", "INT", "STRING", "STRING")
+    RETURN_NAMES = ("参考板", "宽", "高", "中文提示词", "英文提示词")
     FUNCTION = "compose"
     CATEGORY = "虚拟资产"
 
@@ -379,6 +421,8 @@ class VASCharacterRecipe:
         姿态=None,
         深度=None,
         底色: str = "#101014",
+        画风预设: str = STYLE_PRESETS[0],
+        补充提示词: str = "",
     ):
         """只接身份也能出图：缺的格子留底色，不会因为少连一根线就跑不了。"""
         rgb = _hex_to_rgb(底色)
@@ -396,7 +440,23 @@ class VASCharacterRecipe:
             ).permute(0, 2, 3, 1)[0]
             row, column = divmod(index, 2)
             canvas[0, row * side : (row + 1) * side, column * side : (column + 1) * side] = resized
-        return (canvas, side * 2, side * 2)
+        zh, en = _recipe_prompt(画风预设, 补充提示词)
+        return (canvas, side * 2, side * 2, zh, en)
+
+
+def _recipe_prompt(style: str, extra: str = "") -> tuple[str, str]:
+    """画风预设 + 补充提示词，中文一份、英文一份。
+
+    英文不是逐字翻译：「电影写实」直译成 "cinematic realism" 对 CLIP 不如
+    "cinematic photography, natural skin texture" 有效，所以按摄影术语写。
+    """
+    extra = (extra or "").strip()
+    zh = style + (f"，{extra}" if extra else "")
+    # 英文侧只接 ASCII 补充：中文塞进 CLIP 的英文分支等于噪声。
+    en = STYLE_PRESET_EN.get(style, "")
+    if extra and extra.isascii():
+        en = f"{en}, {extra}" if en else extra
+    return zh, en.strip(", ")
 
 
 def _hex_to_rgb(value: str) -> tuple[float, float, float]:

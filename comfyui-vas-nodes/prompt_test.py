@@ -40,6 +40,7 @@ package = types.ModuleType("vas_nodes")
 package.__path__ = [str(HERE)]
 sys.modules["vas_nodes"] = package
 nodes = importlib.import_module("vas_nodes.nodes")
+_recipe_prompt = nodes._recipe_prompt
 
 CASES = [
     ("pose", {"角度": "斜侧", "姿势名称": "S形站姿", "体系": "全身单人・标准系", "分类": "立ち"},
@@ -71,3 +72,32 @@ if failed:
     print(f"✗ {failed} 项不符合预期")
     sys.exit(1)
 print("✓ 提示词构建全部符合预期")
+
+
+# 参考板节点的画风预设：中英各一份，英文只接 ASCII 补充词
+for style, expect_en in (
+    ("电影写实", "cinematic photography"),
+    ("动画赛璐璐", "anime cel shading"),
+    ("漫画墨线", "manga ink lineart"),
+):
+    zh, en = _recipe_prompt(style, "")
+    assert zh == style, f"中文应为画风本身，实际 {zh!r}"
+    assert expect_en in en, f"{style} 的英文应包含 {expect_en!r}，实际 {en!r}"
+
+zh, en = _recipe_prompt("暗调氛围", "银色双眸")
+assert zh == "暗调氛围，银色双眸", zh
+assert "银色双眸" not in en, f"英文侧不该混入中文：{en!r}"
+
+zh, en = _recipe_prompt("暗调氛围", "silver eyes")
+assert "silver eyes" in en, en
+
+print("  ✓ 参考板画风预设中英分列，中文补充不污染英文")
+
+# 画风名单必须和客户端 src/shared/reference-styles.ts 一致，否则工作流里选不到
+CLIENT_STYLES = {
+    "电影写实", "时装大片", "棚拍肖像", "自然日光", "暗调氛围", "东方水墨",
+    "动画赛璐璐", "漫画墨线", "古典油画", "水彩插画", "赛博霓虹", "胶片颗粒",
+}
+assert set(nodes.STYLE_PRESETS) == CLIENT_STYLES, set(nodes.STYLE_PRESETS) ^ CLIENT_STYLES
+assert set(nodes.STYLE_PRESET_EN) == CLIENT_STYLES
+print("  ✓ 12 种画风与客户端名单一致，中英映射无缺漏")
