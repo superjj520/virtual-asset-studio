@@ -199,18 +199,21 @@ export function ReferenceSheetComposer({
     };
   }, [sourceMode, cloudCatalog]);
 
+  /** 一旦开始搜索就跨全部分类：停在「人像」分类里搜 denim 什么也搜不到，是常见误解。 */
+  const cloudSearching = cloudQuery.trim().length > 0;
+
   const cloudMatched = useMemo(() => {
     if (!cloudCatalog) return [] as CloudReferenceItem[];
     const query = cloudQuery.trim().toLowerCase();
     return cloudCatalog.items
-      .filter((item) => cloudKind === "all" || item.kind === cloudKind)
+      .filter((item) => cloudSearching || cloudKind === "all" || item.kind === cloudKind)
       .filter((item) => {
         if (!query) return true;
         return `${item.title} ${item.category} ${item.tags.join(" ")}`
           .toLowerCase()
           .includes(query);
       });
-  }, [cloudCatalog, cloudKind, cloudQuery]);
+  }, [cloudCatalog, cloudKind, cloudQuery, cloudSearching]);
 
   // 换分类或改搜索词就回到第一页，避免沿用上一个筛选的展开深度。
   useEffect(() => {
@@ -487,7 +490,7 @@ export function ReferenceSheetComposer({
                         : "云端图库按需引用，不整库下载"}
                   </small>
                 </div>
-                <span>{sourceMode === "local" ? `${activeCandidates.length} 张可用` : `${cloudCandidates.length} 张已显示 / 匹配 ${cloudMatched.length}${cloudCatalog ? `（库内 ${cloudCatalog.items.length}）` : ""}`}</span>
+                <span>{sourceMode === "local" ? `${activeCandidates.length} 张可用` : `${cloudCandidates.length} 张已显示 / 匹配 ${cloudMatched.length}${cloudSearching ? "（搜索跨全部分类）" : ""}${cloudCatalog ? `（库内 ${cloudCatalog.items.length}）` : ""}`}</span>
               </header>
               <div className="reference-sheet-source-tabs" role="tablist" aria-label="素材来源">
                 <button
@@ -540,8 +543,11 @@ export function ReferenceSheetComposer({
                     <div className="reference-sheet-kind-chips">
                       <button
                         type="button"
-                        className={cloudKind === "all" ? "active" : ""}
-                        onClick={() => setCloudKind("all")}
+                        className={!cloudSearching && cloudKind === "all" ? "active" : ""}
+                        onClick={() => {
+                          setCloudKind("all");
+                          setCloudQuery("");
+                        }}
                       >
                         全部 {cloudCatalog?.items.length ?? ""}
                       </button>
@@ -549,8 +555,11 @@ export function ReferenceSheetComposer({
                         <button
                           key={kind}
                           type="button"
-                          className={cloudKind === kind ? "active" : ""}
-                          onClick={() => setCloudKind(kind)}
+                          className={!cloudSearching && cloudKind === kind ? "active" : ""}
+                          onClick={() => {
+                            setCloudKind(kind);
+                            setCloudQuery("");
+                          }}
                         >
                           {CLOUD_REFERENCE_KIND_LABELS[kind]} {cloudCatalog?.counts[kind] ?? ""}
                         </button>

@@ -8,8 +8,15 @@
 - 启动：`cd ~/ComfyUI-install/ComfyUI-master && nohup .venv/bin/python main.py --listen 127.0.0.1 --port 8188 --use-split-cross-attention > ~/ComfyUI-install/comfyui.log 2>&1 &`
 - 模型目录：`~/ComfyUI-install/ComfyUI-master/models/checkpoints/`，放一个 `.safetensors` 就多一个可选出图模型。
 - 清单怎么来：应用读取 ComfyUI 的 `/object_info/CheckpointLoaderSimple`，把每个 checkpoint 展开成一条模型；**装一个模型 = 多一条通道**，不需要改代码。
-- 已装：`sd_xl_turbo_1.0_fp16.safetensors`（768×768 / 4 步，首次 184 秒含 6.5 GB 模型加载，之后约 1 秒一张）。
-- 采样器注意：MPS 上 `dpmpp_sde + karras` 会卡在 0%，内置工作流用 `euler + normal`。
+- 已装 4 个 checkpoint，对应清单里 4 条可选出图通道：
+  | checkpoint | 类型 | 实测 |
+  | --- | --- | --- |
+  | `sd_xl_turbo_1.0_fp16` | SDXL-Turbo | 768×768 / 4 步，首次 184 秒（含 6.5 GB 载入），之后约 1 秒一张 |
+  | `sd_xl_base_1.0` | SDXL base | 768×768 / 12 步 / cfg 7 / dpmpp_2m+karras，63 秒 |
+  | `animagine-xl-3.1` | SDXL 动漫 | 与 base 同参数，适合角色立绘 |
+  | `Counterfeit-V2.5_fp16` | SD1.5 动漫 | 512×512 / 4 步，也是动画引擎的默认底模 |
+- 采样器注意：MPS 上 `dpmpp_sde + karras` 会卡在 0%；Turbo / Lightning 类用 `euler + normal`，SDXL base 用 `dpmpp_2m + karras`。
+- 内存红线：16 GB 统一内存下，768×512×24 帧或 1024+ 分辨率会触发 `Not enough memory, use lower resolution (max approx. 1088x1088)`，出图请留在 768×768。
 
 ## 二、本机 Magpie 网关（云端免费兜底）
 
@@ -20,11 +27,12 @@
 ## 三、视频通道
 
 - 云端：OpenAI Sora（`sora-2` / `sora-2-pro`），需要付费密钥。
-- 本机：ComfyUI + Wan2.1 文生视频（`wan2.1_t2v_1.3B_fp16` + `umt5_xxl_fp8` + `wan_2.1_vae`），已接线到「视频」路由，模型文件齐全、代码与单元测试齐备。
-- **16 GB 统一内存的实测结论**：Wan 1.3B 需要同时驻留 T5 文本编码器 6.4 GB 与 UNet 2.7 GB，跑到采样阶段时系统 swap 用满 12.5 GB、进度停在 0/20，不具备可用性。要在本机真出片，必须换更省内存的路线：
-  1. 更低分辨率 + 更短帧数（256×256、17 帧、8 步）仍会触发大量 swap，只适合调试工作流，不适合出片；
-  2. 装 AnimateDiff + SD1.5（内存约 3–4 GB）做 16 帧短视频，是目前 16 GB 机器最现实的本地方案；
-  3. 或者给一家带视频的云端密钥（智谱 CogVideoX-Flash 有免费额度）。
+- 本机 ComfyUI 有两个引擎，用设置项 `comfyui_video_mode` 切换（`animate` 默认 / `wan`）：
+  - **animate（默认，实测可用）**：SD1.5 checkpoint + `AnimateDiff-Lightning 4step` motion module，512×512、16 帧、4 步、8 fps → **约 66 秒出一条 2 秒 mp4**；竖版 512×768。底模由 `comfyui_video_ckpt` 指定（默认 `Counterfeit-V2.5_fp16`），motion 由 `comfyui_video_motion` 指定。
+  - **wan（本机跑不动）**：Wan2.1 1.3B + `umt5_xxl_fp8` + `wan_2.1_vae`，需要 T5 6.4 GB + UNet 2.7 GB 常驻，16 GB 机器 swap 用满、停在 0/20。
+- 画幅与帧数硬约束：AnimateDiff/SD1.5 只认 512 训练分辨率，给 640×384 这类非原生比例会直接出抽象色带；帧数 8 fps × 秒数，上限 16 帧（再多就 OOM）。
+- 参考图暂不支持（图生视频），provider 会直接返回「本机文生视频暂不支持参考图」。
+- 质量提示：Counterfeit 是动漫底模，写实题材会偏软；要更好的画面换写实系 SD1.5 checkpoint（改 `comfyui_video_ckpt` 即可，无需改代码）。
 
 ## 四、模型清单与画幅
 
@@ -37,4 +45,6 @@
 - 单元测试：`npx vitest run electron/services/providers/comfyui-video-provider.test.ts electron/services/providers/magpie-provider.test.ts src/shared/generation-models.test.ts`
 - 类型检查：`npx tsc -b` + `npx tsc -p tsconfig.electron.json --noEmit`
 - 打包前构建：`npm run build`
+- **本地端口测试坑**：环境里 `http_proxy/https_proxy/ALL_PROXY` 指向 `127.0.0.1:10903`，vitest 的 jsdom 环境会让 `fetch` 走代理，导致打 `127.0.0.1:8188` 直接挂到 30 秒超时。跑涉及本机服务的测试要剥掉代理：`env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY NODE_USE_ENV_PROXY=0 npx vitest run <file>`
+- 真实出片证据：经 `ComfyUiVideoProvider`（animate 引擎）跑通一次完整链路，420370 bytes / 96s，输出 `/tmp/anim-e2e.mp4`（640×384 实验档，改回 512 后冒烟 `/tmp/anim-probe.mp4`）。
 - 真机出图证据：ComfyUI 直连与经适配器两条路径都跑过，样例图见 `~/.config/free-token-magpie/` 下的冒烟输出。

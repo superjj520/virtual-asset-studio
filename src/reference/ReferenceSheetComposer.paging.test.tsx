@@ -11,6 +11,18 @@ afterEach(() => cleanup());
 
 const BASE = "https://ai-pose-gallery.anhao.app";
 
+const portraits: CloudReferenceItem[] = Array.from({ length: 3 }, (_, index) => ({
+  id: `portrait-${index}`,
+  kind: "portrait" as const,
+  title: `人像 ${index + 1}`,
+  category: "正脸参考",
+  tags: ["人像"],
+  thumbUrl: `${BASE}/thumbs/portrait-${index}.webp`,
+  imageUrl: `${BASE}/img/portrait-${index}.webp`,
+  sourceName: "POSE & CHARACTER Atlas",
+  sourceUrl: `${BASE}/`,
+}));
+
 const items: CloudReferenceItem[] = Array.from({ length: 60 }, (_, index) => {
   const serial = String(index + 1).padStart(3, "0");
   return {
@@ -31,8 +43,8 @@ const catalog: CloudReferenceCatalog = {
   sourceUrl: `${BASE}/`,
   attribution: "测试用云端参考库",
   fetchedAt: "2026-11-02T00:00:00.000Z",
-  counts: { portrait: 0, costume: 0, hair: 0, pose: 60, depth: 0, "anime-costume": 0 },
-  items,
+  counts: { portrait: 3, costume: 0, hair: 0, pose: 60, depth: 0, "anime-costume": 0 },
+  items: [...portraits, ...items],
 };
 
 beforeEach(() => {
@@ -61,16 +73,16 @@ const openCloudTab = async () => {
 
 it("云端图库先铺 48 张，并说清还剩多少", async () => {
   await openCloudTab();
-  expect(screen.getByText(/48 张已显示 \/ 匹配 60/)).toBeInTheDocument();
+  expect(screen.getByText(/48 张已显示 \/ 匹配 63/)).toBeInTheDocument();
   expect(screen.queryByText("站姿 060")).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /再看 12 张/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /再看 15 张/ })).toBeInTheDocument();
 });
 
 it("点「再看」把剩下的铺出来，按钮随之消失", async () => {
   await openCloudTab();
-  fireEvent.click(screen.getByRole("button", { name: /再看 12 张/ }));
+  fireEvent.click(screen.getByRole("button", { name: /再看 15 张/ }));
   await waitFor(() => {
-    expect(screen.getByText(/60 张已显示 \/ 匹配 60/)).toBeInTheDocument();
+    expect(screen.getByText(/63 张已显示 \/ 匹配 63/)).toBeInTheDocument();
   });
   expect(screen.getByText("站姿 060")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /再看/ })).not.toBeInTheDocument();
@@ -78,9 +90,9 @@ it("点「再看」把剩下的铺出来，按钮随之消失", async () => {
 
 it("改搜索词后回到第一页，不沿用上一次的展开深度", async () => {
   await openCloudTab();
-  fireEvent.click(screen.getByRole("button", { name: /再看 12 张/ }));
+  fireEvent.click(screen.getByRole("button", { name: /再看 15 张/ }));
   await waitFor(() => {
-    expect(screen.getByText(/60 张已显示/)).toBeInTheDocument();
+    expect(screen.getByText(/63 张已显示/)).toBeInTheDocument();
   });
   fireEvent.change(screen.getByPlaceholderText("搜名称、分类或标签"), {
     target: { value: "站姿 05" },
@@ -88,4 +100,19 @@ it("改搜索词后回到第一页，不沿用上一次的展开深度", async (
   await waitFor(() => {
     expect(screen.getByText(/张已显示 \/ 匹配 10/)).toBeInTheDocument();
   });
+});
+
+it("搜索时跨全部分类，不会因为停在人像分类就搜不到姿势", async () => {
+  await openCloudTab();
+  fireEvent.click(screen.getByRole("button", { name: "人像 3" }));
+  await waitFor(() => {
+    expect(screen.getByText(/3 张已显示 \/ 匹配 3/)).toBeInTheDocument();
+  });
+  fireEvent.change(screen.getByPlaceholderText("搜名称、分类或标签"), {
+    target: { value: "站姿 060" },
+  });
+  await waitFor(() => {
+    expect(screen.getByText("站姿 060")).toBeInTheDocument();
+  });
+  expect(screen.getByText(/搜索跨全部分类/)).toBeInTheDocument();
 });
