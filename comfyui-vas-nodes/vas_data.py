@@ -123,6 +123,13 @@ def image_url(site: str, row: dict[str, Any]) -> str:
 
 
 def label(site: str, row: dict[str, Any]) -> str:
+    if site == "pose":
+        # 带上编号和角度：只写名字的话下拉里五个角度一模一样，
+        # 而且深度匹配要靠编号才找得到对应条目。
+        code = str(row.get("姿势编号", "")).strip()
+        name = row.get("姿势名称", "")
+        angle = row.get("角度", "")
+        return f"{code} · {name} · {angle}".strip(" ·")
     if site == "depth":
         return f"{row.get('ポーズ名', '')} · {row.get('アングル', '')}".strip(" ·")
     if site == "anime":

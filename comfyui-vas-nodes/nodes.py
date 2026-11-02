@@ -108,20 +108,22 @@ def _load_image(
     return torch.zeros((1, 64, 64, 3), dtype=torch.float32), f"未找到：{choice}", ""
 
 
-def _matching_depth_choice(pose_choice: str) -> str:
-    """在深度库里找一条和所选姿势对应的条目：优先按姿势编号，其次按名字。"""
-    import re
+def _depth_choice_for_pose(pose_choice: str) -> str:
+    """把姿势条目换成同一张图的深度版条目。
 
-    match = re.search(r"[A-Z]+\d+", pose_choice)
-    code = match.group(0) if match else ""
-    rows = load_rows("depth")
-    if code:
-        for row in rows:
-            if code.lower() in str(row.get("id", "")).lower():
-                return label("depth", row)
-    head = pose_choice.split("・")[0].split(" ")[0]
-    for row in rows:
-        if head and head in str(row.get("ポーズ名", "")):
+    姿势库和深度库是同一批图的两套名字（中文名 / 日文名），但 `id` 完全一致，
+    例如两边都有 `full_sexy_P001_front`。所以按 `id` 对，不按编号也不按名字——
+    编号 P001 底下有 4 个不同姿势、每个 5 个角度，按编号会挑错人。
+    """
+    target = ""
+    for row in load_rows("pose"):
+        if label("pose", row) == pose_choice:
+            target = str(row.get("id", ""))
+            break
+    if not target:
+        return ""
+    for row in load_rows("depth"):
+        if str(row.get("id", "")) == target:
             return label("depth", row)
     return ""
 
@@ -202,10 +204,9 @@ class VASPoseGallery(_GalleryBase):
                     os.remove(os.path.join(CACHE_DIR, name))
         choice = 选择
         if 用深度图:
-            # 深度库的条目名和姿势库不同，按姿势编号就近匹配一条。
-            fallback = _matching_depth_choice(选择)
-            if fallback:
-                choice = fallback
+            matched = _depth_choice_for_pose(选择)
+            if matched:
+                choice = matched
         return _load_image(
             site,
             choice,
