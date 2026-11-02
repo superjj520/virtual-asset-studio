@@ -148,6 +148,8 @@ contextBridge.exposeInMainWorld("studio", {
       ipcRenderer.invoke("settings:save-local-image", input),
     saveCustomImage: (input) =>
       ipcRenderer.invoke("settings:save-custom-image", input),
+    saveComfyui: (input) =>
+      ipcRenderer.invoke("settings:save-comfyui", input),
     saveRoute: (capability, providerId) =>
       ipcRenderer.invoke("settings:save-route", capability, providerId),
   },

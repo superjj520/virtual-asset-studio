@@ -342,6 +342,11 @@ interface Window {
         model: string;
         apiKey: string;
       }) => Promise<import("./shared/types").ProviderStatus>;
+      saveComfyui: (input: {
+        baseUrl: string;
+        checkpoint: string;
+        workflow: string;
+      }) => Promise<import("./shared/types").ProviderStatus>;
       saveRoute: (
         capability: import("./shared/types").ProviderCapability,
         providerId: import("./shared/types").ProviderId,

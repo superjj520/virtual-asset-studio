@@ -13,7 +13,7 @@ export type GenerationTaskKind =
 
 export type GenerationModel = {
   id: string;
-  providerId: Extract<ProviderId, "openai" | "flux" | "fal" | "gemini" | "local" | "custom">;
+  providerId: Extract<ProviderId, "openai" | "flux" | "fal" | "gemini" | "local" | "custom" | "comfyui">;
   model: string;
   label: string;
   description: string;
@@ -163,6 +163,20 @@ const MODEL_LIST: GenerationModel[] = [
     qualityMode: "tiered",
     supportedAspectRatios: ALL_RATIOS,
   },
+  {
+    id: "comfyui-local",
+    providerId: "comfyui",
+    model: "comfyui",
+    label: "本机 ComfyUI",
+    description: "直接驱动 ComfyUI 工作流，可接 LoRA、ControlNet 和自定义节点；不需要云端密钥。",
+    tasks: ["portrait", "scene", "series", "edit"],
+    supportsReference: false,
+    maxReferences: 0,
+    estimatedCostUsd: 0,
+    costNote: "本机显卡，不计费",
+    qualityMode: "tiered",
+    supportedAspectRatios: ALL_RATIOS,
+  },
 ];
 
 export const GENERATION_MODELS: readonly GenerationModel[] = MODEL_LIST;
@@ -201,7 +215,9 @@ export const generationModelAvailability = (
       unavailableReason:
         model.providerId === "local"
           ? "尚未配置本地图像服务地址。"
-          : `尚未配置 ${model.providerId} 密钥。`,
+          : model.providerId === "comfyui"
+            ? "尚未配置 ComfyUI 地址。"
+            : `尚未配置 ${model.providerId} 密钥。`,
     };
   }
   if (!provider.capabilities.includes(model.supportsReference ? "image_edit" : "image")) {

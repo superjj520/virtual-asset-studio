@@ -46,6 +46,7 @@ import { FluxProvider } from "./services/providers/flux-provider";
 import { FalProvider, FalRemoteTaskError, type FalRemoteTask } from "./services/providers/fal-provider";
 import { GeminiProvider } from "./services/providers/gemini-provider";
 import { DeepSeekProvider } from "./services/providers/deepseek-provider";
+import { ComfyUiImageProvider } from "./services/providers/comfyui-image-provider";
 import { LocalImageProvider } from "./services/providers/local-image-provider";
 import { CustomImageProvider } from "./services/providers/custom-image-provider";
 import { GenerationBatchRepository } from "./services/batches/repository";
@@ -167,6 +168,12 @@ export const createStudioRuntime = (
     model: () => settings.get("custom_image_model"),
     apiKey: () => apiKeyFor("custom"),
   });
+  // ComfyUI 走本机 HTTP 接口，不涉及密钥；地址为空即视为未配置。
+  const comfyui = new ComfyUiImageProvider({
+    baseUrl: () => settings.get("comfyui_base_url"),
+    checkpoint: () => settings.get("comfyui_checkpoint"),
+    workflow: () => settings.get("comfyui_workflow"),
+  });
   const imageProviders: Partial<
     Record<
       ProviderId,
@@ -180,7 +187,7 @@ export const createStudioRuntime = (
         }) => Promise<Buffer>;
       }
     >
-  > = { openai, flux, fal, gemini, local, custom };
+  > = { openai, flux, fal, gemini, local, custom, comfyui };
   const imageEditProviders: Partial<Record<ProviderId, {
     refineImage: (input: {
       prompt: string;
@@ -271,6 +278,11 @@ export const createStudioRuntime = (
         capabilities: ["image"],
       },
       {
+        id: "comfyui",
+        configured: comfyui.isConfigured(),
+        capabilities: ["image"],
+      },
+      {
         id: "deepseek",
         configured: hasStoredApiKey("deepseek"),
         capabilities: ["text"],
@@ -284,7 +296,7 @@ export const createStudioRuntime = (
       text: ["deepseek", "gemini", "openai"],
       vision: ["openai"],
       // 本地服务排在最后：已经配好云端服务时保持原有路由，一家都没配密钥时才用本机服务出图。
-      image: ["fal", "gemini", "openai", "flux", "local"],
+      image: ["fal", "gemini", "openai", "flux", "local", "comfyui"],
       image_edit: ["fal", "gemini", "openai"],
       video: ["openai"],
     };
@@ -293,7 +305,7 @@ export const createStudioRuntime = (
     );
     return priorities[capability].find((providerId) => compatible(providerId)?.configured)
       // 谁都没配置时不要把本地服务当作默认路由：本机不一定装了模型服务。
-      ?? priorities[capability].find((providerId) => providerId !== "local" && compatible(providerId))
+      ?? priorities[capability].find((providerId) => providerId !== "local" && providerId !== "comfyui" && compatible(providerId))
       ?? undefined;
   };
   const providerStatus = (): ProviderStatus => {
@@ -317,6 +329,11 @@ export const createStudioRuntime = (
       customImage: {
         baseUrl: custom.baseUrl() ?? "",
         model: settings.get("custom_image_model") ?? "",
+      },
+      comfyui: {
+        baseUrl: comfyui.baseUrl() ?? "",
+        checkpoint: comfyui.checkpoint() ?? "",
+        hasWorkflow: Boolean(settings.get("comfyui_workflow")?.trim()),
       },
     };
   };
@@ -1269,6 +1286,43 @@ export const createStudioRuntime = (
           const model = typeof input.model === "string" ? input.model.trim() : "";
           settings.set("local_image_base_url", baseUrl);
           settings.set("local_image_model", model);
+          return providerStatus();
+        },
+      );
+      ipcMain.handle(
+        "settings:save-comfyui",
+        (_event, input: { baseUrl?: string; checkpoint?: string; workflow?: string }) => {
+          if (!input || typeof input !== "object")
+            throw new Error("ComfyUI 配置格式不正确。");
+          const baseUrl = (typeof input.baseUrl === "string" ? input.baseUrl : "")
+            .trim()
+            .replace(/\/+$/, "");
+          if (baseUrl) {
+            let parsed: URL;
+            try {
+              parsed = new URL(baseUrl);
+            } catch {
+              throw new Error("ComfyUI 地址需要是完整地址，例如 http://127.0.0.1:8188。");
+            }
+            if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+              throw new Error("ComfyUI 只支持 http 或 https 地址。");
+          }
+          const workflow = (typeof input.workflow === "string" ? input.workflow : "").trim();
+          if (workflow) {
+            let parsedWorkflow: unknown;
+            try {
+              parsedWorkflow = JSON.parse(workflow);
+            } catch {
+              throw new Error("自定义工作流需要是 ComfyUI 导出的 API 格式 JSON。");
+            }
+            if (!parsedWorkflow || typeof parsedWorkflow !== "object" || Array.isArray(parsedWorkflow))
+              throw new Error("自定义工作流需要是 ComfyUI 导出的 API 格式 JSON。");
+          }
+          const checkpoint = (typeof input.checkpoint === "string" ? input.checkpoint : "").trim();
+          // 地址为空即关闭，不保留旧的 checkpoint 与工作流，避免下次误连。
+          settings.set("comfyui_base_url", baseUrl);
+          settings.set("comfyui_checkpoint", baseUrl ? checkpoint : "");
+          settings.set("comfyui_workflow", baseUrl ? workflow : "");
           return providerStatus();
         },
       );

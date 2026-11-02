@@ -1022,7 +1022,9 @@ export type ProviderId =
   /** 本机 OpenAI 兼容图像服务，不依赖云端密钥。 */
   | "local"
   /** 任意云端 OpenAI 兼容图像协议，例如千问、豆包。 */
-  | "custom";
+  | "custom"
+  /** 本机 ComfyUI：走官方 /prompt → /history → /view 接口，工作流可自定义。 */
+  | "comfyui";
 export type ProviderCapability =
   "text" | "vision" | "image" | "image_edit" | "video";
 
@@ -1039,6 +1041,8 @@ export type ProviderStatus = {
   /** 本地图像服务配置：不经过密钥，地址为空即未启用。 */
   localImage?: { baseUrl: string; model: string };
   customImage?: { baseUrl: string; model: string };
+  /** 本机 ComfyUI 配置：地址为空即未启用，不上传任何素材。 */
+  comfyui?: { baseUrl: string; checkpoint: string; hasWorkflow: boolean };
 };
 
 export type ProviderVerificationResult = {

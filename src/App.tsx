@@ -343,7 +343,7 @@ const EMPTY_CARD: CreativeCard = {
 };
 
 const providerLabel = (providerId?: ProviderId) =>
-  providerId === "flux" ? "FLUX" : providerId === "fal" ? "fal" : providerId === "deepseek" ? "DeepSeek" : providerId === "gemini" ? "Gemini" : providerId === "local" ? "本地图像服务" : providerId === "openai" ? "OpenAI" : "当前绘图模型";
+  providerId === "flux" ? "FLUX" : providerId === "fal" ? "fal" : providerId === "deepseek" ? "DeepSeek" : providerId === "gemini" ? "Gemini" : providerId === "local" ? "本地图像服务" : providerId === "comfyui" ? "ComfyUI" : providerId === "openai" ? "OpenAI" : "当前绘图模型";
 
 const taskStatusLabel = (status: CreativeTask["status"]) =>
   status === "review" ? "待审片" : status === "completed" ? "已完成" : status === "producing" ? "生成中" : status === "blocked" ? "生成阻塞" : "准备中";
@@ -619,10 +619,15 @@ export default function App() {
     gemini: "",
     local: "",
     custom: "",
+    comfyui: "",
   });
   // 本地图像服务不需要密钥，但要记住地址与模型名，重启后仍然可用。
   const [localImageBaseUrl, setLocalImageBaseUrl] = useState("");
   const [localImageModel, setLocalImageModel] = useState("");
+  // ComfyUI 同样不需要密钥；工作流留空时用内置的 Checkpoint → KSampler 模板。
+  const [comfyuiBaseUrl, setComfyuiBaseUrl] = useState("");
+  const [comfyuiCheckpoint, setComfyuiCheckpoint] = useState("");
+  const [comfyuiWorkflow, setComfyuiWorkflow] = useState("");
   const [customImageBaseUrl, setCustomImageBaseUrl] = useState("");
   const [customImageModel, setCustomImageModel] = useState("");
   const [budget, setBudget] = useState<BudgetStatus>({ plannedSpendUsd: 0 });
@@ -741,6 +746,8 @@ export default function App() {
         setProvider(status);
         setLocalImageBaseUrl(status.localImage?.baseUrl ?? "");
         setLocalImageModel(status.localImage?.model ?? "");
+        setComfyuiBaseUrl(status.comfyui?.baseUrl ?? "");
+        setComfyuiCheckpoint(status.comfyui?.checkpoint ?? "");
         setCustomImageBaseUrl(status.customImage?.baseUrl ?? "");
         setCustomImageModel(status.customImage?.model ?? "");
       })
@@ -1745,6 +1752,25 @@ export default function App() {
       );
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "保存本地图像服务失败。");
+    }
+  };
+  const saveComfyui = async () => {
+    try {
+      const status = await window.studio.settings.saveComfyui({
+        baseUrl: comfyuiBaseUrl,
+        checkpoint: comfyuiCheckpoint,
+        workflow: comfyuiWorkflow,
+      });
+      setProvider(status);
+      setComfyuiBaseUrl(status.comfyui?.baseUrl ?? "");
+      setComfyuiCheckpoint(status.comfyui?.checkpoint ?? "");
+      setNotice(
+        status.comfyui?.baseUrl
+          ? "ComfyUI 已保存；创作页可直接选择“本机 ComfyUI”，走你自己装的工作流。"
+          : "地址为空，ComfyUI 已关闭；不会向本机发起任何请求。",
+      );
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "保存 ComfyUI 配置失败。");
     }
   };
   const verifyProviderConnection = async (providerId: ProviderId) => {
@@ -6895,6 +6921,48 @@ export default function App() {
                 保存
               </button>
             </div>
+          </section>
+          <section className="form-panel">
+            <p className="eyebrow">本机 ComfyUI / 直接驱动工作流</p>
+            <p className="result-note">
+              填写 ComfyUI 地址（默认 http://127.0.0.1:8188）与 checkpoint，就能用本机显卡出图。工作流留空时走内置模板；粘贴 ComfyUI 导出的
+              API 格式 JSON 可接 LoRA、ControlNet 和自定义节点，模板里用 {`{{prompt}}`}、{`{{negative}}`}、{`{{seed}}`}、{`{{width}}`}、{`{{height}}`} 取当前创作参数。
+            </p>
+            <div className="provider-row">
+              <div>
+                <strong>ComfyUI</strong>
+                <p className="result-note">
+                  {provider?.comfyui?.baseUrl
+                    ? `已配置：${provider.comfyui.baseUrl} · checkpoint ${provider.comfyui.checkpoint || "来自自定义工作流"}${provider.comfyui.hasWorkflow ? " · 使用自定义工作流" : " · 使用内置工作流"}`
+                    : "未配置：填写地址后即可用本机工作流出图。"}
+                </p>
+              </div>
+              <input
+                value={comfyuiBaseUrl}
+                onChange={(event) => setComfyuiBaseUrl(event.target.value)}
+                placeholder="服务地址，例如 http://127.0.0.1:8188"
+                aria-label="ComfyUI 服务地址"
+              />
+              <input
+                value={comfyuiCheckpoint}
+                onChange={(event) => setComfyuiCheckpoint(event.target.value)}
+                placeholder="checkpoint 文件名，例如 sd_xl_base_1.0.safetensors"
+                aria-label="ComfyUI checkpoint 文件名"
+              />
+              <button aria-label="保存 ComfyUI 配置" onClick={() => void saveComfyui()}>
+                保存
+              </button>
+            </div>
+            <label>
+              API 格式工作流 JSON（可选）
+              <textarea
+                value={comfyuiWorkflow}
+                onChange={(event) => setComfyuiWorkflow(event.target.value)}
+                placeholder='{"3":{"class_type":"KSampler","inputs":{"seed":"{{seed}}"}}}'
+                aria-label="ComfyUI 工作流 JSON"
+                rows={4}
+              />
+            </label>
           </section>
           <GenerationModelCatalog providers={provider?.providers} selectedModelId={generationModelId} onSelect={selectGenerationModel} />
           <section className="form-panel">
