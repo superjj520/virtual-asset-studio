@@ -83,7 +83,12 @@ type CostumeRow = {
 
 type CharDbRow = {
   id: string;
-  set: "hair" | "outfit" | "pose";
+  /**
+   * 上游实际有四种 set。`outfit2` 与动漫衣装站是同一批 1,320 条，
+   * 不作为独立条目收录（见 charDbOnly 白名单），但它的 catZh 是中文分类，
+   * 拿来当动漫衣装的翻译表。
+   */
+  set: "hair" | "outfit" | "pose" | "outfit2";
   cat?: string;
   catZh?: string;
   zh?: string;
