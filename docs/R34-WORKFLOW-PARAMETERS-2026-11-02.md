@@ -76,3 +76,41 @@ resetWorkflowOverrides()
 - 参数面板只做「识别 + 覆盖值」，**不校验**覆盖值在 ComfyUI 侧是否合法（比如枚举传了不在列表里的值）。真出错由 ComfyUI 返回的报错原样显示。
 - 没有在真实 ComfyUI 上跑过——本机没有 ComfyUI 服务也没有 checkpoint。参数面板的截图证据来自开发构建，覆盖值能写进工作流 JSON 有单测证明，但「提交给 ComfyUI 后被正确执行」这一步没验证。
 - 与 anhao 的 `referenceCombinations`（声明允许的参考图组合）、`imageRole: "character_sheet"`（标记设定集入口）还没做，本轮只对齐了参数编辑这一段。
+
+## 真机验收（2026-11-03 补）
+
+之前几轮一直拿不到真机证据：临时 CDP 脚本跑完不退出，事件循环被 ws 和 child 句柄挂住，于是「卡死 10 分钟 → pkill → 重试」成了常态，中途还留下过 16 个孤儿 Electron。
+
+现在固化成一条命令：
+
+```bash
+npm run rebuild:native:electron   # npm test 会把 better-sqlite3 重建成 node ABI
+npm run verify:panel
+```
+
+脚本在 `scripts/verify-comfyui-panel.mjs`，三处必要设计：
+
+- **每个 CDP 调用带 30s 超时**，某一个请求挂住不会拖死整个脚本
+- **240s 看门狗**，超时直接 `exit(2)` 并清理，不给「卡住但不报错」留空间
+- **整组杀进程**（`detached: true` + `process.kill(-pid)`），跑完残留 0，实测 `pgrep` 计数归零
+
+12 项断言，全部通过：
+
+```
+✓ 加载的是本地构建的 bundle — ./assets/index-C8ofEUFd.js
+✓ 进入设置页
+✓ 填入工作流 JSON — ComfyUI 工作流 JSON
+✓ 参数面板渲染出来了 — 6 个可调参数
+✓ 声明了中文名的参数显示中文 — CFG 强度推荐
+✓ 枚举参数显示可读标签
+✓ 跨节点声明（batch_size 指向 5）显示为「每批张数」
+✓ 跨节点声明不再被误报为「元数据过期」
+✓ 占位符字段不生成控件 — 无占位符字段
+✓ 「怎么让参数面板显示中文名」的说明在页面上
+✓ 改 CFG 的值能落到控件上 — now=12
+✓ 截图已保存
+```
+
+截图 `artifacts/screenshots/comfyui-parameters.png`：6 个参数（CFG 强度 12 / 采样器 Euler / **每批张数 1** / denoise / scheduler / 9-filename_prefix），没有「元数据可能过期」的警告，`{{seed}} {{steps}} {{ckpt_name}} {{width}} {{height}}` 五个占位符字段被排除在控件之外，计入「另有 5 个连线输入不可直接改」。
+
+第一条断言「加载的是本地构建的 bundle」是补上一次教训：之前脚本连到残留的旧 Electron，加载 `index-8tsYyUC3.js`，而磁盘上是 `index-DiA3aII8.js`，于是把「修复没生效」当成真 bug 排查了半天。

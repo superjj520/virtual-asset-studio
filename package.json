@@ -18,6 +18,7 @@
     "rebuild:native:electron": "npm rebuild better-sqlite3 --runtime=electron --target=38.8.6 --dist-url=https://electronjs.org/headers",
     "rebuild:native:node": "npm rebuild better-sqlite3 --runtime=node --target=22.23.1",
     "smoke:packaged": "node scripts/smoke-packaged.mjs",
+    "verify:panel": "node scripts/verify-comfyui-panel.mjs",
     "magpie:configure": "node scripts/configure-magpie.mjs",
     "magpie:probe": "electron scripts/magpie-probe.cjs",
     "clean:tmp": "node scripts/clean-tmp.mjs"
