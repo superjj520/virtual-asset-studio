@@ -3,125 +3,31 @@
 把云端参考库（姿势 / 深度 / 服装 / 人像 / 动漫衣装）搬进 ComfyUI 的原生弹窗里，
 选一条就输出可直接进 ControlNet / IPAdapter 的 IMAGE。
 
-数据源与主应用一致，均为公开的静态 JSON；首次使用会下载并缓存到本地。
+数据层在 vas_data.py（只用标准库），这个文件只管 torch 与节点契约。
+安装：把整个 comfyui-vas-nodes 目录复制到 ComfyUI/custom_nodes/ 下，重启 ComfyUI。
 """
 
 from __future__ import annotations
 
-import json
 import os
-import re
-import urllib.request
+from io import BytesIO
 from typing import Any
 
 import numpy as np
 import torch
 
-CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "vas-nodes")
-UA = {"User-Agent": "virtual-asset-studio-comfyui/1.0"}
-
-# 站点 → 数据来源。与 electron/services/reference-library.ts 保持同一份口子。
-SITES: dict[str, dict[str, str]] = {
-    "pose": {"base": "https://ai-pose-gallery.anhao.app", "path": "/data/pose-zh.json"},
-    "costume": {"base": "https://ai-pose-gallery.anhao.app", "path": "/data/costume-zh.json"},
-    "portrait": {"base": "https://ai-pose-gallery.anhao.app", "path": "/data/portrait-zh.json"},
-    # 深度站与动漫衣装站是 SPA，数据内联在首页里，解析方式见 _inline_array。
-    "depth": {"base": "https://ai-pose-depth-gallery.pages.dev", "path": "/", "inline": "const D="},
-    "anime": {"base": "https://ai-costume-anime-gallery.pages.dev", "path": "/", "inline": "const D="},
-}
-
-
-def _fetch(url: str, cache_name: str) -> bytes:
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    cached = os.path.join(CACHE_DIR, cache_name)
-    if os.path.exists(cached) and os.path.getsize(cached) > 0:
-        with open(cached, "rb") as handle:
-            return handle.read()
-    request = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(request, timeout=60) as response:
-        payload = response.read()
-    with open(cached, "wb") as handle:
-        handle.write(payload)
-    return payload
-
-
-def _inline_array(html: str, marker: str) -> list[dict[str, Any]]:
-    """从 SPA 首页里抠出 const D=[...]；括号配对扫描，字符串内的括号不误判。"""
-    start = html.find(marker)
-    if start < 0:
-        return []
-    open_at = html.find("[", start)
-    if open_at < 0:
-        return []
-    depth = 0
-    in_string = False
-    escaped = False
-    for index in range(open_at, len(html)):
-        char = html[index]
-        if in_string:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == '"':
-                in_string = False
-            continue
-        if char == '"':
-            in_string = True
-        elif char == "[":
-            depth += 1
-        elif char == "]":
-            depth -= 1
-            if depth == 0:
-                try:
-                    return json.loads(html[open_at : index + 1])
-                except json.JSONDecodeError:
-                    return []
-    return []
-
-
-def load_rows(site: str) -> list[dict[str, Any]]:
-    config = SITES[site]
-    raw = _fetch(config["base"] + config["path"], f"{site}.cache")
-    text = raw.decode("utf-8", errors="replace")
-    if "inline" in config:
-        return _inline_array(text, config["inline"])
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError:
-        return []
-    return parsed if isinstance(parsed, list) else []
-
-
-def _image_url(site: str, row: dict[str, Any]) -> str:
-    base = SITES[site]["base"]
-    if site == "depth":
-        return f"{base}/{row.get('サムネ') or row.get('原寸') or ''}"
-    if site == "anime":
-        return f"{base}/{row.get('画像') or row.get('サムネ') or ''}"
-    return str(row.get("原图") or row.get("缩略图") or "")
-
-
-def _label(site: str, row: dict[str, Any]) -> str:
-    if site == "depth":
-        return f"{row.get('ポーズ名', '')} · {row.get('アングル', '')}"
-    if site == "anime":
-        return f"{row.get('カテゴリ', '')} · {row.get('id', '')}"
-    for key in ("姿势名称", "服装名称", "标题", "发型名称", "名称"):
-        if row.get(key):
-            return str(row[key])
-    return str(row.get("id", ""))
-
-
-def _choices(site: str) -> list[str]:
-    rows = load_rows(site)
-    labels = [_label(site, row) for row in rows]
-    return labels or ["（数据还没下载成功，检查网络后重启 ComfyUI）"]
+from .vas_data import (
+    CACHE_DIR,
+    cache_name_for,
+    choices,
+    fetch,
+    image_url,
+    label,
+    load_rows,
+)
 
 
 def _to_tensor(payload: bytes) -> torch.Tensor:
-    from io import BytesIO
-
     from PIL import Image
 
     image = Image.open(BytesIO(payload)).convert("RGB")
@@ -129,17 +35,16 @@ def _to_tensor(payload: bytes) -> torch.Tensor:
     return torch.from_numpy(array).unsqueeze(0)
 
 
-def _load_image(site: str, label: str) -> tuple[torch.Tensor, str]:
-    rows = load_rows(site)
-    for row in rows:
-        if _label(site, row) == label:
-            url = _image_url(site, row)
-            if not url:
-                break
-            cache_name = f"{site}-{re.sub(r'[^A-Za-z0-9._-]', '_', str(row.get('id', 'x')))}.img"
-            return _to_tensor(_fetch(url, cache_name)), label
+def _load_image(site: str, choice: str, refresh: bool = False) -> tuple[torch.Tensor, str]:
+    for row in load_rows(site, refresh=refresh):
+        if label(site, row) != choice:
+            continue
+        url = image_url(site, row)
+        if not url:
+            break
+        return _to_tensor(fetch(url, cache_name_for(site, row), refresh=refresh)), choice
     # 找不到就退回一张 64×64 灰图，让流程继续跑而不是整个工作流崩掉。
-    return torch.zeros((1, 64, 64, 3), dtype=torch.float32), f"未找到：{label}"
+    return torch.zeros((1, 64, 64, 3), dtype=torch.float32), f"未找到：{choice}"
 
 
 class _GalleryBase:
@@ -150,7 +55,7 @@ class _GalleryBase:
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "选择": (_choices(cls.SITE), {"default": _choices(cls.SITE)[0]}),
+                "选择": (choices(cls.SITE), {"default": choices(cls.SITE)[0]}),
             },
             "optional": {
                 "刷新数据": ("BOOLEAN", {"default": False}),
@@ -163,11 +68,11 @@ class _GalleryBase:
     CATEGORY = "虚拟资产"
 
     def run(self, 选择: str, 刷新数据: bool = False):  # noqa: N803 - ComfyUI 入参允许中文
-        if 刷新数据:
-            for name in os.listdir(CACHE_DIR) if os.path.isdir(CACHE_DIR) else []:
+        if 刷新数据 and os.path.isdir(CACHE_DIR):
+            for name in os.listdir(CACHE_DIR):
                 if name.startswith(self.SITE):
                     os.remove(os.path.join(CACHE_DIR, name))
-        return _load_image(self.SITE, 选择)
+        return _load_image(self.SITE, 选择, refresh=刷新数据)
 
 
 class VASPoseGallery(_GalleryBase):

@@ -1806,6 +1806,20 @@ export default function App() {
     }
   };
 
+  const exportComfyuiWorkflowFile = async () => {
+    const directory = await window.studio.selectDirectory();
+    if (!directory) return;
+    try {
+      const file = await window.studio.settings.exportWorkflowFile({
+        directory,
+        workflow: comfyuiWorkflow,
+      });
+      setNotice(`工作流已导出：${file}`);
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : "导出工作流失败。");
+    }
+  };
+
   const verifyProviderConnection = async (providerId: ProviderId) => {
     setVerifyingProviderId(providerId);
     try {
@@ -7042,6 +7056,14 @@ export default function App() {
                 aria-label="从文件导入 ComfyUI 工作流"
               >
                 从 .json 文件导入
+              </button>
+              <button
+                type="button"
+                className="comfyui-import-workflow"
+                onClick={() => void exportComfyuiWorkflowFile()}
+                aria-label="把当前 ComfyUI 工作流导出成文件"
+              >
+                导出为 .json
               </button>
               <textarea
                 value={comfyuiWorkflow}

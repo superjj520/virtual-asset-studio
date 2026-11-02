@@ -156,6 +156,8 @@ contextBridge.exposeInMainWorld("studio", {
       ipcRenderer.invoke("settings:save-comfyui", input),
     readWorkflowFile: (filePath) =>
       ipcRenderer.invoke("settings:read-workflow-file", filePath),
+    exportWorkflowFile: (input) =>
+      ipcRenderer.invoke("settings:export-workflow-file", input),
     saveRoute: (capability, providerId) =>
       ipcRenderer.invoke("settings:save-route", capability, providerId),
   },

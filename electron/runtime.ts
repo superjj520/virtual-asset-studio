@@ -1418,6 +1418,26 @@ export const createStudioRuntime = (
           return providerStatus();
         },
       );
+      // 反向：把当前工作流写成一个 .json，方便搬到别的机器或存进版本库。
+      ipcMain.handle(
+        "settings:export-workflow-file",
+        (_event, input: { directory?: string; workflow?: string }) => {
+          const directory = absolutePath(input?.directory, "导出位置");
+          const text = typeof input?.workflow === "string" ? input.workflow.trim() : "";
+          if (!text) throw new Error("还没有工作流可以导出。");
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            throw new Error("当前工作流不是有效 JSON，先修好再导出。");
+          }
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+            throw new Error("ComfyUI 的 API 格式工作流应该是一个对象。");
+          const target = join(directory, "comfyui-workflow.json");
+          writeFileSync(target, JSON.stringify(parsed, null, 2), "utf8");
+          return target;
+        },
+      );
       // 从 ComfyUI「导出（API）」得到的 .json 直接读进来，省得用户手动复制粘贴。
       ipcMain.handle("settings:read-workflow-file", (_event, filePath: string) => {
         const target = absolutePath(filePath, "工作流文件路径");

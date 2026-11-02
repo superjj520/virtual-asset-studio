@@ -103,3 +103,43 @@ npm run build      通过
 
 - 深度图会上传并填进 `{{depth_image}}`，同时参考图照常注入（断言 `/prompt` 里两个 LoadImage 节点的 image 分别是两张上传结果）；
 - 给了深度图但工作流没有占位符时直接报错，且 `/prompt` 请求数为 0。
+
+---
+
+## 五、Round 2 补做：导出 + 节点包实测
+
+### 5.1 `.api.json` 导出（补齐对称能力）
+
+新 IPC `settings:export-workflow-file`：选一个目录，把当前工作流写成 `comfyui-workflow.json`。三条校验与导入对齐——空工作流、非法 JSON、顶层不是对象，各有中文报错。设置页 ComfyUI 区块现在并排两个按钮：「从 .json 文件导入」「导出为 .json」。
+
+### 5.2 节点包真的跑通了数据
+
+上一轮只能做语法检查（本机 Python 3.15 没有 torch / numpy / Pillow）。这一轮把数据层拆成 `comfyui-vas-nodes/vas_data.py`——**只用标准库**，torch 只留在 `nodes.py` 的节点类里。理由是：「数据到底能不能读到」这件事不该被 torch 绑住，装 ComfyUI 之前就该能验证。
+
+新增 `comfyui-vas-nodes/selftest.py`：
+
+```
+python3 selftest.py            # 全部站点
+python3 selftest.py pose depth # 只看这两个
+python3 selftest.py --refresh  # 忽略缓存重新下载
+```
+
+**实跑结果（2026-11-02，本机）：**
+
+```
+检查 5 个数据源（优先用缓存）：
+  ✓ pose: 1439 条     首条：S形站姿・胯部侧顶        图片 HTTP 200
+  ✓ costume: 1407 条  首条：象牙白荷叶边针织衫・…     图片 HTTP 200
+  ✓ portrait: 1499 条 首条：短发・标准款             图片 HTTP 200
+  ✓ depth: 1439 条    首条：S字立ち・腰を横に突き出す · 正面  图片 HTTP 200
+  ✓ anime: 1320 条    首条：春 · SPR-0001          图片 HTTP 200
+通过 5/5
+```
+
+五个站点条数与预期逐一对上（1439 / 1407 / 1499 / 1439 / 1320），首条标题正确解析（含日文站点的 `ポーズ名 · アングル` 拼接），首条图片 URL 全部真实可访问。这比「语法通过」硬得多——它证明节点在弹窗里能列出真实条目、能取到真实图片。
+
+第六个源 char-db-cn 不在节点包里：它是 GitHub raw 的 `window.CHARDB`，主应用走的是同一份数据，但 ComfyUI 侧没有对应的查询路径——如果要，得再加一个 `VASCharacterPack` 节点。这条记在待办。
+
+### 5.3 依然没在真实 ComfyUI 里跑
+
+本机没有 ComfyUI。现在的把握是：数据层实测通过、节点契契约按官方规范写（`INPUT_TYPES` / `RETURN_TYPES` / `FUNCTION` / `CATEGORY`）、torch 侧只用 `torch.from_numpy` 和 `F.interpolate` 这两个最稳的调用。第一次装进 ComfyUI 时看控制台确认。

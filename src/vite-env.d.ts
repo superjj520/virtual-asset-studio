@@ -357,6 +357,7 @@ interface Window {
         videoMotion?: string;
       }) => Promise<import("./shared/types").ProviderStatus>;
       readWorkflowFile: (filePath: string) => Promise<string>;
+      exportWorkflowFile: (input: { directory: string; workflow: string }) => Promise<string>;
       saveRoute: (
         capability: import("./shared/types").ProviderCapability,
         providerId: import("./shared/types").ProviderId,
