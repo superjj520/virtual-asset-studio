@@ -3785,6 +3785,28 @@ button:active { transform: translateY(1px); }
 .reference-sheet-asset small { color: var(--rs-muted); font-size: 9px; }
 .reference-sheet-asset.selected { border-color: #7a8cff; box-shadow: inset 0 0 0 1px #7a8cff; }
 .reference-sheet-asset em { position: absolute; top: 8px; right: 8px; padding: 2px 5px; color: #fff; font-size: 9px; font-style: normal; background: #5266e8; border-radius: 4px; }
+.reference-sheet-load-more {
+  display: block;
+  margin: 12px auto 0;
+  padding: 8px 18px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.reference-sheet-load-more:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.reference-sheet-load-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .reference-sheet-angles { display: flex; flex-wrap: wrap; gap: 3px; }
 .reference-sheet-angles button { min-height: 22px; padding: 0 7px; color: var(--rs-muted); font-size: 9px; background: rgba(255, 255, 255, .05); border: 1px solid var(--rs-line); border-radius: 999px; cursor: pointer; }
 .reference-sheet-angles button:hover { color: var(--rs-text); border-color: #5266e8; }

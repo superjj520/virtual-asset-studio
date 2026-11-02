@@ -63,6 +63,9 @@ const preferredType: Record<ReferenceSheetRole, string[]> = {
   extra2: ["reference_image", "wardrobe", "image", "character"],
 };
 
+/** 云端图库每页张数：先铺 48 张，够快也够看。 */
+const CLOUD_PAGE_SIZE = 48;
+
 export function ReferenceSheetComposer({
   assets,
   projectId,
@@ -83,6 +86,8 @@ export function ReferenceSheetComposer({
   const [cloudKind, setCloudKind] = useState<CloudReferenceKind | "all">("all");
   const [cloudQuery, setCloudQuery] = useState("");
   const [cloudBusy, setCloudBusy] = useState(false);
+  /** 每次多铺 48 张：6,980 条素材只按首屏 48 张露，等于剩下的翻不到。 */
+  const [cloudLimit, setCloudLimit] = useState(CLOUD_PAGE_SIZE);
   const [cloudError, setCloudError] = useState("");
   const [importingCloudId, setImportingCloudId] = useState("");
   const [styleId, setStyleId] = useState(REFERENCE_STYLES[0].id);
@@ -194,7 +199,7 @@ export function ReferenceSheetComposer({
     };
   }, [sourceMode, cloudCatalog]);
 
-  const cloudCandidates = useMemo(() => {
+  const cloudMatched = useMemo(() => {
     if (!cloudCatalog) return [] as CloudReferenceItem[];
     const query = cloudQuery.trim().toLowerCase();
     return cloudCatalog.items
@@ -204,9 +209,18 @@ export function ReferenceSheetComposer({
         return `${item.title} ${item.category} ${item.tags.join(" ")}`
           .toLowerCase()
           .includes(query);
-      })
-      .slice(0, 48);
+      });
   }, [cloudCatalog, cloudKind, cloudQuery]);
+
+  // 换分类或改搜索词就回到第一页，避免沿用上一个筛选的展开深度。
+  useEffect(() => {
+    setCloudLimit(CLOUD_PAGE_SIZE);
+  }, [cloudKind, cloudQuery]);
+
+  const cloudCandidates = useMemo(
+    () => cloudMatched.slice(0, cloudLimit),
+    [cloudMatched, cloudLimit],
+  );
 
   const chooseCloud = async (item: CloudReferenceItem, variant?: CloudReferenceVariant) => {
     const target: CloudReferenceItem = variant
@@ -473,7 +487,7 @@ export function ReferenceSheetComposer({
                         : "云端图库按需引用，不整库下载"}
                   </small>
                 </div>
-                <span>{sourceMode === "local" ? `${activeCandidates.length} 张可用` : `${cloudCandidates.length} 张显示${cloudCatalog ? ` / ${cloudCatalog.items.length}` : ""}`}</span>
+                <span>{sourceMode === "local" ? `${activeCandidates.length} 张可用` : `${cloudCandidates.length} 张已显示 / 匹配 ${cloudMatched.length}${cloudCatalog ? `（库内 ${cloudCatalog.items.length}）` : ""}`}</span>
               </header>
               <div className="reference-sheet-source-tabs" role="tablist" aria-label="素材来源">
                 <button
@@ -553,8 +567,9 @@ export function ReferenceSheetComposer({
                   {cloudBusy ? (
                     <p className="reference-sheet-no-assets">正在读取云端参考库…</p>
                   ) : cloudCandidates.length ? (
-                    <div className="reference-sheet-assets cloud">
-                      {cloudCandidates.map((item) => {
+                    <>
+                      <div className="reference-sheet-assets cloud">
+                        {cloudCandidates.map((item) => {
                         const boundItemId = (slots[activeRole]?.metadata?.cloudReference as { itemId?: string } | undefined)?.itemId;
                         const selected = boundItemId === item.id;
                         const activeVariantId = item.variants?.some((variant) => variant.id === boundItemId)
@@ -596,7 +611,18 @@ export function ReferenceSheetComposer({
                           </div>
                         );
                       })}
-                    </div>
+                      </div>
+                      {cloudMatched.length > cloudCandidates.length && (
+                        <button
+                          type="button"
+                          className="reference-sheet-load-more"
+                          onClick={() => setCloudLimit((current) => current + CLOUD_PAGE_SIZE)}
+                        >
+                          再看 {Math.min(CLOUD_PAGE_SIZE, cloudMatched.length - cloudCandidates.length)} 张 · 还剩{" "}
+                          {cloudMatched.length - cloudCandidates.length} 张
+                        </button>
+                      )}
+                    </>
                   ) : (
                     <p className="reference-sheet-no-assets">
                       {cloudCatalog ? "当前筛选没有结果，换个关键词或分类。" : "云端参考库暂时不可用。"}
