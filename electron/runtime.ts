@@ -28,6 +28,7 @@ import {
   REFERENCE_SHEET_ROLE_LABELS,
   buildReferenceSheetPrompt,
   normalizeReferenceSheetSlots,
+  splitReferenceSheetSlots,
   referenceSheetLayout,
   stripReferenceSheetLayoutLanguage,
   type ReferenceSheetRecipe,
@@ -372,7 +373,9 @@ export const createStudioRuntime = (
       {
         id: "comfyui",
         configured: comfyui.isConfigured(),
-        capabilities: ["image"],
+        // 本机 ComfyUI 既能出图也能出片（AnimateDiff / Wan）。漏了 video 的话
+        // UI 按能力过滤时永远不会把它列进视频路由下拉。
+        capabilities: ["image", "video"],
       },
       {
         id: "deepseek",
@@ -396,7 +399,8 @@ export const createStudioRuntime = (
       vision: ["openai"],
       image: ["magpie", "fal", "gemini", "openai", "flux", "local", "comfyui"],
       image_edit: ["fal", "gemini", "openai"],
-      video: ["openai"],
+      // 本机 ComfyUI 免费且已装好，付费的 sora 排后面。
+      video: ["comfyui", "openai"],
     };
     const compatible = (providerId: ProviderId) => providers.find(
       (provider) => provider.id === providerId && provider.capabilities.includes(capability),
@@ -595,7 +599,10 @@ export const createStudioRuntime = (
     styleId?: string;
   }): Promise<{ asset: Asset; recipe: ReferenceSheetRecipe }> => {
     const rawSlots = Array.isArray(input?.slots) ? input.slots : [];
-    const slots = normalizeReferenceSheetSlots(rawSlots);
+    // 深度图不参与拼图：它约束构图骨架，拼进参考板只会被模型当成风格线稿。
+    const { board: slots, depth } = splitReferenceSheetSlots(
+      normalizeReferenceSheetSlots(rawSlots),
+    );
     if (slots.length < 2)
       throw new Error("参考卡至少需要两个槽位：身份和另外一项。");
     if (!slots.some((slot) => slot.role === "identity"))
@@ -655,6 +662,9 @@ export const createStudioRuntime = (
         sha256: asset.sha256,
       })),
       prompt,
+      ...(depth
+        ? { depth: { ...depth, name: referenceForGeneration(depth.assetId, projectId).name } }
+        : {}),
       ...(style ? { style } : {}),
       rightsBasis:
         "由已审片、已授权的本地参考图合成；不引入第三方素材，权利随来源资产保留。",

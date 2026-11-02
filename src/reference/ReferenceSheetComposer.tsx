@@ -84,6 +84,10 @@ export function ReferenceSheetComposer({
   const [sourceMode, setSourceMode] = useState<"local" | "cloud">("local");
   const [cloudCatalog, setCloudCatalog] = useState<CloudReferenceCatalog>();
   const [cloudKind, setCloudKind] = useState<CloudReferenceKind | "all">("all");
+  // 记住每个槽位选的是哪一类素材：深度图不参与拼图，要单独标出来。
+  const [slotKinds, setSlotKinds] = useState<
+    Partial<Record<ReferenceSheetRole, CloudReferenceKind>>
+  >({});
   const [cloudQuery, setCloudQuery] = useState("");
   const [cloudBusy, setCloudBusy] = useState(false);
   /** 每次多铺 48 张：6,980 条素材只按首屏 48 张露，等于剩下的翻不到。 */
@@ -159,7 +163,7 @@ export function ReferenceSheetComposer({
     });
   }, [eligible, activeRole]);
 
-  const choose = (asset: Asset) => {
+  const choose = (asset: Asset, kind?: CloudReferenceKind) => {
     const usedBy = REFERENCE_SHEET_ROLES.find(
       (role) => role !== activeRole && slots[role]?.id === asset.id,
     );
@@ -170,6 +174,7 @@ export function ReferenceSheetComposer({
       return;
     }
     setSlots((current) => ({ ...current, [activeRole]: asset }));
+    setSlotKinds((current) => ({ ...current, [activeRole]: kind }));
     setError("");
   };
 
@@ -239,7 +244,7 @@ export function ReferenceSheetComposer({
       const preview = await window.studio.assets.preview(asset.id);
       if (preview) setPreviews((current) => ({ ...current, [asset.id]: preview }));
       onSaved?.(asset);
-      choose(asset);
+      choose(asset, target.kind);
     } catch (importError) {
       setCloudError(
         importError instanceof Error
@@ -267,6 +272,11 @@ export function ReferenceSheetComposer({
       delete next[role];
       return next;
     });
+    setSlotKinds((current) => {
+      const next = { ...current };
+      delete next[role];
+      return next;
+    });
     setResult(undefined);
     setRecipe(undefined);
     setSheetPreview("");
@@ -285,7 +295,11 @@ export function ReferenceSheetComposer({
         ...REFERENCE_SHEET_EXTRA_ROLES,
       ]
         .filter((role) => slots[role])
-        .map((role) => ({ role, assetId: slots[role]!.id }));
+        .map((role) => ({
+          role,
+          assetId: slots[role]!.id,
+          ...(slotKinds[role] ? { kind: slotKinds[role] } : {}),
+        }));
       const composed = await window.studio.referenceSheets.compose({
         projectId,
         slots: payload,
@@ -318,10 +332,12 @@ export function ReferenceSheetComposer({
     ? [...REFERENCE_SHEET_ROLES, ...selectedExtras]
     : REFERENCE_SHEET_ROLES;
   const boardLayout = referenceSheetLayout(
-    boardRoles.map((role) => ({
-      role,
-      assetId: slots[role]?.id ?? role,
-    })),
+    boardRoles
+      .filter((role) => slotKinds[role] !== "depth")
+      .map((role) => ({
+        role,
+        assetId: slots[role]?.id ?? role,
+      })),
   );
   const boardPanels = boardLayout.panels;
 

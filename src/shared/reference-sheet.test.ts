@@ -5,6 +5,7 @@ import {
   buildReferenceSheetPrompt,
   normalizeReferenceSheetSlots,
   referenceSheetLayout,
+  splitReferenceSheetSlots,
   stripReferenceSheetLayoutLanguage,
   type ReferenceSheetRecipe,
   type ReferenceSheetRole,
@@ -245,3 +246,57 @@ describe("reference sheet", () => {
     ].join("\n"));
     expect(stripped).toBe("保持人物脸型与肤色。\n输出约束：单个人物、无分屏、无边框。");
   });
+
+describe("深度图独立通道", () => {
+  it("把深度图从参考板槽位里分出来，不参与拼图", () => {
+    const { board, depth } = splitReferenceSheetSlots([
+      { role: "identity", assetId: "a1", kind: "portrait" },
+      { role: "pose", assetId: "a2", kind: "pose" },
+      { role: "extra1", assetId: "a3", kind: "depth" },
+    ]);
+    expect(board.map((slot) => slot.assetId)).toEqual(["a1", "a2"]);
+    expect(depth?.assetId).toBe("a3");
+  });
+
+  it("只有深度图时没有可拼的分区", () => {
+    const { board, depth } = splitReferenceSheetSlots([
+      { role: "pose", assetId: "a1", kind: "depth" },
+    ]);
+    expect(board).toEqual([]);
+    expect(depth?.assetId).toBe("a1");
+  });
+
+  it("没有深度图时 board 就是全部槽位", () => {
+    const { board, depth } = splitReferenceSheetSlots([
+      { role: "identity", assetId: "a1" },
+      { role: "scene", assetId: "a2" },
+    ]);
+    expect(board).toHaveLength(2);
+    expect(depth).toBeUndefined();
+  });
+
+  it("布局按去掉深度图后的槽位数算，不会多出一格", () => {
+    const withDepth = referenceSheetLayout([
+      { role: "identity", assetId: "a1" },
+      { role: "wardrobe", assetId: "a2" },
+      { role: "extra1", assetId: "a3", kind: "depth" },
+    ]);
+    expect(withDepth.panels).toHaveLength(2);
+  });
+
+  it("深度图写进必须保持的说明里，明确它没被拼进参考板", () => {
+    const card = { identityAnchor: "", bodyAndWardrobe: "", expressionAndPose: "", scene: "", mustKeep: "", avoid: "" } as unknown as CreativeCard;
+    const recipe = {
+      version: 1 as const,
+      layout: referenceSheetLayout([{ role: "identity", assetId: "a1" }]),
+      slots: [{ role: "identity" as const, assetId: "a1", name: "身份图" }],
+      depth: { role: "extra1" as const, assetId: "a3", name: "深度图 A" },
+      prompt: { positive: "", negative: "", modules: [] },
+      rightsBasis: "",
+      createdAt: "",
+    };
+    const next = applyReferenceSheetToCard(card, recipe);
+    expect(next.mustKeep).toContain("深度图 A");
+    expect(next.mustKeep).toContain("没有被拼进参考板");
+  });
+});

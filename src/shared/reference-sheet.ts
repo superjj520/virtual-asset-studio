@@ -1,3 +1,4 @@
+import type { CloudReferenceKind } from "./reference-library";
 import type { CreativeCard } from "./types";
 import type { ReferenceStyle } from "./reference-styles";
 
@@ -34,11 +35,25 @@ export const REFERENCE_SHEET_ROLE_LABELS: Record<ReferenceSheetRole, string> = {
 export type ReferenceSheetSlotInput = {
   role: ReferenceSheetRole;
   assetId: string;
+  /** 素材来源分类。深度图（depth）不参与拼图，只作为 ControlNet 的深度约束单独送出。 */
+  kind?: CloudReferenceKind;
 };
 
 export type ReferenceSheetSlot = ReferenceSheetSlotInput & {
   name: string;
   sha256?: string;
+};
+
+/** 深度图不算参考板分区：它约束构图骨架，不参与“把四张图压成一张”的拼图。 */
+export const isDepthSlot = (slot: { kind?: CloudReferenceKind }): boolean =>
+  slot.kind === "depth";
+
+export const splitReferenceSheetSlots = (
+  slots: ReferenceSheetSlotInput[],
+): { board: ReferenceSheetSlotInput[]; depth?: ReferenceSheetSlotInput } => {
+  const board = slots.filter((slot) => !isDepthSlot(slot));
+  const depth = slots.find((slot) => isDepthSlot(slot));
+  return depth ? { board, depth } : { board };
 };
 
 export type ReferenceSheetPanel = {
@@ -70,6 +85,8 @@ export type ReferenceSheetRecipe = {
   version: 1;
   layout: ReferenceSheetLayout;
   slots: ReferenceSheetSlot[];
+  /** 深度图不拼进参考板，单独记下来，出图时作为 ControlNet 的深度输入。 */
+  depth?: ReferenceSheetSlot;
   prompt: ReferenceSheetPrompt;
   style?: ReferenceStyle;
   rightsBasis: string;
@@ -108,6 +125,9 @@ export const normalizeReferenceSheetSlots = (
     result.push({
       role: candidate.role,
       assetId: candidate.assetId,
+      ...(typeof candidate.kind === "string"
+        ? { kind: candidate.kind as CloudReferenceKind }
+        : {}),
       ...(typeof candidate.name === "string" ? { name: candidate.name } : {}),
       ...(typeof candidate.sha256 === "string" ? { sha256: candidate.sha256 } : {}),
     });
@@ -120,6 +140,7 @@ export const normalizeReferenceSheetSlots = (
     .map((slot) => ({
       role: slot.role,
       assetId: slot.assetId,
+      ...(slot.kind ? { kind: slot.kind } : {}),
       ...(slot.name ? { name: slot.name } : {}),
       ...(slot.sha256 ? { sha256: slot.sha256 } : {}),
     }));
@@ -128,7 +149,9 @@ export const normalizeReferenceSheetSlots = (
 export const referenceSheetLayout = (
   slots: ReferenceSheetSlotInput[],
 ): ReferenceSheetLayout => {
-  const count = normalizeReferenceSheetSlots(slots).length;
+  // 深度图不占分区：先分出去，再按剩下的槽位排版。
+  const normalized = splitReferenceSheetSlots(normalizeReferenceSheetSlots(slots)).board;
+  const count = normalized.length;
   const gap = 24;
   if (count <= 2) {
     const width = 1440;
@@ -140,7 +163,7 @@ export const referenceSheetLayout = (
       width,
       height,
       gap,
-      panels: normalizeReferenceSheetSlots(slots).map((slot, index) => ({
+      panels: normalized.map((slot, index) => ({
         role: slot.role,
         column: index as 0 | 1,
         row: 0,
@@ -155,7 +178,6 @@ export const referenceSheetLayout = (
   const width = 1440;
   const height = 1440;
   const panelSize = (width - gap * 3) / 2;
-  const normalized = normalizeReferenceSheetSlots(slots);
   if (normalized.length === 3) {
     const bottomY = gap + panelSize + gap;
     const bottomHeight = height - bottomY - gap;
@@ -324,11 +346,19 @@ export const applyReferenceSheetToCard = (
       : card.scene,
     mustKeep: mergeText(
       mergeText(
-        mergeText(card.mustKeep, "参考图是素材参考板：只读取各分区信息，不把分格线、边框或拼贴版式画进成图"),
-        recipe.prompt.positive,
+        mergeText(
+          mergeText(
+            card.mustKeep,
+            "参考图是素材参考板：只读取各分区信息，不把分格线、边框或拼贴版式画进成图",
+          ),
+          recipe.prompt.positive,
+        ),
+        extraLabels.length
+          ? `补充参考 ${extraLabels.join("、")}：只提取材质、配饰或光影等明确细节；发色、发型、肤色、脸型、年龄、服装结构、姿态和场景必须严格沿用身份/服装/姿态/场景参考，补充参考不得覆盖。`
+          : "",
       ),
-      extraLabels.length
-        ? `补充参考 ${extraLabels.join("、")}：只提取材质、配饰或光影等明确细节；发色、发型、肤色、脸型、年龄、服装结构、姿态和场景必须严格沿用身份/服装/姿态/场景参考，补充参考不得覆盖。`
+      recipe.depth
+        ? `已附深度图「${recipe.depth.name}」：它约束构图骨架，没有被拼进参考板。只有支持 ControlNet 深度的模型或 ComfyUI 的深度节点才会用到它。`
         : "",
     ),
     avoid: mergeText(card.avoid, recipe.prompt.negative),
