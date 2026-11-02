@@ -23,7 +23,8 @@ from vas_data import (
     load_rows,
 )
 
-EXPECTED = {"pose": 1439, "costume": 1407, "portrait": 1499, "depth": 1439, "anime": 1320, "chardb": 1027}
+# 2026-11-02 实测基线。上游增减时这里会报 "!"，不是失败，是先提醒有人去看一眼。
+EXPECTED = {"pose": 1439, "costume": 1407, "portrait": 1499, "depth": 1439, "anime": 1320, "chardb": 2347}
 
 
 def check(site: str, refresh: bool) -> bool:
@@ -51,15 +52,27 @@ def check(site: str, refresh: bool) -> bool:
         print("      ✗ 首条没有图片地址，节点会一直回退灰图")
         return False
 
-    try:
-        request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "vas-selftest"})
-        with urllib.request.urlopen(request, timeout=30) as response:
-            size = response.headers.get("content-length", "?")
-            print(f"      图片可访问：HTTP {response.status}, {size} bytes")
-    except Exception as error:  # noqa: BLE001
-        print(f"      ✗ 图片取不到：{type(error).__name__}: {error}")
-        return False
-    return True
+    # 这几个图床都在国外，SSL 握手偶尔会超时。重试两次再判失败，
+    # 否则跑一次自检的结果取决于当次网络抖动，不能用来判断数据源好坏。
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "vas-selftest"})
+            with _OPENER.open(request, timeout=30) as response:
+                size = response.headers.get("content-length", "?")
+                print(f"      图片可访问：HTTP {response.status}, {size} bytes")
+            return True
+        except Exception as error:  # noqa: BLE001
+            last_error = error
+            if attempt < 2:
+                print(f"      第 {attempt + 1} 次取图失败（{type(error).__name__}），重试…")
+    print(f"      ✗ 图片取不到：{type(last_error).__name__}: {last_error}")
+    return False
+
+
+# 这几个站点直连可达；macOS 系统里配了但没在运行的代理会让 urllib 直接 Connection refused，
+# 而这里只做「数据源还在不在」的自检，不需要经过用户代理。
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def main(argv: list[str]) -> int:
