@@ -42,6 +42,8 @@ describe("云端参考库", () => {
                 { id: "H001", set: "hair", cat: "髪型", catZh: "发型", zh: "长发", tags: "long hair", line: false },
                 { id: "O001", set: "outfit", cat: "制服", catZh: "制服/学生", zh: "水手服", tags: "serafuku" },
                 { id: "P001", set: "pose", cat: "立ち", catZh: "站姿", zh: "站姿", tags: "standing", line: true },
+                // 上游后来加的 outfit2：与动漫衣装站同一批，必须被排掉，否则会被当成姿势且重复计数。
+                { id: "AUT-0001", set: "outfit2", cat: "春", catZh: "春季", zh: "牛仔外套", tags: "denim" },
               ],
             })};`,
             { status: 200, headers: { "content-type": "application/javascript" } },
@@ -89,6 +91,8 @@ describe("云端参考库", () => {
     const linePose = catalog.items.find((item) => item.id === "char-db-P001");
     expect(linePose?.lineUrl).toContain("/line/P001.png");
     expect(catalog.items.find((item) => item.kind === "hair")?.sourceName).toContain("二次元");
+    // outfit2 与动漫衣装站同批，不能进 items，也不能算进任何分类。
+    expect(catalog.items.some((item) => item.id === "char-db-AUT-0001")).toBe(false);
   });
 
   it("同一姿势保留全部视角，正面排首位作为默认预览", async () => {

@@ -243,7 +243,13 @@ class CloudReferenceLibrary {
           sourceName: source.name,
           sourceUrl: source.url,
         }));
-    const charDbItems = charDb.map((row) => {
+    // char-db-cn 后来加了一个 outfit2（1,320 条），内容与动漫衣装站完全同一批（id 交集 1,320）。
+    // 那边已经单独接成「动漫衣装」分类，这里必须排掉，否则它们会被三元表达式的 else 分支
+    // 当成「姿势」混进来，既错分类又和动漫衣装重复计数。
+    const charDbOnly = charDb.filter(
+      (row) => row.set === "hair" || row.set === "outfit" || row.set === "pose",
+    );
+    const charDbItems = charDbOnly.map((row) => {
       const kind: CloudReferenceKind =
         row.set === "hair" ? "hair" : row.set === "outfit" ? "costume" : "pose";
       return {
@@ -298,22 +304,27 @@ class CloudReferenceLibrary {
       fetchedAt: new Date().toISOString(),
       counts: {
         portrait: portraitItems.length,
-        costume: costumeItems.length + charDb.filter((row) => row.set === "outfit").length,
-        hair: charDb.filter((row) => row.set === "hair").length,
-        pose: poseItems.length + charDb.filter((row) => row.set === "pose").length,
+        costume: costumeItems.length + charDbOnly.filter((row) => row.set === "outfit").length,
+        hair: charDbOnly.filter((row) => row.set === "hair").length,
+        pose: poseItems.length + charDbOnly.filter((row) => row.set === "pose").length,
         depth: depthItems.length,
         "anime-costume": animeItems.length,
       },
       imageCounts: {
         portrait: portraits.length,
-        costume: costumes.length + charDb.filter((row) => row.set === "outfit").length,
-        hair: charDb.filter((row) => row.set === "hair").length,
-        pose: poses.length + charDb.filter((row) => row.set === "pose").length,
+        costume: costumes.length + charDbOnly.filter((row) => row.set === "outfit").length,
+        hair: charDbOnly.filter((row) => row.set === "hair").length,
+        pose: poses.length + charDbOnly.filter((row) => row.set === "pose").length,
         depth: depths.length,
         "anime-costume": animeCostumes.length,
       },
       totalImages:
-        portraits.length + costumes.length + poses.length + charDb.length + depths.length + animeCostumes.length,
+        portraits.length +
+        costumes.length +
+        poses.length +
+        charDbOnly.length +
+        depths.length +
+        animeCostumes.length,
       items,
     };
     this.cache = { value, expiresAt: Date.now() + CACHE_TTL_MS };

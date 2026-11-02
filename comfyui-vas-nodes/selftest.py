@@ -13,14 +13,23 @@ from __future__ import annotations
 import sys
 import urllib.request
 
-from vas_data import SITES, image_url, label, load_rows
+from vas_data import (
+    SITES,
+    char_db_image_url,
+    char_db_label,
+    load_char_db,
+    image_url,
+    label,
+    load_rows,
+)
 
-EXPECTED = {"pose": 1439, "costume": 1407, "portrait": 1499, "depth": 1439, "anime": 1320}
+EXPECTED = {"pose": 1439, "costume": 1407, "portrait": 1499, "depth": 1439, "anime": 1320, "chardb": 1027}
 
 
 def check(site: str, refresh: bool) -> bool:
+    is_chardb = site == "chardb"
     try:
-        rows = load_rows(site, refresh=refresh)
+        rows = load_char_db(refresh=refresh) if is_chardb else load_rows(site, refresh=refresh)
     except Exception as error:  # noqa: BLE001 - 自检脚本要把失败原样报出来
         print(f"  ✗ {site}: 拉取失败 —— {type(error).__name__}: {error}")
         return False
@@ -30,8 +39,8 @@ def check(site: str, refresh: bool) -> bool:
         return False
 
     first = rows[0]
-    name = label(site, first)
-    url = image_url(site, first)
+    name = char_db_label(first) if is_chardb else label(site, first)
+    url = char_db_image_url(first) if is_chardb else image_url(site, first)
     expected = EXPECTED.get(site)
     flag = "✓" if expected is None or len(rows) == expected else "!"
     print(f"  {flag} {site}: {len(rows)} 条" + (f"（预期 {expected}）" if expected and len(rows) != expected else ""))
@@ -55,7 +64,7 @@ def check(site: str, refresh: bool) -> bool:
 
 def main(argv: list[str]) -> int:
     refresh = "--refresh" in argv
-    picked = [item for item in argv if not item.startswith("--")] or list(SITES)
+    picked = [item for item in argv if not item.startswith("--")] or [*SITES, "chardb"]
     print(f"检查 {len(picked)} 个数据源{'（忽略缓存）' if refresh else '（优先用缓存）'}：")
     results = [check(site, refresh) for site in picked]
     ok = sum(1 for item in results if item)

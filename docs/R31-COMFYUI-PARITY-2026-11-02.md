@@ -143,3 +143,69 @@ python3 selftest.py --refresh  # 忽略缓存重新下载
 ### 5.3 依然没在真实 ComfyUI 里跑
 
 本机没有 ComfyUI。现在的把握是：数据层实测通过、节点契契约按官方规范写（`INPUT_TYPES` / `RETURN_TYPES` / `FUNCTION` / `CATEGORY`）、torch 侧只用 `torch.from_numpy` 和 `F.interpolate` 这两个最稳的调用。第一次装进 ComfyUI 时看控制台确认。
+
+---
+
+## 六、Round 3：节点包补齐六个源，并抓到一个真实数据 bug
+
+### 6.1 节点包加了 `虚拟资产 · 二次元换装库`
+
+`VASCharacterPack`（`comfyui-vas-nodes/nodes.py`）：数据来自 `window.CHARDB`，按 set 分「发型 / 服装 / 姿势」三类，图片取 `https://charadb-2fi.pages.dev/img/{id}.jpg`。数据层新增 `load_char_db` / `char_db_rows` / `char_db_label` / `char_db_image_url`（同样只用标准库）。
+
+`selftest.py` 现在覆盖六个源，实跑：
+
+```
+  ✓ pose:     1439 条    HTTP 200
+  ✓ costume:  1407 条    HTTP 200
+  ✓ portrait: 1499 条    HTTP 200
+  ✓ depth:    1439 条    HTTP 200
+  ✓ anime:    1320 条    HTTP 200
+  ✓ chardb:   2347 条    HTTP 200（预期 1027 —— 见下）
+通过 6/6
+```
+
+### 6.2 抓到的 bug：char-db-cn 悄悄加了 `outfit2`，我们一直在错分类 + 重复计数
+
+`chardb` 实测 2,347 条，不是接入时的 1,027。按 set 拆开：
+
+```
+hair 306 / outfit 440 / pose 281 / outfit2 1320
+```
+
+`outfit2` 的 1,320 个 id 与动漫衣装站的 id **交集正好 1,320**——两个源是同一批数据，只是图分别托管在 `charadb-2fi.pages.dev` 和 `ai-costume-anime-gallery.pages.dev`。
+
+而主应用里这段映射：
+
+```ts
+const kind = row.set === "hair" ? "hair" : row.set === "outfit" ? "costume" : "pose";
+```
+
+`outfit2` 既不是 hair 也不是 outfit，**落到 else 分支变成「姿势」**。也就是说：上游哪天更新，我们的「姿势」分类里就会混进 1,320 张动漫衣装彩图，`items` 里同时出现动漫衣装两遍（一遍 kind=pose、一遍 kind=anime-costume），而 `counts` 又只按 `set === "pose"` 数 281 条——**卡片池和界面数字会对不上**。
+
+修法（`electron/services/reference-library.ts`）：
+
+```ts
+const charDbOnly = charDb.filter(
+  (row) => row.set === "hair" || row.set === "outfit" || row.set === "pose",
+);
+```
+
+`charDbItems`、`imageCounts`、`totalImages` 全部改用 `charDbOnly`，四处的过滤条件统一，不会再各算各的。测试 fixture 里加了一条 `outfit2` 行，断言 `char-db-AUT-0001` **不在** `items` 里。
+
+### 6.3 真机复核
+
+CDP 跑一遍「参考卡组合 → 云端图库 → 姿势」：
+
+```
+cards: 48
+subtitles: ["姿势 · 全身单人・性感系", ×6]
+hasAnime: false
+hasPose: 48
+allLabel: "全部 6980"
+status: "48 张已显示 / 匹配 569（库内 6980）"
+firstTitles: ["S形站姿・胯部侧顶 · 编号 P001 · 5 视角", …]
+```
+
+48 张全是姿势线稿，没有一张动漫衣装；「库内 6980」与分类行求和一致；「匹配 569」= 288 组 + char-db 的 281 条。截图 `artifacts/screenshots/pose-after-dedup.png`。
+
+**如果没修这个，上游一更新，这个页面就会是另一副样子。**

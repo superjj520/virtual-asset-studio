@@ -18,7 +18,11 @@ import torch
 
 from .vas_data import (
     CACHE_DIR,
+    CHARDB_SETS,
     cache_name_for,
+    char_db_image_url,
+    char_db_label,
+    char_db_rows,
     choices,
     fetch,
     image_url,
@@ -105,6 +109,55 @@ class VASAnimeCostumeGallery(_GalleryBase):
     SITE = "anime"
 
 
+class VASCharacterPack:
+    """二次元角色换装库（char-db-cn）：发型 306 / 服装 440 / 姿势 281。"""
+
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        set_names = list(CHARDB_SETS.values())
+        return {
+            "required": {
+                "类别": (set_names, {"default": set_names[0]}),
+                "选择": (cls._choices(set_names[0]), {"default": cls._choices(set_names[0])[0]}),
+            },
+            "optional": {
+                "刷新数据": ("BOOLEAN", {"default": False}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("图片", "名称")
+    FUNCTION = "run"
+    CATEGORY = "虚拟资产"
+
+    @staticmethod
+    def _set_key(name: str) -> str:
+        for key, value in CHARDB_SETS.items():
+            if value == name:
+                return key
+        return next(iter(CHARDB_SETS))
+
+    @classmethod
+    def _choices(cls, set_name: str) -> list[str]:
+        names = [char_db_label(row) for row in char_db_rows(cls._set_key(set_name))]
+        return names or ["（还没下载成功，检查网络后重启 ComfyUI）"]
+
+    def run(self, 类别: str, 选择: str, 刷新数据: bool = False):  # noqa: N803
+        set_key = self._set_key(类别)
+        if 刷新数据 and os.path.isdir(CACHE_DIR):
+            cache = os.path.join(CACHE_DIR, "chardb.js")
+            if os.path.exists(cache):
+                os.remove(cache)
+        for row in char_db_rows(set_key, refresh=刷新数据):
+            if char_db_label(row) != 选择:
+                continue
+            url = char_db_image_url(row)
+            if not url:
+                break
+            return _to_tensor(fetch(url, f"chardb-{row.get('id', 'x')}.img", refresh=刷新数据)), 选择
+        return torch.zeros((1, 64, 64, 3), dtype=torch.float32), f"未找到：{选择}"
+
+
 class VASCharacterRecipe:
     """把身份 / 服装 / 姿态 / 深度四张图拼成一张参考板，直接接 IPAdapter 或 ControlNet。"""
 
@@ -144,6 +197,7 @@ NODE_CLASS_MAPPINGS = {
     "VASCostumeGallery": VASCostumeGallery,
     "VASPortraitGallery": VASPortraitGallery,
     "VASAnimeCostumeGallery": VASAnimeCostumeGallery,
+    "VASCharacterPack": VASCharacterPack,
     "VASCharacterRecipe": VASCharacterRecipe,
 }
 
@@ -153,5 +207,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "VASCostumeGallery": "虚拟资产 · 服装库",
     "VASPortraitGallery": "虚拟资产 · 人像库",
     "VASAnimeCostumeGallery": "虚拟资产 · 动漫衣装",
+    "VASCharacterPack": "虚拟资产 · 二次元换装库",
     "VASCharacterRecipe": "虚拟资产 · 参考板合成",
 }

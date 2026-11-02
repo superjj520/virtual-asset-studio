@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -23,6 +24,12 @@ SITES: dict[str, dict[str, str]] = {
     "depth": {"base": "https://ai-pose-depth-gallery.pages.dev", "path": "/", "inline": "const D="},
     "anime": {"base": "https://ai-costume-anime-gallery.pages.dev", "path": "/", "inline": "const D="},
 }
+
+# char-db-cn 不是静态 JSON，是 window.CHARDB={items:[...]}；图片分两处托管。
+CHARDB_DATA = "https://raw.githubusercontent.com/sleepy-zone/char-db-cn/main/data.js"
+CHARDB_IMAGE_BASE = "https://charadb-2fi.pages.dev"
+
+CHARDB_SETS = {"hair": "发型", "outfit": "服装", "pose": "姿势"}
 
 SITE_LABELS = {
     "pose": "姿势",
@@ -129,6 +136,60 @@ def label(site: str, row: dict[str, Any]) -> str:
 def choices(site: str, *, refresh: bool = False) -> list[str]:
     labels = [label(site, row) for row in load_rows(site, refresh=refresh)]
     return labels or ["（数据还没下载成功，检查网络后重启 ComfyUI）"]
+
+
+def load_char_db(*, refresh: bool = False) -> list[dict[str, Any]]:
+    """解析 window.CHARDB 里的 items。"""
+    raw = fetch(CHARDB_DATA, "chardb.js", refresh=refresh)
+    text = raw.decode("utf-8", errors="replace")
+    marker = text.find("window.CHARDB")
+    if marker < 0:
+        return []
+    open_at = text.find("{", marker)
+    if open_at < 0:
+        return []
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(open_at, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    parsed = json.loads(text[open_at : index + 1])
+                except json.JSONDecodeError:
+                    return []
+                items = parsed.get("items")
+                return items if isinstance(items, list) else []
+    return []
+
+
+def char_db_rows(set_name: str, *, refresh: bool = False) -> list[dict[str, Any]]:
+    return [row for row in load_char_db(refresh=refresh) if row.get("set") == set_name]
+
+
+def char_db_label(row: dict[str, Any]) -> str:
+    name = row.get("zh") or row.get("id") or ""
+    category = row.get("catZh") or row.get("cat") or ""
+    return f"{category} · {name}" if category else str(name)
+
+
+def char_db_image_url(row: dict[str, Any]) -> str:
+    item_id = str(row.get("id", ""))
+    return f"{CHARDB_IMAGE_BASE}/img/{urllib.parse.quote(item_id)}.jpg" if item_id else ""
 
 
 def cache_name_for(site: str, row: dict[str, Any]) -> str:
