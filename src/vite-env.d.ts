@@ -131,7 +131,7 @@ interface Window {
       translatePrompt: (input: {
         prompt: string;
         negative?: string;
-        providerId: "openai" | "flux" | "fal" | "gemini";
+        providerId: "openai" | "flux" | "fal" | "gemini" | "magpie";
         qualityTier: import("./shared/types").GenerationQualityTier;
       }) => Promise<import("./shared/types").PromptTranslation>;
       compileShot: (

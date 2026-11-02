@@ -344,7 +344,7 @@ const EMPTY_CARD: CreativeCard = {
 };
 
 const providerLabel = (providerId?: ProviderId) =>
-  providerId === "flux" ? "FLUX" : providerId === "fal" ? "fal" : providerId === "deepseek" ? "DeepSeek" : providerId === "gemini" ? "Gemini" : providerId === "local" ? "本地图像服务" : providerId === "comfyui" ? "ComfyUI" : providerId === "openai" ? "OpenAI" : "当前绘图模型";
+  providerId === "flux" ? "FLUX" : providerId === "fal" ? "fal" : providerId === "deepseek" ? "DeepSeek" : providerId === "gemini" ? "Gemini" : providerId === "local" ? "本地图像服务" : providerId === "comfyui" ? "ComfyUI" : providerId === "magpie" ? "Magpie 免费池" : providerId === "openai" ? "OpenAI" : "当前绘图模型";
 
 const taskStatusLabel = (status: CreativeTask["status"]) =>
   status === "review" ? "待审片" : status === "completed" ? "已完成" : status === "producing" ? "生成中" : status === "blocked" ? "生成阻塞" : "准备中";
@@ -621,6 +621,7 @@ export default function App() {
     local: "",
     custom: "",
     comfyui: "",
+    magpie: "",
   });
   // 本地图像服务不需要密钥，但要记住地址与模型名，重启后仍然可用。
   const [localImageBaseUrl, setLocalImageBaseUrl] = useState("");
@@ -2185,7 +2186,7 @@ export default function App() {
       const imageProvider = effectiveGenerationModel?.providerId ?? (normalizedCard.referenceAssetIds.length
         ? provider?.routes.image_edit
         : provider?.routes.image);
-      if (canUse("text") && (imageProvider === "openai" || imageProvider === "flux" || imageProvider === "fal" || imageProvider === "gemini")) {
+      if (canUse("text") && (imageProvider === "openai" || imageProvider === "flux" || imageProvider === "fal" || imageProvider === "gemini" || imageProvider === "magpie")) {
         try {
           translated = await window.studio.creation.translatePrompt({
             prompt: build.positive,
@@ -2613,7 +2614,7 @@ export default function App() {
       setPromptBuild(build);
       let translated: PromptTranslation | undefined;
       const imageProvider = nextCard.referenceAssetIds.length ? provider?.routes.image_edit : provider?.routes.image;
-      if (canUse("text") && (imageProvider === "openai" || imageProvider === "flux" || imageProvider === "fal" || imageProvider === "gemini")) {
+      if (canUse("text") && (imageProvider === "openai" || imageProvider === "flux" || imageProvider === "fal" || imageProvider === "gemini" || imageProvider === "magpie")) {
         try {
           translated = await window.studio.creation.translatePrompt({
             prompt: build.positive,
@@ -2728,7 +2729,7 @@ export default function App() {
       return;
     }
     const imageProvider = card.referenceAssetIds.length ? provider?.routes.image_edit : provider?.routes.image;
-    if (imageProvider !== "openai" && imageProvider !== "flux" && imageProvider !== "fal" && imageProvider !== "gemini") {
+    if (imageProvider !== "openai" && imageProvider !== "flux" && imageProvider !== "fal" && imageProvider !== "gemini" && imageProvider !== "magpie") {
       setNotice(`请先在模型连接页选择可用的${card.referenceAssetIds.length ? "修图" : "图片"}路由。`);
       return;
     }
@@ -6861,6 +6862,7 @@ export default function App() {
                 ["fal", "fal", "低成本出图与参考图修订"],
                 ["deepseek", "DeepSeek", "创作对话与提示词规划（路由已预留）"],
                 ["gemini", "Gemini", "Gemini 图片生成与参考图修订"],
+                ["magpie", "Magpie 免费池", "本机网关：零 key 出图 + 免费文本路由"],
               ] as [ProviderId, string, string][]
             ).map(([id, label, description]) => {
               const connection = provider?.providers.find((item) => item.id === id);
@@ -6895,7 +6897,7 @@ export default function App() {
                       [id]: event.target.value,
                     }))
                   }
-                  placeholder={`粘贴 ${label} API 密钥`}
+                  placeholder={id === "magpie" ? "填写网关地址，默认 http://127.0.0.1:3425/v1" : `粘贴 ${label} API 密钥`}
                 />
                 <button onClick={() => void saveProviderKey(id)}>保存</button>
                 {id === "gemini" && connection?.configured && (

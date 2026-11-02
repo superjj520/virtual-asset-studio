@@ -51,6 +51,7 @@ import { FluxProvider } from "./services/providers/flux-provider";
 import { FalProvider, FalRemoteTaskError, type FalRemoteTask } from "./services/providers/fal-provider";
 import { GeminiProvider } from "./services/providers/gemini-provider";
 import { DeepSeekProvider } from "./services/providers/deepseek-provider";
+import { MagpieProvider } from "./services/providers/magpie-provider";
 import { ComfyUiImageProvider } from "./services/providers/comfyui-image-provider";
 import { LocalImageProvider } from "./services/providers/local-image-provider";
 import { CustomImageProvider } from "./services/providers/custom-image-provider";
@@ -179,6 +180,19 @@ export const createStudioRuntime = (
     checkpoint: () => settings.get("comfyui_checkpoint"),
     workflow: () => settings.get("comfyui_workflow"),
   });
+  // Magpie 免费池：地址与 key 共用 `magpie_api_key` 一个凭据槽。
+  // 存 http(s) 地址就当地址用（本机 loopback 网关对 key 不敏感），否则当 key、地址走默认 3425。
+  const magpieCredential = () => apiKeyFor("magpie");
+  const magpieBaseUrl = () => {
+    const value = magpieCredential();
+    return value && /^https?:\/\//i.test(value) ? value : undefined;
+  };
+  const magpie = new MagpieProvider({
+    apiKey: () => (magpieBaseUrl() ? "magpie" : magpieCredential()),
+    baseUrl: magpieBaseUrl,
+    imageModel: () => settings.get("magpie_image_model") ?? undefined,
+    textModel: () => settings.get("magpie_text_model") ?? undefined,
+  });
   const imageProviders: Partial<
     Record<
       ProviderId,
@@ -192,7 +206,7 @@ export const createStudioRuntime = (
         }) => Promise<Buffer>;
       }
     >
-  > = { openai, flux, fal, gemini, local, custom, comfyui };
+  > = { openai, flux, fal, gemini, local, custom, comfyui, magpie };
   const imageEditProviders: Partial<Record<ProviderId, {
     refineImage: (input: {
       prompt: string;
@@ -201,7 +215,7 @@ export const createStudioRuntime = (
       referenceMediaType: string;
       references?: Array<{ path: string; mediaType: string }>;
     }) => Promise<Buffer>;
-  }>> = { openai, fal, gemini };
+  }>> = { openai, fal, gemini, comfyui };
   const videoProviders: Partial<
     Record<
       ProviderId,
@@ -292,16 +306,22 @@ export const createStudioRuntime = (
         configured: hasStoredApiKey("deepseek"),
         capabilities: ["text"],
       },
+      // 免费池：文本与出图都可用，改图需要参考图编辑能力，免费档没有，故不挂 image_edit。
+      {
+        id: "magpie",
+        configured: hasStoredApiKey("magpie"),
+        capabilities: ["text", "image"],
+      },
     ] satisfies ProviderStatus["providers"];
   const defaultRouteFor = (
     capability: ProviderCapability,
     providers: ProviderStatus["providers"],
   ): ProviderId | undefined => {
     const priorities: Record<ProviderCapability, ProviderId[]> = {
-      text: ["deepseek", "gemini", "openai"],
+      // 免费池排最前：它是唯一零 key 就能出图/出文本的通道，配好即生效。
+      text: ["magpie", "deepseek", "gemini", "openai"],
       vision: ["openai"],
-      // 本地服务排在最后：已经配好云端服务时保持原有路由，一家都没配密钥时才用本机服务出图。
-      image: ["fal", "gemini", "openai", "flux", "local", "comfyui"],
+      image: ["magpie", "fal", "gemini", "openai", "flux", "local", "comfyui"],
       image_edit: ["fal", "gemini", "openai"],
       video: ["openai"],
     };
@@ -827,6 +847,7 @@ export const createStudioRuntime = (
         "creation:enrich-card",
         async (_event, card: CreativeCard) => {
           const providerId = routeFor("text");
+          if (providerId === "magpie") return magpie.enrichCreativeCard(card);
           if (providerId !== "deepseek")
             throw new Error(`模型 ${providerId} 尚未安装创作理解适配器。`);
           return deepseek.enrichCreativeCard(card);
@@ -839,14 +860,17 @@ export const createStudioRuntime = (
           input: {
             prompt: string;
             negative?: string;
-            providerId: "openai" | "flux" | "fal" | "gemini";
+            providerId: "openai" | "flux" | "fal" | "gemini" | "magpie";
             qualityTier: "draft" | "standard" | "premium";
           },
         ) => {
-          if (routeFor("text") !== "deepseek")
+          const textProvider = routeFor("text");
+          if (textProvider !== "deepseek" && textProvider !== "magpie")
             throw new Error("当前文字路由尚未安装提示词适配器。");
           if (!input.prompt?.trim()) throw new Error("请先生成结构化提示词。");
-          return deepseek.translatePrompt(input);
+          return textProvider === "magpie"
+            ? magpie.translatePrompt(input)
+            : deepseek.translatePrompt(input);
         },
       );
       ipcMain.handle(

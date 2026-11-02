@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 import type { GenerationSize } from "../../../src/shared/generation-requests";
 import { dimensionsForImageSize } from "../../../src/shared/types";
 
@@ -6,6 +8,18 @@ export const COMFYUI_DEFAULT_BASE_URL = "http://127.0.0.1:8188";
 
 type WorkflowNode = { class_type: string; inputs: Record<string, unknown> };
 export type ComfyWorkflow = Record<string, WorkflowNode>;
+
+/** 参考图占位符：第一张是 {{reference_image}}，之后 {{reference_image_1}}…{{reference_image_n}}。 */
+const USES_REFERENCE_PLACEHOLDER = /\{\{reference_image(_\d+)?\}\}/;
+
+const referenceVariables = (names?: string[]): Record<string, string> => {
+  if (!names?.length) return {};
+  const variables: Record<string, string> = { reference_image: names[0] };
+  names.forEach((name, index) => {
+    variables[`reference_image_${index + 1}`] = name;
+  });
+  return variables;
+};
 
 /**
  * 内置工作流：Checkpoint → 双 CLIPTextEncode → KSampler → VAEDecode → SaveImage。
@@ -154,6 +168,7 @@ export class ComfyUiImageProvider {
     size: GenerationSize;
     seed?: number;
     quality?: "medium" | "high";
+    referenceNames?: string[];
   }): ComfyWorkflow {
     const { width, height } = dimensionsForImageSize(input.size);
     const variables = {
@@ -164,22 +179,27 @@ export class ComfyUiImageProvider {
       height,
       steps: input.quality === "high" ? 28 : 20,
       checkpoint: this.checkpoint() ?? "",
+      ...referenceVariables(input.referenceNames),
     };
     const custom = this.options.workflow?.()?.trim();
+    let base: unknown = COMFYUI_BUILTIN_WORKFLOW;
     if (custom) {
-      let parsed: unknown;
       try {
-        parsed = JSON.parse(custom);
+        base = JSON.parse(custom);
       } catch {
         throw new Error("自定义 ComfyUI 工作流不是有效 JSON。");
       }
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      if (!base || typeof base !== "object" || Array.isArray(base))
         throw new Error("自定义 ComfyUI 工作流需要是 API 格式的对象。");
-      return applyWorkflowPlaceholders(parsed, variables) as ComfyWorkflow;
-    }
-    if (!variables.checkpoint)
+    } else if (!variables.checkpoint) {
       throw new Error("请先填写 ComfyUI 的 checkpoint 文件名，或提供自定义工作流。");
-    return applyWorkflowPlaceholders(COMFYUI_BUILTIN_WORKFLOW, variables) as ComfyWorkflow;
+    }
+    // 有参考图但工作流里没有占位符时，图会被静默忽略——宁可报错也不能让用户以为身份锁定了。
+    if (input.referenceNames?.length && !USES_REFERENCE_PLACEHOLDER.test(JSON.stringify(base)))
+      throw new Error(
+        "当前 ComfyUI 工作流没有 {{reference_image}} 占位符，参考图会被忽略。请加一个 LoadImage 节点，把它的 image 写成 {{reference_image}}。",
+      );
+    return applyWorkflowPlaceholders(base, variables) as ComfyWorkflow;
   }
 
   async generateImage(input: {
@@ -188,6 +208,7 @@ export class ComfyUiImageProvider {
     size: GenerationSize;
     seed?: number;
     quality?: "medium" | "high";
+    referenceNames?: string[];
   }): Promise<Buffer> {
     const baseUrl = this.baseUrl();
     if (!baseUrl) throw new Error("尚未配置 ComfyUI 地址。");
@@ -237,5 +258,46 @@ export class ComfyUiImageProvider {
       return Buffer.from(await file.arrayBuffer());
     }
     throw new Error("ComfyUI 生成超时；请检查队列是否卡住。");
+  }
+
+  /** 把参考图传到 ComfyUI，返回文件名；占位符里填这个名字，工作流才读得到。 */
+  async uploadImage(file: { path: string; mediaType: string }): Promise<string> {
+    const baseUrl = this.baseUrl();
+    if (!baseUrl) throw new Error("尚未配置 ComfyUI 地址。");
+    const filename = basename(file.path) || "reference.png";
+    const form = new FormData();
+    form.append("image", new Blob([readFileSync(file.path)], { type: file.mediaType }), filename);
+    form.append("overwrite", "true");
+    const response = await fetch(`${baseUrl}/upload/image`, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!response.ok) {
+      const detail = (await response.text().catch(() => "")).slice(0, 300);
+      throw new Error(`ComfyUI 参考图上传失败（${response.status}）${detail ? `：${detail}` : ""}`);
+    }
+    const payload = (await response.json()) as { name?: string; subfolder?: string };
+    if (!payload.name) throw new Error("ComfyUI 参考图上传没有返回文件名。");
+    return payload.subfolder ? `${payload.subfolder}/${payload.name}` : payload.name;
+  }
+
+  /** 带参考图出图：先逐张上传，再把文件名注进 {{reference_image}} 系列占位符。 */
+  async refineImage(input: {
+    prompt: string;
+    negative?: string;
+    size: GenerationSize;
+    seed?: number;
+    quality?: "medium" | "high";
+    referencePath: string;
+    referenceMediaType: string;
+    references?: Array<{ path: string; mediaType: string }>;
+  }): Promise<Buffer> {
+    const files = input.references?.length
+      ? input.references
+      : [{ path: input.referencePath, mediaType: input.referenceMediaType }];
+    const referenceNames: string[] = [];
+    for (const file of files) referenceNames.push(await this.uploadImage(file));
+    return this.generateImage({ ...input, referenceNames });
   }
 }

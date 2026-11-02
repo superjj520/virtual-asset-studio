@@ -1,6 +1,9 @@
 // @vitest-environment node
 import { afterEach, expect, it } from "vitest";
 import { createServer, type ServerResponse } from "node:http";
+import { writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import {
   ComfyUiImageProvider,
@@ -13,7 +16,7 @@ const ONE_PIXEL_PNG = Buffer.from(
   "base64",
 );
 
-type MockRequest = { method?: string; url?: string; body: any };
+type MockRequest = { method?: string; url?: string; body: any; raw?: string };
 type MockServer = { url: string; requests: MockRequest[]; close: () => Promise<void> };
 
 const openServers: MockServer[] = [];
@@ -31,10 +34,17 @@ const startMock = async (
     request.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
     request.on("end", () => {
       const raw = Buffer.concat(chunks).toString("utf8");
+      let parsed: unknown;
+      try {
+        parsed = raw ? JSON.parse(raw) : undefined;
+      } catch {
+        parsed = undefined;
+      }
       const captured: MockRequest = {
         method: request.method,
         url: request.url,
-        body: raw ? JSON.parse(raw) : undefined,
+        body: parsed,
+        raw,
       };
       requests.push(captured);
       respond(captured, response);
@@ -207,4 +217,86 @@ it("地址为空时不发起任何请求", async () => {
   await expect(provider.generateImage({ prompt: "猫", size: "1024x1024" })).rejects.toThrow(
     /ComfyUI 地址/,
   );
+});
+
+it("带参考图出图时先上传，再把返回的文件名注进 {{reference_image}} 占位符", async () => {
+  const referencePath = join(tmpdir(), `comfy-ref-${Date.now()}.png`);
+  writeFileSync(referencePath, ONE_PIXEL_PNG);
+  const server = await startMock((request, response) => {
+    if (request.url === "/upload/image") {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ name: "uploaded-ref.png", subfolder: "" }));
+      return;
+    }
+    if (request.url === "/prompt") {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ prompt_id: "p1" }));
+      return;
+    }
+    if (request.url === "/history/p1") {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ p1: { outputs: { "9": { images: [{ filename: "out.png", subfolder: "", type: "output" }] } } } }));
+      return;
+    }
+    if (request.url?.startsWith("/view?")) {
+      response.writeHead(200, { "Content-Type": "image/png" });
+      response.end(ONE_PIXEL_PNG);
+      return;
+    }
+    response.writeHead(404).end();
+  });
+
+  const provider = new ComfyUiImageProvider({
+    baseUrl: () => server.url,
+    checkpoint: () => "sd_xl_base_1.0.safetensors",
+    workflow: () =>
+      JSON.stringify({
+        "10": { class_type: "LoadImage", inputs: { image: "{{reference_image}}" } },
+        "9": { class_type: "SaveImage", inputs: { images: ["10", 0] } },
+      }),
+    pollIntervalMs: 1,
+    timeoutMs: 5000,
+  });
+
+  const image = await provider.refineImage({
+    prompt: "把参考图里的人画成侧脸",
+    size: "1:1",
+    referencePath,
+    referenceMediaType: "image/png",
+  });
+
+  expect(image.equals(ONE_PIXEL_PNG)).toBe(true);
+  const upload = server.requests.find((request) => request.url === "/upload/image");
+  expect(upload?.method).toBe("POST");
+  expect(upload?.raw).toContain("name=\"image\"");
+  expect(upload?.raw).toContain("comfy-ref-");
+  const prompt = server.requests.find((request) => request.url === "/prompt");
+  expect(prompt?.body.prompt["10"].inputs.image).toBe("uploaded-ref.png");
+});
+
+it("工作流没有参考图占位符时直接报错，不静默丢掉参考图", async () => {
+  const referencePath = join(tmpdir(), `comfy-ref-missing-${Date.now()}.png`);
+  writeFileSync(referencePath, ONE_PIXEL_PNG);
+  const server = await startMock((_request, response) => {
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ name: "uploaded-ref.png", subfolder: "" }));
+  });
+
+  const provider = new ComfyUiImageProvider({
+    baseUrl: () => server.url,
+    checkpoint: () => "sd_xl_base_1.0.safetensors",
+    workflow: () => JSON.stringify({ "9": { class_type: "SaveImage", inputs: { images: ["4", 0] } } }),
+    pollIntervalMs: 1,
+    timeoutMs: 5000,
+  });
+
+  await expect(
+    provider.refineImage({
+      prompt: "参考图锁身份",
+      size: "1:1",
+      referencePath,
+      referenceMediaType: "image/png",
+    }),
+  ).rejects.toThrow(/没有 \{\{reference_image\}\} 占位符/);
+  expect(server.requests.some((request) => request.url === "/prompt")).toBe(false);
 });

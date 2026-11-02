@@ -55,7 +55,8 @@ export class DeepSeekProvider {
   async translatePrompt(input: {
     prompt: string;
     negative?: string;
-    providerId: "openai" | "flux" | "fal" | "gemini";
+    /** 只用于告诉模型「提示词要交给谁用」，所以任何已注册的绘图路由都能作为目标。 */
+    providerId: PromptTranslation["providerId"];
     qualityTier: GenerationQualityTier;
   }): Promise<PromptTranslation> {
     const apiKey = this.options.apiKey();

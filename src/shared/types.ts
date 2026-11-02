@@ -878,7 +878,7 @@ export type CreativeRecipe = {
 export type GenerationQualityTier = "draft" | "standard" | "premium";
 
 export type PromptTranslation = {
-  providerId: Extract<ProviderId, "openai" | "flux" | "fal" | "gemini">;
+  providerId: Extract<ProviderId, "openai" | "flux" | "fal" | "gemini" | "magpie">;
   qualityTier: GenerationQualityTier;
   positive: string;
   negative: string;
@@ -1024,7 +1024,9 @@ export type ProviderId =
   /** 任意云端 OpenAI 兼容图像协议，例如千问、豆包。 */
   | "custom"
   /** 本机 ComfyUI：走官方 /prompt → /history → /view 接口，工作流可自定义。 */
-  | "comfyui";
+  | "comfyui"
+  /** 本机 Magpie 网关的免费池：文本走免费路由组，出图走零 key 出图端点。 */
+  | "magpie";
 export type ProviderCapability =
   "text" | "vision" | "image" | "image_edit" | "video";
 
