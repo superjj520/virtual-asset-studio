@@ -200,6 +200,30 @@ describe("reference sheet", () => {
     expect(withExtra.mustKeep).toContain("补充参考不得覆盖");
   });
 
+  it("补充参考不允许带发型，发色与发型只认身份参考", () => {
+    const withExtra = applyReferenceSheetToCard(
+      card,
+      recipe([
+        { role: "identity", assetId: "a" },
+        { role: "wardrobe", assetId: "b" },
+        { role: "extra1", assetId: "c" },
+      ]),
+    );
+
+    // 曾经这里写着「只提取材质、配饰、发型轮廓或光影」，
+    // 与「身份参考含发型」自相矛盾，模型会把补充参考的发色一起带进来。
+    expect(withExtra.mustKeep).not.toContain("发型轮廓");
+    expect(withExtra.mustKeep).toContain("发型、肤色、脸型");
+    expect(withExtra.identityAnchor).toContain("发色与发型走向");
+
+    const prompt = buildReferenceSheetPrompt([
+      { role: "identity", assetId: "a" },
+      { role: "extra1", assetId: "c" },
+    ]);
+    expect(prompt.positive).not.toContain("发型轮廓");
+    expect(prompt.positive).toContain("发型");
+  });
+
   it("两张卡提示词使用左右格标签，且没有场景模块", () => {
     const prompt = buildReferenceSheetPrompt([
       { role: "identity", assetId: "a" },

@@ -239,9 +239,9 @@ const roleInstruction: Record<
   scene: (label) =>
     `${label}只提供场景、光线与色调：沿用其空间、环境、光源方向和色彩气氛，人物仍须清晰可辨。`,
   extra1: (label) =>
-    `${label}只提供补充细节：只提取其材质、配饰、发型轮廓或光影等明确特征；发色、肤色、脸型、年龄、服装结构、姿态和场景必须严格沿用身份/服装/姿态/场景参考，补充参考不得覆盖。`,
+    `${label}只提供补充细节：只提取其材质、配饰或光影等明确细节；发色、发型、肤色、脸型、年龄、服装结构、姿态和场景必须严格沿用身份/服装/姿态/场景参考，补充参考不得覆盖。`,
   extra2: (label) =>
-    `${label}只提供补充细节：只提取其材质、配饰、发型轮廓或光影等明确特征；发色、肤色、脸型、年龄、服装结构、姿态和场景必须严格沿用身份/服装/姿态/场景参考，补充参考不得覆盖。`,
+    `${label}只提供补充细节：只提取其材质、配饰或光影等明确细节；发色、发型、肤色、脸型、年龄、服装结构、姿态和场景必须严格沿用身份/服装/姿态/场景参考，补充参考不得覆盖。`,
 };
 
 export const buildReferenceSheetPrompt = (
@@ -311,7 +311,7 @@ export const applyReferenceSheetToCard = (
   return {
     ...card,
     identityAnchor: identityLabel
-      ? `${identityLabel}人物身份：沿用参考板中的脸型、五官、肤色、年龄感与发型，不重新设计`
+      ? `${identityLabel}人物身份：沿用参考板中的脸型、五官、肤色、年龄感、发色与发型走向，不重新设计`
       : card.identityAnchor,
     bodyAndWardrobe: wardrobeLabel
       ? `${wardrobeLabel}服装与配饰：沿用参考板中的款式、材质、颜色和配饰`
@@ -328,7 +328,7 @@ export const applyReferenceSheetToCard = (
         recipe.prompt.positive,
       ),
       extraLabels.length
-        ? `补充参考 ${extraLabels.join("、")}：只提取材质、配饰、发型轮廓或光影等明确特征；发色、肤色、脸型、年龄、服装结构、姿态和场景必须严格沿用身份/服装/姿态/场景参考，补充参考不得覆盖。`
+        ? `补充参考 ${extraLabels.join("、")}：只提取材质、配饰或光影等明确细节；发色、发型、肤色、脸型、年龄、服装结构、姿态和场景必须严格沿用身份/服装/姿态/场景参考，补充参考不得覆盖。`
         : "",
     ),
     avoid: mergeText(card.avoid, recipe.prompt.negative),
