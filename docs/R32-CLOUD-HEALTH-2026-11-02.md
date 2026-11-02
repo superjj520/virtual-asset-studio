@@ -117,3 +117,31 @@ npm run build     通过
 六类全部可点选、可入库、可绑定槽位。
 
 **一次假警报**：「发型」第一次显示槽位没变，看着像 bug。实际是脚本只等了 1200 ms，上一张图还在下载、按钮处于 `disabled`（`importingCloudId` 非空），点击被忽略。单独重测等待 6 秒后正常显示「长发」。记在这里是因为这类「等待不足」在自动化里很容易被误判成产品缺陷。
+
+---
+
+## 补四：清理我留下的垃圾（用户指出的）
+
+用户发来一张截图，Dock 里排了一长列无名图标。查下来是我的问题，两个来源：
+
+**一、16 个没退出的 Electron 实例。** 取证脚本 `child.kill("SIGKILL")` 只杀掉了 `node_modules/.bin/electron` 这层 node 包装进程，真正的 Electron 主进程变成孤儿继续跑，每个还带着 GPU/网络/渲染三个子进程。而且它们都占着 `--remote-debugging-port`（9471/9491）——这正是前面那个「CDP 连到旧进程、代码改了页面不更新」的坑的真正原因：端口上同时有三个 Electron 在抢，连到哪个看运气。已全部杀掉。
+
+**二、353 个临时目录，合计 80 GB。** 25 个测试文件用 `mkdtempSync` 建临时目录，95 处调用，只有 6 个文件写了清理。跑几十次测试就积成：
+
+```
+vas-job-*      189 个
+vas-secret-*    81 个
+vas-export-*    81 个
+其他             2 个
+```
+
+修法：新增 `scripts/clean-tmp.mjs`，`npm test` 改成前后各清一次——
+
+```json
+"test": "node scripts/clean-tmp.mjs && npm run rebuild:native:node && vitest run; node scripts/clean-tmp.mjs --all"
+"clean:tmp": "node scripts/clean-tmp.mjs"
+```
+
+跑前那次只删 5 分钟前的（避免误删并行测试正在用的目录），跑后那次带 `--all` 全清。验证：一次 `npm test` 后残留目录从 32 个降到 0 个。
+
+**没做的**：没有逐个给那 25 个测试文件补 `afterEach` 清理。理由是改 95 处调用容易引入 flaky，而集中式清理一样能达到「跑完不留下东西」，且不侵入测试逻辑。如果以后有人用非 `npm test` 的方式跑 vitest，还是会漏——这一点记在这里。
