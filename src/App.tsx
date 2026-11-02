@@ -4602,6 +4602,11 @@ export default function App() {
                 <label>
                   身份锚点
                   <textarea aria-label="身份锚点" value={characterDraftCard.identityAnchor} onChange={(event) => setCharacterDraftCard((current) => ({ ...current, identityAnchor: event.target.value }))} placeholder="最不能漂移的脸型、年龄感、种族或辨识特征" />
+                  {identityAnchorWarning(characterDraftCard.identityAnchor) && (
+                    <small className="identity-anchor-hint" role="status">
+                      {identityAnchorWarning(characterDraftCard.identityAnchor)}
+                    </small>
+                  )}
                 </label>
                 <label>
                   身材与衣着（可选）

@@ -27,7 +27,12 @@ identityAnchorWarning(anchor)
   └─ 有 → undefined（不打扰）
 ```
 
-创作卡在 `ReferenceBindingsPanel` 之前渲染这段提示（`src/App.tsx:6034` 附近），样式 `.identity-anchor-hint` 用 `--warning` 色、左边框 3px、`--accent-soft` 底色。
+提示挂在两个真正会写身份锚点的地方：
+
+1. 角色塑造的草稿卡（`src/App.tsx:4603` 那个 `textarea[aria-label="身份锚点"]` 下方，渲染成 `<small class="identity-anchor-hint" role="status">`）。
+2. 创作卡编辑页的字段区（`src/App.tsx:6034` 附近，`ReferenceBindingsPanel` 之前）。
+
+样式 `.identity-anchor-hint` 用 `--warning` 色、左边框 3px、`--accent-soft` 底色；草稿卡里是 `small`，额外加了 `display:block` 与更紧的内边距。
 
 只在这两种情况下出现，锚点写全了就完全不显示——不制造常驻噪音。
 

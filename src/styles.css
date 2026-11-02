@@ -3864,3 +3864,9 @@ button:active { transform: translateY(1px); }
   font-size: 12px;
   line-height: 1.6;
 }
+
+.identity-anchor-hint:is(small) {
+  display: block;
+  margin: 6px 0 0;
+  padding: 6px 10px;
+}
