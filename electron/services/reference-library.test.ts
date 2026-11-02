@@ -91,6 +91,73 @@ describe("云端参考库", () => {
     expect(catalog.items.find((item) => item.kind === "hair")?.sourceName).toContain("二次元");
   });
 
+  it("同一姿势保留全部视角，正面排首位作为默认预览", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("char-db-cn/main/data.js"))
+          return new Response(`window.CHARDB=${JSON.stringify({ items: [] })};`, {
+            status: 200,
+            headers: { "content-type": "application/javascript" },
+          });
+        if (url.includes("pose-zh"))
+          return json([
+            poseRow("侧面"),
+            poseRow("俯视"),
+            poseRow("正面"),
+            poseRow("斜侧"),
+            poseRow("仰视"),
+          ]);
+        if (url.includes("costume-zh")) return json([]);
+        if (url.includes("portrait-zh")) return json([]);
+        throw new Error(`未预期的请求：${url}`);
+      }),
+    );
+    const library = new CloudReferenceLibrary(
+      {} as ImportService,
+      {} as AssetRepository,
+      {} as ProjectRepository,
+    );
+    const catalog = await library.list();
+    const pose = catalog.items.find((item) => item.kind === "pose");
+    expect(pose).toBeDefined();
+    expect(pose?.variants?.map((variant) => variant.label)).toEqual([
+      "正面",
+      "斜侧",
+      "侧面",
+      "仰视",
+      "俯视",
+    ]);
+    expect(pose?.variants?.[0].imageUrl).toBe(pose?.imageUrl);
+    expect(pose?.variants?.[0].thumbUrl).toBe(pose?.thumbUrl);
+    expect(pose?.variants?.every((variant) => variant.id.startsWith("pose-"))).toBe(true);
+    expect(new Set(pose?.variants?.map((variant) => variant.id)).size).toBe(5);
+  });
+
+  it("单视角姿势不产生视角列表", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("char-db-cn/main/data.js"))
+          return new Response(`window.CHARDB=${JSON.stringify({ items: [] })};`, {
+            status: 200,
+            headers: { "content-type": "application/javascript" },
+          });
+        if (url.includes("pose-zh")) return json([poseRow("正面")]);
+        if (url.includes("costume-zh")) return json([]);
+        if (url.includes("portrait-zh")) return json([]);
+        throw new Error(`未预期的请求：${url}`);
+      }),
+    );
+    const library = new CloudReferenceLibrary(
+      {} as ImportService,
+      {} as AssetRepository,
+      {} as ProjectRepository,
+    );
+    const catalog = await library.list();
+    expect(catalog.items.find((item) => item.kind === "pose")?.variants).toBeUndefined();
+  });
+
   it("引用单张时入库、确认、绑定项目并写入来源", async () => {
     const asset = { id: "asset-1", metadata: {} } as Asset;
     const importer = {

@@ -16,6 +16,7 @@ import {
   CLOUD_REFERENCE_KINDS,
   type CloudReferenceCatalog,
   type CloudReferenceItem,
+  type CloudReferenceVariant,
   type CloudReferenceKind,
 } from "../shared/reference-library";
 import { REFERENCE_STYLES, findReferenceStyle } from "../shared/reference-styles";
@@ -207,11 +208,20 @@ export function ReferenceSheetComposer({
       .slice(0, 48);
   }, [cloudCatalog, cloudKind, cloudQuery]);
 
-  const chooseCloud = async (item: CloudReferenceItem) => {
-    setImportingCloudId(item.id);
+  const chooseCloud = async (item: CloudReferenceItem, variant?: CloudReferenceVariant) => {
+    const target: CloudReferenceItem = variant
+      ? {
+          ...item,
+          id: variant.id,
+          title: `${item.title} · ${variant.label}`,
+          thumbUrl: variant.thumbUrl,
+          imageUrl: variant.imageUrl,
+        }
+      : item;
+    setImportingCloudId(target.id);
     setCloudError("");
     try {
-      const asset = await window.studio.referenceLibrary.import(item, projectId);
+      const asset = await window.studio.referenceLibrary.import(target, projectId);
       const preview = await window.studio.assets.preview(asset.id);
       if (preview) setPreviews((current) => ({ ...current, [asset.id]: preview }));
       onSaved?.(asset);
@@ -495,7 +505,7 @@ export function ReferenceSheetComposer({
                         <button
                           key={asset.id}
                           type="button"
-                          className={selected ? "reference-sheet-asset selected" : "reference-sheet-asset"}
+                          className={selected ? "reference-sheet-asset reference-sheet-asset-pick selected" : "reference-sheet-asset reference-sheet-asset-pick"}
                           onClick={() => choose(asset)}
                           title={`${asset.name} · ${ASSET_TYPE_LABELS[asset.type] ?? asset.type}`}
                         >
@@ -545,21 +555,45 @@ export function ReferenceSheetComposer({
                   ) : cloudCandidates.length ? (
                     <div className="reference-sheet-assets cloud">
                       {cloudCandidates.map((item) => {
-                        const selected = (slots[activeRole]?.metadata?.cloudReference as { itemId?: string } | undefined)?.itemId === item.id;
+                        const boundItemId = (slots[activeRole]?.metadata?.cloudReference as { itemId?: string } | undefined)?.itemId;
+                        const selected = boundItemId === item.id;
+                        const activeVariantId = item.variants?.some((variant) => variant.id === boundItemId)
+                          ? boundItemId
+                          : undefined;
                         return (
-                          <button
+                          <div
                             key={item.id}
-                            type="button"
                             className={selected ? "reference-sheet-asset selected" : "reference-sheet-asset"}
-                            onClick={() => void chooseCloud(item)}
-                            disabled={Boolean(importingCloudId)}
-                            title={`${item.title} · ${item.category}`}
                           >
-                            <CloudThumb url={item.thumbUrl} title={item.title} />
-                            <strong>{importingCloudId === item.id ? "正在引用…" : item.title}</strong>
-                            <small>{CLOUD_REFERENCE_KIND_LABELS[item.kind]} · {item.category}</small>
+                            <button
+                              type="button"
+                              className="reference-sheet-asset-pick"
+                              onClick={() => void chooseCloud(item)}
+                              disabled={Boolean(importingCloudId)}
+                              title={`${item.title} · ${item.category}${item.variants ? ` · ${item.variants.length} 个视角` : ""}`}
+                            >
+                              <CloudThumb url={item.thumbUrl} title={item.title} />
+                              <strong>{importingCloudId === item.id ? "正在引用…" : item.title}</strong>
+                              <small>{CLOUD_REFERENCE_KIND_LABELS[item.kind]} · {item.category}</small>
+                            </button>
+                            {item.variants && item.variants.length > 1 && (
+                              <div className="reference-sheet-angles" role="group" aria-label={`${item.title} 的视角`}>
+                                {item.variants.map((variant) => (
+                                  <button
+                                    key={variant.id}
+                                    type="button"
+                                    className={activeVariantId === variant.id ? "active" : ""}
+                                    aria-pressed={activeVariantId === variant.id}
+                                    onClick={() => void chooseCloud(item, variant)}
+                                    disabled={Boolean(importingCloudId)}
+                                  >
+                                    {importingCloudId === variant.id ? "…" : variant.label}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                             {selected && <em>已选</em>}
-                          </button>
+                          </div>
                         );
                       })}
                     </div>

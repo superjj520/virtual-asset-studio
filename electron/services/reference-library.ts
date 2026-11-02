@@ -304,6 +304,14 @@ const assertCloudItem = (item: CloudReferenceItem): void => {
   assertCloudUrl(item.imageUrl);
 };
 
+/** 视角展示顺序：先给最常用的人像机位，再补俯仰与背面。 */
+const POSE_ANGLE_ORDER = ["正面", "斜侧", "斜前", "侧面", "仰视", "俯视", "背面"];
+
+const angleRank = (angle?: string): number => {
+  const index = angle ? POSE_ANGLE_ORDER.indexOf(angle) : -1;
+  return index < 0 ? POSE_ANGLE_ORDER.length : index;
+};
+
 const groupPoses = (rows: PoseRow[]): Array<Omit<CloudReferenceItem, "sourceName" | "sourceUrl">> => {
   const groups = new Map<string, PoseRow[]>();
   for (const row of rows) {
@@ -311,7 +319,16 @@ const groupPoses = (rows: PoseRow[]): Array<Omit<CloudReferenceItem, "sourceName
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
   return [...groups.entries()].map(([key, variants]) => {
-    const preferred = variants.find((row) => row.角度 === "正面") ?? variants[0];
+    const ordered = [...variants].sort((left, right) => angleRank(left.角度) - angleRank(right.角度));
+    const preferred = ordered[0];
+    const angles = ordered
+      .filter((row): row is PoseRow & { 角度: string } => Boolean(row.角度))
+      .map((row) => ({
+        id: `pose-${key}-${row.角度}`,
+        label: row.角度,
+        thumbUrl: absoluteUrl(row.缩略图),
+        imageUrl: absoluteUrl(row.原图 ?? row.缩略图),
+      }));
     return {
       id: `pose-${key}`,
       kind: "pose" as const,
@@ -320,6 +337,7 @@ const groupPoses = (rows: PoseRow[]): Array<Omit<CloudReferenceItem, "sourceName
       tags: [preferred.分类, preferred.角度].filter((value): value is string => Boolean(value)),
       thumbUrl: absoluteUrl(preferred.缩略图),
       imageUrl: absoluteUrl(preferred.原图 ?? preferred.缩略图),
+      ...(angles.length > 1 ? { variants: angles } : {}),
     };
   });
 };
