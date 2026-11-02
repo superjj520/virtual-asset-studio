@@ -116,3 +116,17 @@ it("搜索时跨全部分类，不会因为停在人像分类就搜不到姿势"
   });
   expect(screen.getByText(/搜索跨全部分类/)).toBeInTheDocument();
 });
+
+it("搜不到结果时给一键清除搜索词，不用手动删字", async () => {
+  await openCloudTab();
+  fireEvent.change(screen.getByPlaceholderText("搜名称、分类或标签"), {
+    target: { value: "这个词库里肯定没有" },
+  });
+  await waitFor(() => {
+    expect(screen.getByText(/当前筛选没有结果/)).toBeInTheDocument();
+  });
+  fireEvent.click(screen.getByRole("button", { name: "清除搜索词" }));
+  await waitFor(() => {
+    expect(screen.getByText(/48 张已显示 \/ 匹配 63/)).toBeInTheDocument();
+  });
+});

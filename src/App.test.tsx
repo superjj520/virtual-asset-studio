@@ -1766,6 +1766,10 @@ it('设置页可以保存本机 ComfyUI 地址与 checkpoint', async () => {
     baseUrl: 'http://127.0.0.1:8188',
     checkpoint: 'sd_xl_base_1.0.safetensors',
     workflow: '',
+    // 视频三件套是后续加的，UI 没填时也要带上默认值
+    videoMode: 'animate',
+    videoCheckpoint: '',
+    videoMotion: '',
   });
   expect(
     await screen.findByText(

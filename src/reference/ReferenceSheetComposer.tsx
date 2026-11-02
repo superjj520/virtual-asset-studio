@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { canReuseAsset } from "../creation/asset-reuse";
 import {
   REFERENCE_SHEET_ROLES,
@@ -173,31 +173,28 @@ export function ReferenceSheetComposer({
     setError("");
   };
 
-  useEffect(() => {
-    if (sourceMode !== "cloud" || cloudCatalog) return;
-    let cancelled = false;
+  /**
+   * 云端目录加载：网络抖一下不该把用户卡死在这里。
+   * loadCloud 抽成可重入函数，错误态给「重试」按钮直接再调一次。
+   */
+  const loadCloud = useCallback(() => {
     setCloudBusy(true);
     setCloudError("");
-    window.studio.referenceLibrary
+    return window.studio.referenceLibrary
       .list()
-      .then((catalog) => {
-        if (!cancelled) setCloudCatalog(catalog);
-      })
+      .then((catalog) => setCloudCatalog(catalog))
       .catch((loadError) => {
-        if (!cancelled)
-          setCloudError(
-            loadError instanceof Error
-              ? loadError.message
-              : "云端参考库读取失败。",
-          );
+        setCloudError(
+          loadError instanceof Error ? loadError.message : "云端参考库读取失败。",
+        );
       })
-      .finally(() => {
-        if (!cancelled) setCloudBusy(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [sourceMode, cloudCatalog]);
+      .finally(() => setCloudBusy(false));
+  }, []);
+
+  useEffect(() => {
+    if (sourceMode !== "cloud" || cloudCatalog) return;
+    void loadCloud();
+  }, [sourceMode, cloudCatalog, loadCloud]);
 
   /** 一旦开始搜索就跨全部分类：停在「人像」分类里搜 denim 什么也搜不到，是常见误解。 */
   const cloudSearching = cloudQuery.trim().length > 0;
@@ -572,7 +569,14 @@ export function ReferenceSheetComposer({
                       aria-label="搜索云端参考图"
                     />
                   </div>
-                  {cloudError && <p className="reference-sheet-error" role="alert">{cloudError}</p>}
+                  {cloudError && (
+                    <div className="reference-sheet-error" role="alert">
+                      <p>{cloudError}</p>
+                      <button type="button" onClick={() => void loadCloud()} disabled={cloudBusy}>
+                        {cloudBusy ? "正在重试…" : "重试"}
+                      </button>
+                    </div>
+                  )}
                   {cloudBusy ? (
                     <p className="reference-sheet-no-assets">正在读取云端参考库…</p>
                   ) : cloudCandidates.length ? (
@@ -633,9 +637,19 @@ export function ReferenceSheetComposer({
                       )}
                     </>
                   ) : (
-                    <p className="reference-sheet-no-assets">
-                      {cloudCatalog ? "当前筛选没有结果，换个关键词或分类。" : "云端参考库暂时不可用。"}
-                    </p>
+                    <div className="reference-sheet-no-assets">
+                      <p>{cloudCatalog ? "当前筛选没有结果，换个关键词或分类。" : "云端参考库暂时不可用。"}</p>
+                      {cloudCatalog && cloudSearching && (
+                        <button type="button" onClick={() => setCloudQuery("")}>
+                          清除搜索词
+                        </button>
+                      )}
+                      {cloudCatalog && !cloudSearching && cloudKind !== "all" && (
+                        <button type="button" onClick={() => setCloudKind("all")}>
+                          看全部分类
+                        </button>
+                      )}
+                    </div>
                   )}
                   <p className="reference-sheet-attribution">
                     {cloudCatalog?.attribution ?? "云端参考库"} · 仅引用选中的单张图片，不整库同步
