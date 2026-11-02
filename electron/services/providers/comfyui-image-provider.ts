@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import type { GenerationSize } from "../../../src/shared/generation-requests";
+import { applyWorkflowOverrides } from "../../../src/shared/workflow-parameters";
 import { dimensionsForImageSize } from "../../../src/shared/types";
 
 export const COMFYUI_DEFAULT_BASE_URL = "http://127.0.0.1:8188";
@@ -146,6 +147,8 @@ export class ComfyUiImageProvider {
       baseUrl: () => string | undefined;
       checkpoint: () => string | undefined;
       workflow: () => string | undefined;
+      /** 设置页保存的高级参数覆盖：`节点/字段` → 值。 */
+      overrides?: () => Record<string, string | number | boolean>;
       /** 轮询间隔与总超时，测试时可缩短。 */
       pollIntervalMs?: number;
       timeoutMs?: number;
@@ -173,6 +176,8 @@ export class ComfyUiImageProvider {
     quality?: "medium" | "high";
     referenceNames?: string[];
     depthName?: string;
+    /** 参数级覆盖：`节点/字段` → 值，来自设置页的高级参数编辑。 */
+    overrides?: Record<string, string | number | boolean>;
   }): ComfyWorkflow {
     const { width, height } = dimensionsForImageSize(input.size);
     const variables = {
@@ -209,7 +214,11 @@ export class ComfyUiImageProvider {
       throw new Error(
         "当前 ComfyUI 工作流没有 {{depth_image}} 占位符，深度图会被忽略。请加一个 LoadImage 节点接 ControlDepth，把它的 image 写成 {{depth_image}}。",
       );
-    return applyWorkflowPlaceholders(base, variables) as ComfyWorkflow;
+    const filled = applyWorkflowPlaceholders(base, variables);
+    // 参数覆盖放在占位符之后：用户手改的值优先于模板里的默认值。
+    const overrides = { ...(this.options.overrides?.() ?? {}), ...(input.overrides ?? {}) };
+    if (Object.keys(overrides).length === 0) return filled as ComfyWorkflow;
+    return applyWorkflowOverrides(filled, overrides).workflow as ComfyWorkflow;
   }
 
   async generateImage(input: {
@@ -220,6 +229,7 @@ export class ComfyUiImageProvider {
     quality?: "medium" | "high";
     referenceNames?: string[];
     depthName?: string;
+    overrides?: Record<string, string | number | boolean>;
   }): Promise<Buffer> {
     const baseUrl = this.baseUrl();
     if (!baseUrl) throw new Error("尚未配置 ComfyUI 地址。");

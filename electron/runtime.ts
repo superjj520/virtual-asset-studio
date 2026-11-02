@@ -181,6 +181,17 @@ export const createStudioRuntime = (
     baseUrl: () => settings.get("comfyui_base_url"),
     checkpoint: () => settings.get("comfyui_checkpoint"),
     workflow: () => settings.get("comfyui_workflow"),
+    // 高级参数覆盖按 `节点/字段` 存成 JSON；解析失败当作没有覆盖，不让设置页存坏值拖垮出图。
+    overrides: (): Record<string, string | number | boolean> => {
+      const raw = settings.get("comfyui_overrides");
+      if (!raw) return {};
+      try {
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+      } catch {
+        return {};
+      }
+    },
   };
   const comfyui = new ComfyUiImageProvider(comfyuiOptions);
   // 本机 ComfyUI 也能出视频：Wan2.1 文生视频，走同一套网关地址与设置页开关。
@@ -1468,6 +1479,8 @@ export const createStudioRuntime = (
             baseUrl?: string;
             checkpoint?: string;
             workflow?: string;
+            /** 高级参数覆盖：`节点/字段` → 值。 */
+            overrides?: Record<string, string | number | boolean>;
             videoMode?: string;
             videoCheckpoint?: string;
             videoMotion?: string;
@@ -1510,6 +1523,11 @@ export const createStudioRuntime = (
           settings.set("comfyui_base_url", baseUrl);
           settings.set("comfyui_checkpoint", baseUrl ? checkpoint : "");
           settings.set("comfyui_workflow", baseUrl ? workflow : "");
+          const overrides =
+            input.overrides && typeof input.overrides === "object" && !Array.isArray(input.overrides)
+              ? input.overrides
+              : {};
+          settings.set("comfyui_overrides", baseUrl ? JSON.stringify(overrides) : "");
           settings.set("comfyui_video_mode", baseUrl ? videoMode : "");
           settings.set("comfyui_video_ckpt", baseUrl ? videoCheckpoint : "");
           settings.set("comfyui_video_motion", baseUrl ? videoMotion : "");

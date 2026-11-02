@@ -381,3 +381,40 @@ it("给了深度图但工作流没有 {{depth_image}} 时直接报错，不发 /
   ).rejects.toThrow(/没有 \{\{depth_image\}\} 占位符/);
   expect(server.requests.some((request) => request.url === "/prompt")).toBe(false);
 });
+
+it("参数覆盖写进提交的工作流，且占位符先替换", () => {
+  const provider = providerFor({ baseUrl: "http://127.0.0.1:8188", checkpoint: "sd_xl_base_1.0.safetensors" });
+  const workflow = provider.buildWorkflow({
+    prompt: "白发少女",
+    size: "1024x1024",
+    seed: 7,
+    overrides: { "3/steps": 33 },
+  });
+
+  expect(workflow["3"].inputs.steps).toBe(33);
+  // 没被覆盖的字段仍是注入结果
+  expect(workflow["6"].inputs.text).toBe("白发少女");
+  expect(workflow["3"].inputs.seed).toBe(7);
+});
+
+it("覆盖值类型对不上时保持原值，不把字符串写进数字字段", () => {
+  const provider = providerFor({ baseUrl: "http://127.0.0.1:8188", checkpoint: "sd_xl_base_1.0.safetensors" });
+  const workflow = provider.buildWorkflow({
+    prompt: "x",
+    size: "1024x1024",
+    overrides: { "3/steps": "33" },
+  });
+
+  expect(workflow["3"].inputs.steps).toBe(20); // 标准画质默认 20
+});
+
+it("覆盖一个工作流里没有的节点时什么都不改", () => {
+  const provider = providerFor({ baseUrl: "http://127.0.0.1:8188", checkpoint: "sd_xl_base_1.0.safetensors" });
+  const workflow = provider.buildWorkflow({
+    prompt: "x",
+    size: "1024x1024",
+    overrides: { "99/whatever": 1 },
+  });
+
+  expect(Object.keys(workflow)).not.toContain("99");
+});

@@ -3969,3 +3969,98 @@ button:active { transform: translateY(1px); }
 .cloud-health-table tr[data-status="empty"] td:nth-child(3) {
   color: var(--warning);
 }
+
+/* ComfyUI 高级参数：工作流里有可编辑字段时展开在 textarea 下方 */
+.comfyui-parameters {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2, rgba(255, 255, 255, 0.02));
+}
+
+.comfyui-parameter-list {
+  display: grid;
+  gap: 6px;
+}
+
+.comfyui-parameter {
+  display: grid;
+  grid-template-columns: 1fr minmax(120px, 220px);
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.comfyui-parameter > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.comfyui-parameter > span em {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.comfyui-parameter.changed > span {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.comfyui-parameter input,
+.comfyui-parameter select {
+  width: 100%;
+  min-height: 30px;
+}
+
+.comfyui-parameter input[type="checkbox"] {
+  width: auto;
+  min-height: auto;
+  justify-self: start;
+}
+
+.comfyui-reset-overrides {
+  margin-left: 10px;
+  padding: 2px 10px;
+  font-size: 11px;
+}
+
+@media (max-width: 720px) {
+  .comfyui-parameter {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
+.comfyui-controls-help {
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft, rgba(0, 0, 0, 0.12));
+  border-radius: 10px;
+}
+
+.comfyui-controls-help > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink-2, #4a4a52);
+}
+
+.comfyui-controls-help pre {
+  margin: 8px 0 0;
+  padding: 10px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: var(--surface-sunken, rgba(0, 0, 0, 0.05));
+  font-size: 12px;
+  line-height: 1.55;
+}

@@ -352,6 +352,8 @@ interface Window {
         baseUrl: string;
         checkpoint: string;
         workflow: string;
+        /** 高级参数覆盖：`节点/字段` → 值。 */
+        overrides?: Record<string, string | number | boolean>;
         /** 本机视频引擎：animate（AnimateDiff Lightning）或 wan（Wan2.1）。 */
         videoMode?: "animate" | "wan";
         videoCheckpoint?: string;

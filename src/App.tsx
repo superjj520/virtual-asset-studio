@@ -30,6 +30,7 @@ import { ReferenceSheetComposer } from "./reference/ReferenceSheetComposer";
 import { applyReferenceSheetToCard, type ReferenceSheetRecipe } from "./shared/reference-sheet";
 import { identityAnchorWarning } from "./shared/identity-anchor";
 import type { CloudHealthReport } from "./shared/reference-library";
+import { listWorkflowParameters, parameterKey } from "./shared/workflow-parameters";
 import { CREATION_PRESET_ARTWORKS, SCENE_ARTWORKS, VisualCharacterCreator } from "./creation/VisualCharacterCreator";
 import {
   buildCharacterStateTrackers,
@@ -635,6 +636,18 @@ export default function App() {
   const [comfyuiBaseUrl, setComfyuiBaseUrl] = useState("");
   const [comfyuiCheckpoint, setComfyuiCheckpoint] = useState("");
   const [comfyuiWorkflow, setComfyuiWorkflow] = useState("");
+  // 高级参数覆盖：`节点/字段` → 值，只存用户真正改过的项。
+  const [comfyuiOverrides, setComfyuiOverrides] = useState<Record<string, string | number | boolean>>({});
+  // 工作流改了参数列表就变：解析失败时给空列表，不让设置页崩掉。
+  const comfyuiParameters = useMemo(() => {
+    const text = comfyuiWorkflow.trim();
+    if (!text) return listWorkflowParameters(null);
+    try {
+      return listWorkflowParameters(JSON.parse(text));
+    } catch {
+      return listWorkflowParameters(null);
+    }
+  }, [comfyuiWorkflow]);
   const [comfyuiVideoMode, setComfyuiVideoMode] = useState<"animate" | "wan">("animate");
   const [comfyuiVideoCheckpoint, setComfyuiVideoCheckpoint] = useState("");
   const [comfyuiVideoMotion, setComfyuiVideoMotion] = useState("");
@@ -1789,6 +1802,7 @@ export default function App() {
         baseUrl: comfyuiBaseUrl,
         checkpoint: comfyuiCheckpoint,
         workflow: comfyuiWorkflow,
+        overrides: comfyuiOverrides,
         videoMode: comfyuiVideoMode,
         videoCheckpoint: comfyuiVideoCheckpoint,
         videoMotion: comfyuiVideoMotion,
@@ -7094,8 +7108,27 @@ export default function App() {
             <p className="eyebrow">本机 ComfyUI / 直接驱动工作流</p>
             <p className="result-note">
               填写 ComfyUI 地址（默认 http://127.0.0.1:8188）与 checkpoint，就能用本机显卡出图。工作流留空时走内置模板；粘贴 ComfyUI 导出的
-              API 格式 JSON 可接 LoRA、ControlNet 和自定义节点，模板里用 {`{{prompt}}`}、{`{{negative}}`}、{`{{seed}}`}、{`{{width}}`}、{`{{height}}`} 取当前创作参数。
+              API 格式 JSON 可接 LoRA、ControlNet 和自定义节点，模板里用 {`{{prompt}}`}、{`{{negative}}`}、{`{{seed}}`}、{`{{width}}`}、{`{{height}}`}、
+              {`{{reference_image}}`}（参考图）、{`{{depth_image}}`}（深度图）取当前创作参数。
             </p>
+            <details className="comfyui-controls-help">
+              <summary>怎么让参数面板显示中文名和分组</summary>
+              <p className="result-note">
+                面板会自动找出所有可调字段。想给字段起中文名、加说明、指定分组和顺序，就在**该字段所属的节点**上加
+                {" "}
+                <code>_meta.studio.controls</code>：
+              </p>
+              <pre>{`{"3":{"class_type":"KSampler","inputs":{"cfg":7},
+  "_meta":{"title":"采样器","studio":{"controls":[
+    {"input":"cfg","label":"CFG 强度","group":"采样","order":1,
+     "description":"越高越贴提示词"},
+    {"input":"batch_size","node":"5","label":"每批张数"}
+  ]}}}}`}</pre>
+              <p className="result-note">
+                <code>node</code> 可以指向别的节点，不必写在同一个节点上；<code>studio.hiddenInputs</code> 里列出的字段不显示控件；
+                取值本身就是 {`{{seed}}`} 这类占位符的字段由系统注入，也不会生成控件。
+              </p>
+            </details>
             <div className="provider-row">
               <div>
                 <strong>ComfyUI</strong>
@@ -7147,6 +7180,101 @@ export default function App() {
                 rows={4}
               />
             </label>
+            {comfyuiParameters.parameters.length > 0 && (
+              <div className="comfyui-parameters" aria-label="ComfyUI 高级参数">
+                <p className="result-note">
+                  识别到 <strong>{comfyuiParameters.parameters.length}</strong> 个可调参数
+                  {comfyuiParameters.linkedInputs > 0
+                    ? `（另有 ${comfyuiParameters.linkedInputs} 个连线输入不可直接改）`
+                    : ""}
+                  。改过的项会在提交时覆盖工作流原值。
+                  {Object.keys(comfyuiOverrides).length > 0 && (
+                    <button
+                      type="button"
+                      className="comfyui-reset-overrides"
+                      onClick={() => setComfyuiOverrides({})}
+                      aria-label="恢复全部 ComfyUI 参数"
+                    >
+                      恢复全部
+                    </button>
+                  )}
+                </p>
+                {comfyuiParameters.staleHints.length > 0 && (
+                  <p className="result-note identity-anchor-hint" role="status">
+                    这些参数在工作流里找不到，元数据可能过期：{comfyuiParameters.staleHints.join("、")}
+                  </p>
+                )}
+                <div className="comfyui-parameter-list">
+                  {comfyuiParameters.parameters.map((parameter) => {
+                    const key = parameterKey(parameter.nodeId, parameter.input);
+                    const current = comfyuiOverrides[key];
+                    const value = typeof current === "undefined" ? parameter.value : current;
+                    const changed = typeof current !== "undefined";
+                    return (
+                      <label
+                        key={key}
+                        className={`comfyui-parameter${changed ? " changed" : ""}`}
+                        title={parameter.description ?? `${parameter.nodeTitle} · ${parameter.input}`}
+                      >
+                        <span>
+                          {parameter.label}
+                          {parameter.recommended && <em>推荐</em>}
+                        </span>
+                        {parameter.kind === "boolean" ? (
+                          <input
+                            type="checkbox"
+                            checked={Boolean(value)}
+                            onChange={(event) =>
+                              setComfyuiOverrides((input) => ({ ...input, [key]: event.target.checked }))
+                            }
+                            aria-label={`${parameter.label}（${key}）`}
+                          />
+                        ) : parameter.kind === "enum" ? (
+                          <select
+                            value={String(value)}
+                            onChange={(event) => {
+                              const option = parameter.options?.find(
+                                (item) => String(item.value) === event.target.value,
+                              );
+                              setComfyuiOverrides((input) => ({
+                                ...input,
+                                [key]: option ? option.value : event.target.value,
+                              }));
+                            }}
+                            aria-label={`${parameter.label}（${key}）`}
+                          >
+                            {parameter.options?.map((option) => (
+                              <option key={String(option.value)} value={String(option.value)}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        ) : parameter.kind === "number" ? (
+                          <input
+                            type="number"
+                            value={String(value)}
+                            onChange={(event) => {
+                              const next = Number(event.target.value);
+                              if (Number.isNaN(next)) return;
+                              setComfyuiOverrides((input) => ({ ...input, [key]: next }));
+                            }}
+                            aria-label={`${parameter.label}（${key}）`}
+                          />
+                        ) : (
+                          <input
+                            value={String(value)}
+                            onChange={(event) =>
+                              setComfyuiOverrides((input) => ({ ...input, [key]: event.target.value }))
+                            }
+                            aria-label={`${parameter.label}（${key}）`}
+                          />
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <p className="result-note">
               本机视频引擎：<strong>AnimateDiff Lightning</strong> 用 SD1.5 底模 4 步出 16 帧短片（横版 512×512 约 1 分钟、竖版 512×768 约 5 分钟；单条上限 2 秒，推荐）；
               <strong>Wan2.1</strong> 画质更好，但需常驻约 9 GB 内存，小内存机器会卡在采样阶段。
