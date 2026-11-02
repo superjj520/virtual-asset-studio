@@ -31,24 +31,99 @@ from .vas_data import (
 )
 
 
-def _to_tensor(payload: bytes) -> torch.Tensor:
+RESIZE_MODES = ["原图尺寸", "缩放到指定尺寸", "裁切填满"]
+
+
+def _to_tensor(payload: bytes, resize_mode: str = "原图尺寸", width: int = 0, height: int = 0) -> torch.Tensor:
+    """把图片字节转成 ComfyUI 的 IMAGE 张量，并按需缩放或裁切。"""
     from PIL import Image
 
     image = Image.open(BytesIO(payload)).convert("RGB")
+    if resize_mode == "缩放到指定尺寸" and width > 0 and height > 0:
+        image = image.resize((width, height), Image.LANCZOS)
+    elif resize_mode == "裁切填满" and width > 0 and height > 0:
+        # 先按短边放大到能盖住目标框，再从中间裁掉多余部分，不拉伸比例。
+        scale = max(width / image.width, height / image.height)
+        resized = image.resize((max(1, round(image.width * scale)), max(1, round(image.height * scale))), Image.LANCZOS)
+        left = (resized.width - width) // 2
+        top = (resized.height - height) // 2
+        image = resized.crop((left, top, left + width, top + height))
     array = np.array(image).astype(np.float32) / 255.0
     return torch.from_numpy(array).unsqueeze(0)
 
 
-def _load_image(site: str, choice: str, refresh: bool = False) -> tuple[torch.Tensor, str]:
+def _flip(tensor: torch.Tensor) -> torch.Tensor:
+    """水平镜像：换手、换朝向时不用另找一张图。"""
+    return torch.flip(tensor, dims=[2])
+
+
+def _build_prompt(site: str, row: dict[str, Any]) -> str:
+    """按条目字段拼一句中文描述，选完图直接能接 CLIPTextEncode，不用手写。"""
+    if site == "pose":
+        angle = row.get("角度") or "正面"
+        name = row.get("姿势名称") or "标准姿势"
+        return f"{angle}视角，动作：{name}（{row.get('体系', '')}·{row.get('分类', '')}）"
+    if site == "depth":
+        name = row.get("ポーズ名") or "标准姿势"
+        return f"{row.get('アングル', '正面')}视角深度图，动作：{name}"
+    if site == "costume":
+        title = row.get("服装名称") or row.get("标题") or ""
+        tags = "、".join((row.get("标签") or [])[:8])
+        return f"身穿{row.get('分类', '')}：{title}" + (f"（细节：{tags}）" if tags else "")
+    if site == "portrait":
+        parts = [row.get("发长", ""), row.get("发型名称") or row.get("发型") or ""]
+        detail = "、".join(part for part in parts if part)
+        return f"人物面部与发型：{detail or row.get('标题', '')}（{row.get('分区', '')}）"
+    if site == "anime":
+        keywords = row.get("キーワード", "")
+        return f"动漫服装：{keywords}" if keywords else f"动漫服装：{row.get('カテゴリ', '')}"
+    return str(row.get("name") or row.get("id") or "")
+
+
+def _load_image(
+    site: str,
+    choice: str,
+    refresh: bool = False,
+    resize_mode: str = "原图尺寸",
+    width: int = 0,
+    height: int = 0,
+    flip_horizontal: bool = False,
+) -> tuple[torch.Tensor, str, str]:
     for row in load_rows(site, refresh=refresh):
         if label(site, row) != choice:
             continue
         url = image_url(site, row)
         if not url:
             break
-        return _to_tensor(fetch(url, cache_name_for(site, row), refresh=refresh)), choice
+        tensor = _to_tensor(
+            fetch(url, cache_name_for(site, row), refresh=refresh),
+            resize_mode=resize_mode,
+            width=width,
+            height=height,
+        )
+        if flip_horizontal:
+            tensor = _flip(tensor)
+        return tensor, choice, _build_prompt(site, row)
     # 找不到就退回一张 64×64 灰图，让流程继续跑而不是整个工作流崩掉。
-    return torch.zeros((1, 64, 64, 3), dtype=torch.float32), f"未找到：{choice}"
+    return torch.zeros((1, 64, 64, 3), dtype=torch.float32), f"未找到：{choice}", ""
+
+
+def _matching_depth_choice(pose_choice: str) -> str:
+    """在深度库里找一条和所选姿势对应的条目：优先按姿势编号，其次按名字。"""
+    import re
+
+    match = re.search(r"[A-Z]+\d+", pose_choice)
+    code = match.group(0) if match else ""
+    rows = load_rows("depth")
+    if code:
+        for row in rows:
+            if code.lower() in str(row.get("id", "")).lower():
+                return label("depth", row)
+    head = pose_choice.split("・")[0].split(" ")[0]
+    for row in rows:
+        if head and head in str(row.get("ポーズ名", "")):
+            return label("depth", row)
+    return ""
 
 
 class _GalleryBase:
@@ -60,29 +135,86 @@ class _GalleryBase:
         return {
             "required": {
                 "选择": (choices(cls.SITE), {"default": choices(cls.SITE)[0]}),
+                "尺寸模式": (RESIZE_MODES, {"default": "原图尺寸"}),
+                "宽度": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 8}),
+                "高度": ("INT", {"default": 1280, "min": 64, "max": 4096, "step": 8}),
+                "水平镜像": ("BOOLEAN", {"default": False}),
             },
             "optional": {
                 "刷新数据": ("BOOLEAN", {"default": False}),
             },
         }
 
-    RETURN_TYPES = ("IMAGE", "STRING")
-    RETURN_NAMES = ("图片", "名称")
+    RETURN_TYPES = ("IMAGE", "STRING", "STRING")
+    RETURN_NAMES = ("图片", "名称", "提示词")
     FUNCTION = "run"
     CATEGORY = "虚拟资产"
 
-    def run(self, 选择: str, 刷新数据: bool = False):  # noqa: N803 - ComfyUI 入参允许中文
+    def run(  # noqa: N803 - ComfyUI 入参允许中文
+        self,
+        选择: str,
+        尺寸模式: str = "原图尺寸",
+        宽度: int = 1024,
+        高度: int = 1280,
+        水平镜像: bool = False,
+        刷新数据: bool = False,
+    ):
         if 刷新数据 and os.path.isdir(CACHE_DIR):
             for name in os.listdir(CACHE_DIR):
                 if name.startswith(self.SITE):
                     os.remove(os.path.join(CACHE_DIR, name))
-        return _load_image(self.SITE, 选择, refresh=刷新数据)
+        return _load_image(
+            self.SITE,
+            选择,
+            refresh=刷新数据,
+            resize_mode=尺寸模式,
+            width=宽度,
+            height=高度,
+            flip_horizontal=水平镜像,
+        )
 
 
 class VASPoseGallery(_GalleryBase):
-    """姿势库：1,439 张五视角姿势线稿。"""
+    """姿势库：1,439 张五视角姿势线稿。可选直接换成同一条的深度图。"""
 
     SITE = "pose"
+
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        base = super().INPUT_TYPES()
+        base["optional"]["用深度图"] = ("BOOLEAN", {"default": False})
+        return base
+
+    def run(  # noqa: N803
+        self,
+        选择: str,
+        尺寸模式: str = "原图尺寸",
+        宽度: int = 1024,
+        高度: int = 1280,
+        水平镜像: bool = False,
+        刷新数据: bool = False,
+        用深度图: bool = False,
+    ):
+        site = "depth" if 用深度图 else self.SITE
+        if 刷新数据 and os.path.isdir(CACHE_DIR):
+            for name in os.listdir(CACHE_DIR):
+                if name.startswith(site):
+                    os.remove(os.path.join(CACHE_DIR, name))
+        choice = 选择
+        if 用深度图:
+            # 深度库的条目名和姿势库不同，按姿势编号就近匹配一条。
+            fallback = _matching_depth_choice(选择)
+            if fallback:
+                choice = fallback
+        return _load_image(
+            site,
+            choice,
+            refresh=刷新数据,
+            resize_mode=尺寸模式,
+            width=宽度,
+            height=高度,
+            flip_horizontal=水平镜像,
+        )
 
 
 class VASDepthGallery(_GalleryBase):
@@ -154,8 +286,16 @@ class VASCharacterPack:
             url = char_db_image_url(row)
             if not url:
                 break
-            return _to_tensor(fetch(url, f"chardb-{row.get('id', 'x')}.img", refresh=刷新数据)), 选择
-        return torch.zeros((1, 64, 64, 3), dtype=torch.float32), f"未找到：{选择}"
+            tensor = _to_tensor(fetch(url, f"chardb-{row.get('id', 'x')}.img", refresh=刷新数据))
+            return tensor, 选择, _build_chardb_prompt(row)
+        return torch.zeros((1, 64, 64, 3), dtype=torch.float32), f"未找到：{选择}", ""
+
+
+def _build_chardb_prompt(row: dict[str, Any]) -> str:
+    """char-db-cn 的条目只有简短的英文关键词，直接拼成一句话给 CLIP。"""
+    keys = row.get("keywords") or row.get("desc") or row.get("name") or ""
+    text = " ".join(keys) if isinstance(keys, list) else str(keys)
+    return text.strip()
 
 
 class VASCharacterRecipe:
