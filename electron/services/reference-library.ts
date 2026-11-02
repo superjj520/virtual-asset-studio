@@ -429,15 +429,28 @@ class CloudReferenceLibrary {
           : undefined,
       };
     });
-    const depthItems = depths.map((row) => ({
-      id: `depth-${row.id}`,
-      kind: "depth" as const,
-      title: `${row.ポーズ名 ?? row.ポーズ番号 ?? row.id} · ${row.アングル ?? "视角"}`,
-      category: row.分類 ?? "姿势深度",
-      tags: [row.系統, row.アングル].filter((value): value is string => Boolean(value)),
-      thumbUrl: depthUrl(row.サムネ),
-      imageUrl: depthUrl(row.原寸 ?? row.サムネ),
-    }));
+    /**
+     * 深度库和姿势库是同一批 1,439 张图的两套名字：id 完全一致（R35 验过 1439/1439），
+     * 但深度库只有日文（`S字立ち・腰を横に突き出す`），姿势库有中文（`S形站姿・胯部侧顶`）。
+     * 按 id 取姿势库的中文名和角度，深度库就不用中日混排——不用机翻，零翻译风险。
+     */
+    const poseById = new Map(poses.map((row) => [row.id, row]));
+    const depthItems = depths.map((row) => {
+      const pose = poseById.get(row.id);
+      return {
+        id: `depth-${row.id}`,
+        kind: "depth" as const,
+        title: pose
+          ? `${pose.姿势名称 ?? row.ポーズ名 ?? row.id} · ${pose.角度 ?? row.アングル ?? "视角"}`
+          : `${row.ポーズ名 ?? row.ポーズ番号 ?? row.id} · ${row.アングル ?? "视角"}`,
+        category: pose?.分类 ?? row.分類 ?? "姿势深度",
+        tags: [pose?.体系 ?? row.系統, pose?.角度 ?? row.アングル].filter(
+          (value): value is string => Boolean(value),
+        ),
+        thumbUrl: depthUrl(row.サムネ),
+        imageUrl: depthUrl(row.原寸 ?? row.サムネ),
+      };
+    });
     /**
      * 动漫衣装站的分类是日文（ランジェリー / パーティ / 水着 / セクシー）。
      * char-db-cn 的 outfit2 是同一批 1,320 条，id 一一对应，`catZh` 就是中文分类，

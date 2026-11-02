@@ -460,3 +460,50 @@ it("缩略图缓存有上限，翻太多张时淘汰最旧的，不会一直涨�
   await library.thumbnail(`${base}b.webp`);
   expect(imageFetches).toBe(4);
 });
+
+describe("深度图借用姿势库的中文名", () => {
+  it("两个库 id 相同时，深度条目显示中文姿势名而不是日文", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("char-db-cn/main/data.js"))
+          return new Response(`window.CHARDB=${JSON.stringify({ items: [] })};`, {
+            status: 200,
+            headers: { "content-type": "application/javascript" },
+          });
+        if (url.includes("pose-zh"))
+          return json([
+            {
+              id: "full_sexy_P001_front",
+              姿势编号: "P001",
+              姿势名称: "S形站姿・胯部侧顶",
+              体系: "全身单人・性感系",
+              分类: "站姿",
+              角度: "正面",
+              缩略图: "thumbs/p.jpg",
+              原图: "img/p.png",
+            },
+          ]);
+        if (url.includes("costume-zh")) return json([]);
+        if (url.includes("portrait-zh")) return json([]);
+        if (url.includes("ai-pose-depth-gallery"))
+          return new Response(
+            `<!doctype html><script>const META={"lines":[]}; const D=[{"id":"full_sexy_P001_front","系統":"全身1人・セクシー系","ポーズ番号":"P001","分類":"立ち","ポーズ名":"S字立ち・腰を横に突き出す","アングル":"正面","サムネ":"thumbs/a.jpg","原寸":"img/a.png"}];</script>`,
+            { status: 200, headers: { "content-type": "text/html" } },
+          );
+        throw new Error(`未预期的请求：${url}`);
+      }),
+    );
+    const library = new CloudReferenceLibrary(
+      {} as ImportService,
+      {} as AssetRepository,
+      {} as ProjectRepository,
+    );
+    const catalog = await library.list();
+    const depth = catalog.items.find((item) => item.id === "depth-full_sexy_P001_front");
+    expect(depth?.title).toBe("S形站姿・胯部侧顶 · 正面");
+    expect(depth?.category).toBe("站姿");
+    expect(depth?.tags).toContain("全身单人・性感系");
+    expect(depth?.title).not.toContain("S字立ち");
+  });
+});
