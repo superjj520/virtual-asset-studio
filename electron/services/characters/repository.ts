@@ -71,17 +71,17 @@ export class CharacterProfileRepository {
   }
 
   list(projectId?: string): CharacterProfile[] {
-    const query = projectId ? ['SELECT * FROM character_profiles WHERE project_id = ? ORDER BY updated_at DESC', projectId] : ['SELECT * FROM character_profiles ORDER BY updated_at DESC'];
+    const query = projectId ? ['SELECT * FROM character_profiles WHERE project_id = ? ORDER BY updated_at DESC, created_at DESC, id DESC', projectId] : ['SELECT * FROM character_profiles ORDER BY updated_at DESC, created_at DESC, id DESC'];
     return (this.db.database.prepare(query[0]).all(...query.slice(1)) as CharacterRow[]).map(mapProfile);
   }
 
   getDetail(id: string): CharacterDetail | undefined {
     const profile = this.get(id);
     if (!profile) return undefined;
-    const facts = this.db.database.prepare('SELECT * FROM character_facts WHERE profile_id = ? ORDER BY created_at ASC').all(id) as FactRow[];
+    const facts = this.db.database.prepare('SELECT * FROM character_facts WHERE profile_id = ? ORDER BY created_at ASC, id ASC').all(id) as FactRow[];
     const evidence = this.db.database.prepare(`SELECT evidence.* FROM character_fact_evidence evidence
       INNER JOIN character_facts facts ON facts.id = evidence.fact_id WHERE facts.profile_id = ?`).all(id) as EvidenceRow[];
-    const variants = this.db.database.prepare('SELECT * FROM character_variants WHERE profile_id = ? ORDER BY created_at ASC').all(id) as VariantRow[];
+    const variants = this.db.database.prepare('SELECT * FROM character_variants WHERE profile_id = ? ORDER BY created_at ASC, id ASC').all(id) as VariantRow[];
     const evidenceAssets = this.db.database.prepare(`SELECT assets.* FROM assets WHERE assets.id IN (
       SELECT members.asset_id FROM asset_collection_members members
       INNER JOIN asset_collections collections ON collections.id = members.collection_id

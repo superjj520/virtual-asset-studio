@@ -164,8 +164,8 @@ export class SceneWorkspaceRepository {
 
   listProfiles(projectId?: string): SceneProfile[] {
     const rows = projectId
-      ? this.db.database.prepare("SELECT * FROM scene_profiles WHERE project_id = ? ORDER BY updated_at DESC").all(projectId)
-      : this.db.database.prepare("SELECT * FROM scene_profiles ORDER BY updated_at DESC").all();
+      ? this.db.database.prepare("SELECT * FROM scene_profiles WHERE project_id = ? ORDER BY updated_at DESC, created_at DESC, id DESC").all(projectId)
+      : this.db.database.prepare("SELECT * FROM scene_profiles ORDER BY updated_at DESC, created_at DESC, id DESC").all();
     return (rows as ProfileRow[]).map(mapProfile);
   }
 

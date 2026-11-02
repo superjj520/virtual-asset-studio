@@ -43,7 +43,7 @@ export class JobRepository {
   }
 
   list(projectId?: string): StudioJob[] {
-    const query = projectId ? ['SELECT * FROM jobs WHERE project_id = ? ORDER BY updated_at DESC', projectId] : ['SELECT * FROM jobs ORDER BY updated_at DESC'];
+    const query = projectId ? ['SELECT * FROM jobs WHERE project_id = ? ORDER BY updated_at DESC, created_at DESC, id DESC', projectId] : ['SELECT * FROM jobs ORDER BY updated_at DESC, created_at DESC, id DESC'];
     return (this.db.database.prepare(query[0]).all(...query.slice(1)) as JobRow[]).map(mapJob);
   }
 

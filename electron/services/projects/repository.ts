@@ -32,7 +32,7 @@ export class ProjectRepository {
   }
 
   list(): Project[] {
-    return this.db.database.prepare('SELECT * FROM projects ORDER BY updated_at DESC').all().map((row: any) => this.map(row)) as Project[];
+    return this.db.database.prepare('SELECT * FROM projects ORDER BY updated_at DESC, created_at DESC, id DESC').all().map((row: any) => this.map(row)) as Project[];
   }
 
   updateBrief(id: string, brief: ProjectBrief): Project {

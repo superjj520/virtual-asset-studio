@@ -30,8 +30,8 @@ export class CreativeRecipeRepository {
 
   list(projectId?: string): CreativeRecipe[] {
     const query = projectId
-      ? ['SELECT * FROM creative_recipes WHERE project_id = ? ORDER BY updated_at DESC', projectId]
-      : ['SELECT * FROM creative_recipes ORDER BY updated_at DESC'];
+      ? ['SELECT * FROM creative_recipes WHERE project_id = ? ORDER BY updated_at DESC, created_at DESC, id DESC', projectId]
+      : ['SELECT * FROM creative_recipes ORDER BY updated_at DESC, created_at DESC, id DESC'];
     return (this.db.database.prepare(query[0]).all(...(projectId ? [query[1]] : [])) as Row[]).map(map);
   }
 

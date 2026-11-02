@@ -105,7 +105,7 @@ export class AssetRepository {
       values.push(`%${query.q}%`);
     }
     if (clauses.length) sql += ` WHERE ${clauses.join(' AND ')}`;
-    sql += ' ORDER BY assets.updated_at DESC';
+    sql += ' ORDER BY assets.updated_at DESC, assets.created_at DESC, assets.id DESC';
     return (this.db.database.prepare(sql).all(...values) as AssetRow[]).map(mapAsset);
   }
 

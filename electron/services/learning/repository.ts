@@ -40,7 +40,7 @@ export class LearningPatternRepository {
   }
 
   list(): LearningPattern[] {
-    return (this.db.database.prepare('SELECT * FROM learning_patterns ORDER BY updated_at DESC').all() as PatternRow[]).map(mapPattern);
+    return (this.db.database.prepare('SELECT * FROM learning_patterns ORDER BY updated_at DESC, created_at DESC, id DESC').all() as PatternRow[]).map(mapPattern);
   }
 
   updateStatus(id: string, status: LearningPattern['status'], note: string): LearningPattern {

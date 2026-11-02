@@ -13,5 +13,5 @@ export class PromptSourceRepository {
     this.db.database.prepare('INSERT INTO prompt_sources (id, url, repository, title, license, summary, source_type, status, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(result.id, result.url, result.repository, result.title, result.license ?? null, result.summary, result.sourceType, result.status, result.importedAt);
     return result;
   }
-  list(): PromptSource[] { return (this.db.database.prepare('SELECT * FROM prompt_sources ORDER BY imported_at DESC').all() as Row[]).map(map); }
+  list(): PromptSource[] { return (this.db.database.prepare('SELECT * FROM prompt_sources ORDER BY imported_at DESC, id DESC').all() as Row[]).map(map); }
 }
