@@ -2853,6 +2853,7 @@ export default function App() {
         aspectRatio: card.aspectRatio,
         referenceAssetIds: card.referenceAssetIds,
         referenceBindings: card.referenceBindings,
+        ...(card.depthAssetId ? { depthAssetId: card.depthAssetId } : {}),
         variants: buildBatchVariables({
           values: variables,
           positive: promptBuild.positive,

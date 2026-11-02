@@ -56,3 +56,27 @@ it('应用重启时运行中的批次标记为中断，不把未核对变体静�
   expect(batches.get(batch.id)).toMatchObject({ status: 'interrupted', variants: [{ status: 'planned' }] });
   database.close();
 });
+
+it('批量任务能记住深度图，重启后还在，出图时才送得出去', () => {
+  const filename = join(mkdtempSync(join(tmpdir(), 'studio-batch-depth-')), 'studio.sqlite');
+  const database = new StudioDatabase(filename);
+  const batches = new GenerationBatchRepository(database);
+  const batch = batches.create({ name: '带深度的批次', providerId: 'comfyui', aspectRatio: '9:16', depthAssetId: 'depth-7', variants: [{ label: '候选一', prompt: 'p' }] });
+  expect(batch.depthAssetId).toBe('depth-7');
+  database.close();
+
+  // 重新打开同一个库，确认这一列真的落盘了、不是只存在内存里
+  const reopened = new StudioDatabase(filename);
+  const again = new GenerationBatchRepository(reopened).get(batch.id);
+  expect(again?.depthAssetId).toBe('depth-7');
+  reopened.close();
+});
+
+it('没挂深度图时这个字段是空的，不会残留上一次的值', () => {
+  const filename = join(mkdtempSync(join(tmpdir(), 'studio-batch-migrate-')), 'studio.sqlite');
+  const database = new StudioDatabase(filename);
+  const batches = new GenerationBatchRepository(database);
+  const batch = batches.create({ name: '没有深度的批次', providerId: 'flux', aspectRatio: '1:1', variants: [{ label: '候选一', prompt: 'p' }] });
+  expect(batch.depthAssetId).toBeUndefined();
+  database.close();
+});

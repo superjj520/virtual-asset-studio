@@ -257,6 +257,7 @@ interface Window {
         qualityTier?: "draft" | "standard" | "high";
         referenceAssetIds?: string[];
         referenceBindings?: import("./shared/types").ReferenceAssetBinding[];
+        depthAssetId?: string;
         variants: Array<{ label: string; prompt: string }>;
       }) => Promise<import("./shared/types").GenerationBatch>;
       list: (

@@ -839,6 +839,8 @@ export type GenerationBatch = {
   /** 批量候选继承的参考链，所有变体都必须使用同一组身份锚点。 */
   referenceAssetIds: string[];
   referenceBindings: ReferenceAssetBinding[];
+  /** 批次继承的深度图：不参与参考板拼图，出图时单独作为 ControlNet 深度输入。 */
+  depthAssetId?: string;
   estimatedCostUsd?: number;
   /** 已完成变体的实际费用合计；未执行或未计费时为空。 */
   actualCostUsd?: number;

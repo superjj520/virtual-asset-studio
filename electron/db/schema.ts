@@ -244,6 +244,7 @@ export const applySchema = (database: Database.Database) => {
       aspect_ratio TEXT NOT NULL,
       reference_asset_ids_json TEXT NOT NULL DEFAULT '[]',
       reference_bindings_json TEXT NOT NULL DEFAULT '[]',
+      depth_asset_id TEXT,
       estimated_cost_usd REAL,
       status TEXT NOT NULL,
       created_at TEXT NOT NULL,
@@ -526,6 +527,11 @@ export const applySchema = (database: Database.Database) => {
     database.exec("ALTER TABLE generation_batches ADD COLUMN seed INTEGER");
   if (!batchColumns.some((column) => column.name === "quality_tier"))
     database.exec("ALTER TABLE generation_batches ADD COLUMN quality_tier TEXT");
+  // 批量也要能带深度图：它不进参考板拼图，出图时单独作为 ControlNet 深度输入。
+  // 故意不加外键——reference_asset_ids_json / reference_bindings_json 都是逻辑引用，
+  // 深度图作为参考链的一员保持同口径，否则删资产时深度会被静默置空而参考图不会。
+  if (!batchColumns.some((column) => column.name === "depth_asset_id"))
+    database.exec("ALTER TABLE generation_batches ADD COLUMN depth_asset_id TEXT");
   const recipeColumns = database
     .prepare("PRAGMA table_info(creative_recipes)")
     .all() as Array<{ name: string }>;

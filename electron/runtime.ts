@@ -1124,6 +1124,10 @@ export const createStudioRuntime = (
           const batchModel = batch.modelId ? findGenerationModel(batch.modelId) : undefined;
           const batchTask = batch.creativeTaskId ? tasks.get(batch.creativeTaskId) : undefined;
           const references = batch.referenceAssetIds.map((id) => referenceForGeneration(id, batch.projectId));
+          // 批量也走深度独立通道：它不在参考板拼图里，单独送给支持 ControlNet 的 provider。
+          const batchDepthReference = batch.depthAssetId
+            ? referenceForGeneration(batch.depthAssetId, batch.projectId)
+            : undefined;
           const primaryReference = references[0];
           const sheetRecipe = primaryReference?.metadata?.referenceSheet as
             | ReferenceSheetRecipe
@@ -1174,6 +1178,9 @@ export const createStudioRuntime = (
                 ? await refineWithResult(batch.providerId, {
                     prompt: generationPrompt,
                     size,
+                    ...(batchDepthReference
+                      ? { depthPath: batchDepthReference.managedPath, depthMediaType: batchDepthReference.mediaType }
+                      : {}),
                     referencePath: generationReferences[0].managedPath,
                     referenceMediaType: generationReferences[0].mediaType,
                     references: generationReferences.map((reference) => ({ path: reference.managedPath, mediaType: reference.mediaType })),
