@@ -209,3 +209,57 @@ firstTitles: ["S形站姿・胯部侧顶 · 编号 P001 · 5 视角", …]
 48 张全是姿势线稿，没有一张动漫衣装；「库内 6980」与分类行求和一致；「匹配 569」= 288 组 + char-db 的 281 条。截图 `artifacts/screenshots/pose-after-dedup.png`。
 
 **如果没修这个，上游一更新，这个页面就会是另一副样子。**
+
+---
+
+## 七、Round 4：节点包契约测试，抓到会在 ComfyUI 启动时报错的问题
+
+### 7.1 为什么要写契约测试
+
+本机没有 ComfyUI，也没有 torch。节点包写完只能靠「看着像对的」——这正是最容易出事的做法。ComfyUI 加载 `custom_nodes` 时有一套硬规则，不合规就启动报红。于是写了 `contract_test.py`：注入假 torch / numpy / PIL，只验结构不验出图。
+
+检查项：`NODE_CLASS_MAPPINGS` 是 dict、和 `NODE_DISPLAY_NAME_MAPPINGS` 键一一对应、每个 `INPUT_TYPES()` 的每项是 `(类型, 参数字典)` 二元组、`RETURN_TYPES` 与 `RETURN_NAMES` 等长、`FUNCTION` 在类里真的存在、`CATEGORY` 存在。
+
+### 7.2 抓到的四个错
+
+```
+✗ VASCharacterRecipe.required.身份: 输入定义必须是二元组
+✗ VASCharacterRecipe.required.服装: 输入定义必须是二元组
+✗ VASCharacterRecipe.required.姿态: 输入定义必须是二元组
+✗ VASCharacterRecipe.required.深度: 输入定义必须是二元组
+```
+
+原文写的是 `"身份": ("IMAGE",)`——单元素元组。ComfyUI 要的是 `("IMAGE", {})`。其余 6 个节点全对。
+
+这个错的性质：**装进去会在 ComfyUI 启动时直接报错，整个节点包一个都用不了**。而它是靠「读代码觉得没问题」发现不了的——`("IMAGE",)` 看起来完全正常。
+
+### 7.3 顺手把参考板节点做宽容了
+
+修格式时一并改了语义：原来四格全必填，少连一根线就跑不了。现在身份必填、其余三格可选，空位填 `底色`（默认 `#101014`），并加了 `_hex_to_rgb` 兜底（格式不对退回深灰）。
+
+```python
+"required": { "身份": ("IMAGE", {}) },
+"optional": { "服装": ("IMAGE", {}), "姿态": ("IMAGE", {}), "深度": ("IMAGE", {}), "底色": ("STRING", {"default": "#101014"}) },
+```
+
+`compose()` 里 `if cell is None: continue`，先给画布铺底色再贴图。
+
+### 7.4 结果
+
+```
+✓ VASPoseGallery        1 个必填输入
+✓ VASDepthGallery       1 个必填输入
+✓ VASCostumeGallery     1 个必填输入
+✓ VASPortraitGallery    1 个必填输入
+✓ VASAnimeCostumeGallery 1 个必填输入
+✓ VASCharacterPack      2 个必填输入
+✓ VASCharacterRecipe    1 个必填输入
+
+✓ 7 个节点全部符合 ComfyUI 加载规范
+```
+
+`selftest.py` 复跑仍 `通过 6/6`。
+
+### 7.5 这个测试到现在仍然没有证明的事
+
+它证明的是「ComfyUI 能加载这些节点」，**不证明「这些节点画得出图」**。`compose()` 里对 torch 张量的操作、`_hex_to_rgb` 的返回值类型，都只在真 torch 下才被真正执行过。本机 Python 3.15 没有 torch，装一个要 2GB 以上，没做。

@@ -163,12 +163,16 @@ class VASCharacterRecipe:
 
     @classmethod
     def INPUT_TYPES(cls) -> dict[str, Any]:
+        # ComfyUI 要求每个输入都是 (类型, 参数字典) 的二元组；写成单元素元组会在加载时报错。
+        # 身份必填（没有身份就没有参考板的意义），其余三格可选，空位用底色填。
         return {
             "required": {
-                "身份": ("IMAGE",),
-                "服装": ("IMAGE",),
-                "姿态": ("IMAGE",),
-                "深度": ("IMAGE",),
+                "身份": ("IMAGE", {}),
+            },
+            "optional": {
+                "服装": ("IMAGE", {}),
+                "姿态": ("IMAGE", {}),
+                "深度": ("IMAGE", {}),
                 "底色": ("STRING", {"default": "#101014"}),
             },
         }
@@ -178,17 +182,44 @@ class VASCharacterRecipe:
     FUNCTION = "compose"
     CATEGORY = "虚拟资产"
 
-    def compose(self, 身份, 服装, 姿态, 深度, 底色: str = "#101014"):  # noqa: N803
+    def compose(  # noqa: N803
+        self,
+        身份,
+        服装=None,
+        姿态=None,
+        深度=None,
+        底色: str = "#101014",
+    ):
+        """只接身份也能出图：缺的格子留底色，不会因为少连一根线就跑不了。"""
+        rgb = _hex_to_rgb(底色)
         cells = [身份, 服装, 姿态, 深度]
         side = 512
         canvas = torch.zeros((1, side * 2, side * 2, 3), dtype=torch.float32)
+        canvas[0, :, :, 0] = rgb[0]
+        canvas[0, :, :, 1] = rgb[1]
+        canvas[0, :, :, 2] = rgb[2]
         for index, cell in enumerate(cells):
+            if cell is None:
+                continue
             resized = torch.nn.functional.interpolate(
                 cell.permute(0, 3, 1, 2), size=(side, side), mode="bilinear", align_corners=False
             ).permute(0, 2, 3, 1)[0]
             row, column = divmod(index, 2)
             canvas[0, row * side : (row + 1) * side, column * side : (column + 1) * side] = resized
-        return canvas, side * 2, side * 2
+        return (canvas, side * 2, side * 2)
+
+
+def _hex_to_rgb(value: str) -> tuple[float, float, float]:
+    """把 #101014 这样的颜色转成 0..1 的三元组，格式不对就退回深灰。"""
+    text = (value or "").strip().lstrip("#")
+    if len(text) == 3:
+        text = "".join(ch * 2 for ch in text)
+    if len(text) != 6:
+        return (0.06, 0.06, 0.08)
+    try:
+        return tuple(int(text[i : i + 2], 16) / 255 for i in (0, 2, 4))  # type: ignore[return-value]
+    except ValueError:
+        return (0.06, 0.06, 0.08)
 
 
 NODE_CLASS_MAPPINGS = {
