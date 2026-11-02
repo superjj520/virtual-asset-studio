@@ -570,7 +570,16 @@ class CloudReferenceLibrary {
 const transport = async (url: string): Promise<Response> => {
   if (process.versions.electron) {
     const { net } = await import("electron");
-    return net.fetch(url);
+    try {
+      return await net.fetch(url);
+    } catch (error) {
+      // Chromium 的网络栈跟随系统代理。用户开着「系统代理」但代理软件没运行时，
+      // 这里会直接抛 ERR_PROXY_CONNECTION_FAILED，整个素材库看起来像全挂了。
+      // Node 侧的 fetch 不读系统代理，用它兜一次，代价只是可能连不上需要代理的站点。
+      const reason = error instanceof Error ? error.message : String(error);
+      if (!/ERR_PROXY|ERR_TUNNEL|ERR_CONNECTION|ERR_NAME_NOT_RESOLVED/i.test(reason)) throw error;
+      return fetch(url);
+    }
   }
   return fetch(url);
 };

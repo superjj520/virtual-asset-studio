@@ -24,7 +24,7 @@ contextBridge.exposeInMainWorld("studio", {
     compose: (input) => ipcRenderer.invoke("references:compose-sheet", input),
   },
   referenceLibrary: {
-    health: () => ipcRenderer.invoke("reference-library:health"),
+    health: (sampleSize) => ipcRenderer.invoke("reference-library:health", { sampleSize }),
     list: () => ipcRenderer.invoke("reference-library:list"),
     thumbnail: (url) => ipcRenderer.invoke("reference-library:thumbnail", url),
     import: (item, projectId) =>

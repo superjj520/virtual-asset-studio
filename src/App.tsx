@@ -7021,7 +7021,7 @@ export default function App() {
             <p className="result-note">
               点一下会把六个来源各拉一遍，显示真实条数与失败原因。上游改了结构、限流或者挂掉，这里会直接说出来——不用听我转述。
             </p>
-            <div className="provider-row">
+            <div className="provider-row cloud-health-actions">
               <div>
                 <strong>云端素材库</strong>
                 <p className="result-note">
@@ -7031,21 +7031,19 @@ export default function App() {
                 </p>
               </div>
               <label className="cloud-health-sample">
-                每个来源抽
-                <select
-                  aria-label="每源抽样张数"
-                  value={cloudHealthSample}
-                  onChange={(event) => setCloudHealthSample(Number(event.target.value))}
-                  disabled={cloudHealthBusy}
-                >
-                  <option value={3}>3 张</option>
-                  <option value={10}>10 张</option>
-                  <option value={20}>20 张</option>
-                  <option value={50}>50 张</option>
-                </select>
-                张图
-              </label>
-              <button aria-label="开始素材库体检" onClick={() => void runCloudHealth()} disabled={cloudHealthBusy}>
+                    每源抽样
+                    <select
+                      aria-label="每源抽样张数"
+                      value={cloudHealthSample}
+                      onChange={(event) => setCloudHealthSample(Number(event.target.value))}
+                    >
+                      <option value={3}>3 张</option>
+                      <option value={10}>10 张</option>
+                      <option value={20}>20 张</option>
+                      <option value={50}>50 张</option>
+                    </select>
+                  </label>
+              <button aria-label="开始素材库体检" className="cloud-health-start" onClick={() => void runCloudHealth()} disabled={cloudHealthBusy}>
                 {cloudHealthBusy ? "正在体检…" : "开始体检"}
               </button>
             </div>
