@@ -7111,6 +7111,11 @@ export default function App() {
               API 格式 JSON 可接 LoRA、ControlNet 和自定义节点，模板里用 {`{{prompt}}`}、{`{{negative}}`}、{`{{seed}}`}、{`{{width}}`}、{`{{height}}`}、
               {`{{reference_image}}`}（参考图）、{`{{depth_image}}`}（深度图）取当前创作参数。
             </p>
+            <p className="result-note">
+              内置模板只做纯文本出图：KSampler + Checkpoint，链路里没有 LoadImage 节点。要用参考图或深度图，得导入含 LoadImage
+              的工作流，把它的 image 填成 {`{{reference_image}}`} / {`{{depth_image}}`}——SDXL / SD1.5 还需要 IPAdapter 或 ControlNet
+              这类额外模型，光加一个 LoadImage 不够。工作流里没有对应占位符时我们会直接报错，不会悄悄把参考图丢掉。
+            </p>
             <details className="comfyui-controls-help">
               <summary>怎么让参数面板显示中文名和分组</summary>
               <p className="result-note">
@@ -7147,7 +7152,7 @@ export default function App() {
               <input
                 value={comfyuiCheckpoint}
                 onChange={(event) => setComfyuiCheckpoint(event.target.value)}
-                placeholder="checkpoint 文件名，例如 sd_xl_base_1.0.safetensors"
+                placeholder="checkpoint 文件名，例如 sd_xl_base_1.0.safetensors（12 步·高质量）或 sd_xl_turbo_1.0_fp16.safetensors（4 步·1 秒）"
                 aria-label="ComfyUI checkpoint 文件名"
               />
               <button aria-label="保存 ComfyUI 配置" onClick={() => void saveComfyui()}>
@@ -7276,7 +7281,7 @@ export default function App() {
               </div>
             )}
             <p className="result-note">
-              本机视频引擎：<strong>AnimateDiff Lightning</strong> 用 SD1.5 底模 4 步出 16 帧短片（横版 512×512 约 1 分钟、竖版 512×768 约 5 分钟；单条上限 2 秒，推荐）；
+              本机视频引擎：<strong>AnimateDiff Lightning</strong> 用 SD1.5 底模 4 步出短片（横版 512×512、竖版 512×768；12 帧实测 94 秒，内存吃紧时会慢到 5 分钟以上；单条上限 2 秒，推荐）；
               <strong>Wan2.1</strong> 画质更好，但需常驻约 9 GB 内存，小内存机器会卡在采样阶段。
             </p>
             <div className="provider-row">
@@ -7299,7 +7304,7 @@ export default function App() {
               <input
                 value={comfyuiVideoCheckpoint}
                 onChange={(event) => setComfyuiVideoCheckpoint(event.target.value)}
-                placeholder="动画底模，例如 Counterfeit-V2.5_fp16.safetensors"
+                placeholder="动画底模，例如 realisticVisionV51_v51VAE.safetensors（写实）或 Counterfeit-V2.5_fp16.safetensors（动漫）"
                 aria-label="本机视频底模"
               />
               <input
