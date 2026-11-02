@@ -4074,3 +4074,20 @@ button:active { transform: translateY(1px); }
   font-size: 12px;
   line-height: 1.55;
 }
+
+/* 素材库体检：每源抽样档位。默认 3 张只够判断「源还在不在」，
+   想看清图片质量要往上调，但 50 是上限（全量会触发上游限速）。 */
+.cloud-health-sample {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-muted, #5b6470);
+}
+
+.cloud-health-sample select {
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--line-soft, #d6dae0);
+  font-size: 12px;
+}

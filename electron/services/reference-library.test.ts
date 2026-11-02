@@ -507,3 +507,67 @@ describe("深度图借用姿势库的中文名", () => {
     expect(depth?.title).not.toContain("S字立ち");
   });
 });
+
+describe("素材库体检的抽样档位", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** 造 count 条姿势，缩略图各自独立，方便数一共请求了几张图。 */
+  const buildPoseRows = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      ...poseRow("正面"),
+      id: `P${String(index + 1).padStart(3, "0")}`,
+      姿势编号: `P${String(index + 1).padStart(3, "0")}`,
+      缩略图: `thumbs/p${index + 1}.jpg`,
+      原图: `img/p${index + 1}.jpg`,
+    }));
+
+  const setup = (count: number) => {
+    let thumbRequests = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("pose-zh")) return json(buildPoseRows(count));
+        if (url.includes("costume-zh")) return json([]);
+        if (url.includes("portrait-zh")) return json([]);
+        if (url.includes("char-db-cn/main/data.js"))
+          return new Response("window.CHARDB={\"items\":[]};", {
+            status: 200,
+            headers: { "content-type": "application/javascript" },
+          });
+        if (url.includes("depth-gallery")) throw new Error("offline");
+        if (url.includes("costume-anime-gallery")) throw new Error("offline");
+        // 缩略图请求：按张计数
+        if (url.includes("ai-pose-gallery.anhao.app/thumbs/")) {
+          thumbRequests += 1;
+          return image();
+        }
+        throw new Error(`没有为 ${url} 准备 mock`);
+      }),
+    );
+    return {
+      library: new CloudReferenceLibrary({} as ImportService, {} as AssetRepository, {} as ProjectRepository),
+      thumbRequests: () => thumbRequests,
+    };
+  };
+
+  it("默认每源只抽 3 张，别为了体检把上游打一遍", async () => {
+    const { library, thumbRequests } = setup(40);
+    await library.health();
+    expect(thumbRequests()).toBe(3);
+  });
+
+  it("可以调到 20 张，看更多图是不是真的还在", async () => {
+    const { library, thumbRequests } = setup(40);
+    const report = await library.health(20);
+    expect(thumbRequests()).toBe(20);
+    const pose = report.sources.find((source) => source.key === "pose");
+    expect(pose?.images?.length).toBe(20);
+    expect(pose?.images?.every((probe) => probe.ok)).toBe(true);
+  });
+
+  it("上限卡在 50，传多大都不会去抓全量", async () => {
+    const { library, thumbRequests } = setup(80);
+    await library.health(999);
+    expect(thumbRequests()).toBe(50);
+  });
+});

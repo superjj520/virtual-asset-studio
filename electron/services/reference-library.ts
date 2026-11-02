@@ -130,7 +130,10 @@ class CloudReferenceLibrary {
    * 逐源体检。刻意不复用 `load()`：`load()` 里增量源失败会退化成空数组，
    * 那样体检就永远显示「正常但 0 条」，等于自己骗自己。
    */
-  async health(): Promise<CloudHealthReport> {
+  async health(sampleSize = 3): Promise<CloudHealthReport> {
+    // 每源默认抽 3 张，够看「这个源还活着吗」；想更有说服力可以调到 20/50，
+    // 但上限卡在 50——全量 8,131 张会把上游限速触发，体检本身变成故障源。
+    const sample = Math.min(50, Math.max(1, Math.trunc(sampleSize)));
     const probe = async <T>(
       key: string,
       label: string,
@@ -141,7 +144,7 @@ class CloudReferenceLibrary {
       try {
         const rows = await run();
         const count = rows.length;
-        const urls = count > 0 ? pickSample(pickUrls(rows), 3) : [];
+        const urls = count > 0 ? pickSample(pickUrls(rows), sample) : [];
         const images =
           urls.length > 0 ? await Promise.all(urls.map((url) => this.probeImage(url))) : [];
         return {

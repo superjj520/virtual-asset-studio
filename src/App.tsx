@@ -653,6 +653,7 @@ export default function App() {
   const [comfyuiVideoMotion, setComfyuiVideoMotion] = useState("");
   const [cloudHealth, setCloudHealth] = useState<CloudHealthReport | null>(null);
   const [cloudHealthBusy, setCloudHealthBusy] = useState(false);
+  const [cloudHealthSample, setCloudHealthSample] = useState(3);
   const [customImageBaseUrl, setCustomImageBaseUrl] = useState("");
   const [customImageModel, setCustomImageModel] = useState("");
   const [budget, setBudget] = useState<BudgetStatus>({ plannedSpendUsd: 0 });
@@ -1788,7 +1789,7 @@ export default function App() {
   const runCloudHealth = async () => {
     setCloudHealthBusy(true);
     try {
-      setCloudHealth(await window.studio.referenceLibrary.health());
+      setCloudHealth(await window.studio.referenceLibrary.health(cloudHealthSample));
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "素材库体检失败。");
     } finally {
@@ -7029,6 +7030,21 @@ export default function App() {
                     : "还没体检过。"}
                 </p>
               </div>
+              <label className="cloud-health-sample">
+                每个来源抽
+                <select
+                  aria-label="每源抽样张数"
+                  value={cloudHealthSample}
+                  onChange={(event) => setCloudHealthSample(Number(event.target.value))}
+                  disabled={cloudHealthBusy}
+                >
+                  <option value={3}>3 张</option>
+                  <option value={10}>10 张</option>
+                  <option value={20}>20 张</option>
+                  <option value={50}>50 张</option>
+                </select>
+                张图
+              </label>
               <button aria-label="开始素材库体检" onClick={() => void runCloudHealth()} disabled={cloudHealthBusy}>
                 {cloudHealthBusy ? "正在体检…" : "开始体检"}
               </button>
