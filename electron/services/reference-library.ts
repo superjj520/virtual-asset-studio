@@ -423,14 +423,14 @@ class CloudReferenceLibrary {
         type: assetTypeFor(item.kind),
         projectId,
         rightsStatus: "authorized",
-        rightsReason: `云端参考库直接引用：${item.sourceName}（${item.kind} / ${item.id}）`,
+        rightsReason: `云端参考库直接引用：${cloudSourceName(item)}（${item.kind} / ${item.id}）`,
         secondaryCategory: item.category,
       });
       this.assets.updateConfirmation(result.asset.id, "confirmed");
       if (projectId) this.projects.attachAsset(projectId, result.asset.id);
       this.assets.mergeMetadata(result.asset.id, {
         cloudReference: {
-          sourceName: item.sourceName,
+          sourceName: cloudSourceName(item),
           sourceUrl: item.sourceUrl,
           itemId: item.id,
           kind: item.kind,
@@ -817,6 +817,22 @@ const assertCloudUrl = (value: string): void => {
 const assertCloudItem = (item: CloudReferenceItem): void => {
   if (!item?.imageUrl) throw new Error("云端参考图缺少图片地址。");
   assertCloudUrl(item.imageUrl);
+};
+
+/**
+ * 来源名兜底。
+ *
+ * 类型上 `sourceName` 是必填的，但 IPC 那头是 JS，调用方漏传不会被拦住；
+ * 漏了会把权利记录写成「云端参考库直接引用：undefined」，来源不可追。
+ * 与其报错打断入库，不如从 `sourceUrl` 退一个主机名出来。
+ */
+const cloudSourceName = (item: CloudReferenceItem): string => {
+  if (item.sourceName) return item.sourceName;
+  try {
+    return new URL(item.sourceUrl).hostname;
+  } catch {
+    return "云端参考库";
+  }
 };
 
 /** 视角展示顺序：先给最常用的人像机位，再补俯仰与背面。 */

@@ -431,6 +431,39 @@ describe("云端参考库", () => {
     );
   });
 
+  it("调用方漏传来源名时，退回主机名而不是写成 undefined", async () => {
+    const asset = { id: "asset-2", metadata: {} } as Asset;
+    const importer = { import: vi.fn().mockResolvedValue({ asset }) } as unknown as ImportService;
+    const assets = {
+      updateConfirmation: vi.fn(),
+      mergeMetadata: vi.fn(),
+      findById: vi.fn().mockReturnValue(asset),
+    } as unknown as AssetRepository;
+    vi.stubGlobal("fetch", vi.fn(async () => image()));
+    const library = new CloudReferenceLibrary(importer, assets, {} as ProjectRepository);
+    await library.importItem({
+      id: "normal-P001-front",
+      kind: "normal",
+      title: "后仰坐 · 正面",
+      category: "法线",
+      tags: [],
+      thumbUrl: "https://raw.githubusercontent.com/wquguru/shisei/main/images/normal/w600/S001_front.webp",
+      imageUrl: "https://raw.githubusercontent.com/wquguru/shisei/main/images/normal/w600/S001_front.webp",
+      sourceUrl: "https://github.com/wquguru/shisei",
+    } as unknown as Parameters<typeof library.importItem>[0]);
+    expect(importer.import).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rightsReason: expect.stringContaining("github.com"),
+      }),
+    );
+    expect(assets.mergeMetadata).toHaveBeenCalledWith(
+      "asset-2",
+      expect.objectContaining({
+        cloudReference: expect.objectContaining({ sourceName: "github.com" }),
+      }),
+    );
+  });
+
   it("拒绝未登记的云端来源", async () => {
     const library = new CloudReferenceLibrary(
       {} as ImportService,

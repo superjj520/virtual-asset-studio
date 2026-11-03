@@ -27,7 +27,8 @@
     "verify:health": "node scripts/verify-health.mjs",
     "verify:all": "node scripts/verify-all.mjs",
     "verify:normal-slot": "node scripts/verify-normal-slot.mjs",
-    "verify:quality": "node scripts/reference-quality.mjs"
+    "verify:quality": "node scripts/reference-quality.mjs",
+    "verify:import": "node scripts/verify-import.mjs"
   },
   "dependencies": {
     "@img/sharp-libvips-darwin-arm64": "^1.3.3",
