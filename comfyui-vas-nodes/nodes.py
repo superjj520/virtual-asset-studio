@@ -381,6 +381,30 @@ def _build_chardb_prompt(row: dict[str, Any]) -> str:
     return text.strip()
 
 
+def _fit_cell(cell, cell_w: int, cell_h: int, mode: str):
+    """把一格图放进拼图。两种模式必须真的不一样，否则参数就是摆设。"""
+    img = cell.permute(0, 3, 1, 2)
+    if mode == "裁切填满":
+        # 保持比例放大到盖满格子，再从中间裁掉多余部分——人脸不会被拉扁。
+        _, _, src_h, src_w = img.shape
+        scale = max(cell_w / max(1, src_w), cell_h / max(1, src_h))
+        new_w = max(cell_w, int(round(src_w * scale)))
+        new_h = max(cell_h, int(round(src_h * scale)))
+        img = torch.nn.functional.interpolate(
+            img, size=(new_h, new_w), mode="bilinear", align_corners=False
+        )
+        top = (new_h - cell_h) // 2
+        left = (new_w - cell_w) // 2
+        img = img[:, :, top : top + cell_h, left : left + cell_w]
+    else:
+        # 「缩放到指定尺寸」与「原图尺寸」都落到这里：2×2 网格必须撑满，
+        # 原图尺寸在拼图里没有可执行的含义，写成拉伸而不是假装支持。
+        img = torch.nn.functional.interpolate(
+            img, size=(cell_h, cell_w), mode="bilinear", align_corners=False
+        )
+    return img.permute(0, 2, 3, 1)[0]
+
+
 class VASCharacterRecipe:
     """把身份 / 服装 / 姿态 / 深度四张图拼成一张参考板，直接接 IPAdapter 或 ControlNet。"""
 
@@ -397,6 +421,10 @@ class VASCharacterRecipe:
                 "姿态": ("IMAGE", {}),
                 "深度": ("IMAGE", {}),
                 "底色": ("STRING", {"default": "#101014"}),
+                "尺寸模式": (RESIZE_MODES, {"default": "缩放到指定尺寸"}),
+                "宽度": ("INT", {"default": 1024, "min": 256, "max": 4096, "step": 8}),
+                "高度": ("INT", {"default": 1024, "min": 256, "max": 4096, "step": 8}),
+                "水平镜像": ("BOOLEAN", {"default": False}),
                 "画风预设": (STYLE_PRESETS, {"default": STYLE_PRESETS[0]}),
                 "补充提示词": (
                     "STRING",
@@ -421,27 +449,35 @@ class VASCharacterRecipe:
         姿态=None,
         深度=None,
         底色: str = "#101014",
+        尺寸模式: str = "缩放到指定尺寸",
+        宽度: int = 1024,
+        高度: int = 1024,
+        水平镜像: bool = False,
         画风预设: str = STYLE_PRESETS[0],
         补充提示词: str = "",
     ):
         """只接身份也能出图：缺的格子留底色，不会因为少连一根线就跑不了。"""
         rgb = _hex_to_rgb(底色)
         cells = [身份, 服装, 姿态, 深度]
-        side = 512
-        canvas = torch.zeros((1, side * 2, side * 2, 3), dtype=torch.float32)
+        # 2×2 网格：每格 = 整块的一半。宽高给用户控，输出尺寸就是他说了算的那个数。
+        cell_w = max(64, int(宽度) // 2)
+        cell_h = max(64, int(高度) // 2)
+        out_w = cell_w * 2
+        out_h = cell_h * 2
+        canvas = torch.zeros((1, out_h, out_w, 3), dtype=torch.float32)
         canvas[0, :, :, 0] = rgb[0]
         canvas[0, :, :, 1] = rgb[1]
         canvas[0, :, :, 2] = rgb[2]
         for index, cell in enumerate(cells):
             if cell is None:
                 continue
-            resized = torch.nn.functional.interpolate(
-                cell.permute(0, 3, 1, 2), size=(side, side), mode="bilinear", align_corners=False
-            ).permute(0, 2, 3, 1)[0]
+            resized = _fit_cell(cell, cell_w, cell_h, 尺寸模式)
             row, column = divmod(index, 2)
-            canvas[0, row * side : (row + 1) * side, column * side : (column + 1) * side] = resized
+            canvas[0, row * cell_h : (row + 1) * cell_h, column * cell_w : (column + 1) * cell_w] = resized
+        if 水平镜像:
+            canvas = _flip(canvas)
         zh, en = _recipe_prompt(画风预设, 补充提示词)
-        return (canvas, side * 2, side * 2, zh, en)
+        return (canvas, out_w, out_h, zh, en)
 
 
 def _recipe_prompt(style: str, extra: str = "") -> tuple[str, str]:

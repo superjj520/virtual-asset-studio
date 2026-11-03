@@ -19,6 +19,7 @@ const online = process.argv.includes("--online");
 
 const steps = [
   { name: "节点契约（ComfyUI 能不能加载）", cmd: PYTHON, args: [join(NODES, "contract_test.py")] },
+  { name: "与 anhao 插件的参数/输出对照", cmd: PYTHON, args: [join(NODES, "parity_test.py")] },
   { name: "提示词与画风预设", cmd: PYTHON, args: [join(NODES, "prompt_test.py")] },
   { name: "姿势→深度匹配", cmd: PYTHON, args: [join(NODES, "depth_test.py")] },
   { name: "图库路由", cmd: PYTHON, args: [join(NODES, "routes_test.py")] },
