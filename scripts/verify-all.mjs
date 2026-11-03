@@ -27,6 +27,7 @@ const steps = [
   { name: "参数面板真机", cmd: "node", args: ["scripts/verify-comfyui-panel.mjs"] },
   { name: "素材库体检真机", cmd: "node", args: ["scripts/verify-health.mjs"] },
   { name: "素材库质量真机", cmd: "node", args: ["scripts/reference-quality.mjs"] },
+  { name: "云端图入库真机", cmd: "node", args: ["scripts/verify-import.mjs"] },
   { name: "法线槽位真机", cmd: "node", args: ["scripts/verify-normal-slot.mjs"] },
   { name: "节点包七项", cmd: "node", args: ["scripts/verify-nodes.mjs", ...(ONLINE ? ["--online"] : [])] },
   { name: "打包", cmd: "npm", args: ["run", "package:mac"] },
