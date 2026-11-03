@@ -34,12 +34,16 @@ DEPTH_ROWS = [
     {"id": f"full_P{i:03d}_front", "系統": "全身", "分類": "立ち", "ポーズ名": "S字立ち", "アングル": "正面", "サムネ": f"thumbs/d{i:03d}.jpg"}
     for i in range(1, 101)
 ]
+NORMAL_ROWS = [
+    {"id": f"P{i:03d}-front", "名称": "后仰坐", "分类": "坐姿", "角度": "正面", "文件": f"std_P{i:03d}_front.webp"}
+    for i in range(1, 51)
+]
 CHARDB_ROWS = [
     {"id": "AUT-0001", "set": "outfit2", "fields": {"关键词": "denim skirt"}},
     {"id": "HAR-0001", "set": "hair", "fields": {"发型": "long"}},
 ]
 
-FAKE = {"pose": POSE_ROWS, "depth": DEPTH_ROWS, "costume": [], "portrait": [], "anime": []}
+FAKE = {"pose": POSE_ROWS, "depth": DEPTH_ROWS, "normal": NORMAL_ROWS, "costume": [], "portrait": [], "anime": []}
 
 
 def fake_load_rows(site, *, refresh=False):
@@ -51,12 +55,16 @@ def fake_load_char_db(*, refresh=False):
 
 
 def fake_image_url(site, row):
+    if site == "normal":
+        return f"https://raw.githubusercontent.com/wquguru/shisei/main/images/normal/w600/{row.get('文件', '')}"
     if site == "depth":
         return f"https://ai-pose-depth-gallery.pages.dev/{row.get('サムネ', '')}"
     return f"https://ai-pose-gallery.anhao.app/{row.get('縮略圖', '')}"
 
 
 def fake_label(site, row):
+    if site == "normal":
+        return f"{row.get('名称')} · {row.get('角度')}"
     if site == "depth":
         return f"{row.get('ポーズ名')} · {row.get('アングル')}"
     return f"{row.get('姿勢名稱')} · {row.get('角度')}"
@@ -107,6 +115,16 @@ def main() -> int:
     check(pack["matched"] == 1, f"搜 denim 应命中 1，实得 {pack['matched']}")
     check(pack["items"][0]["id"] == "chardb-AUT-0001", f"id 应带来源前缀，实得 {pack['items'][0]['id']}")
     print(f"  ✓ chardb {pack['total']} 条，搜 denim 命中 {pack['matched']}")
+
+    print("检查法线源：")
+    check("normal" in routes.SITE_KEYS, f"SITE_KEYS 里应有 normal，实得 {routes.SITE_KEYS}")
+    check(len(routes.SITE_KEYS) == 7, f"应有七个来源，实得 {len(routes.SITE_KEYS)}")
+    norm = routes.search_entries("normal", "", 0, 10)
+    check(norm["total"] == 50, f"法线应为 50 条，实得 {norm['total']}")
+    check(norm["items"][0]["thumb"].startswith("/vas_gallery/thumb?"), "法线缩略图也应走代理")
+    norm_hit = routes.search_entries("normal", "正面", 0, 10)
+    check(norm_hit["matched"] == 50, f"搜「正面」应命中 50，实得 {norm_hit['matched']}")
+    print(f"  ✓ normal {norm['total']} 条，搜「正面」命中 {norm_hit['matched']}")
 
     print("检查缩略图白名单：")
     for bad_url, why in [

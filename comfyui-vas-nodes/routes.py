@@ -6,7 +6,7 @@
 前端拿不到图；而且六个来源的数据格式各不相同（JSON / 内联 const D / window.CHARDB），
 前端解析不了。所以由 ComfyUI 自己的 aiohttp 服务转一手：
 
-    GET /vas_gallery/sites                      六个来源的元信息
+    GET /vas_gallery/sites                      七个来源的元信息
     GET /vas_gallery/catalogue?site=pose&q=&offset=&limit=   条目列表
     GET /vas_gallery/thumb?site=pose&id=xxx     缩略图字节流
 
@@ -38,7 +38,7 @@ MAX_IMAGE_BYTES = 12 * 1024 * 1024
 MAX_LIMIT = 200
 DEFAULT_LIMIT = 60
 
-SITE_KEYS = ["pose", "depth", "costume", "portrait", "anime", "chardb"]
+SITE_KEYS = ["pose", "depth", "normal", "costume", "portrait", "anime", "chardb"]
 
 
 def site_catalogue(site: str, *, refresh: bool = False) -> list[dict[str, Any]]:

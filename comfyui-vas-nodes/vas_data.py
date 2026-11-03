@@ -13,6 +13,7 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "vas-nodes")
 UA = {"User-Agent": "virtual-asset-studio-comfyui/1.0"}
 
@@ -26,6 +27,20 @@ SITES: dict[str, dict[str, str]] = {
 }
 
 # char-db-cn 不是静态 JSON，是 window.CHARDB={items:[...]}；图片分两处托管。
+# Shisei 的法线图（CC0 1.0 可商用）。清单内置成 JSON，只有图片本身联网——
+# 上游 catalog.json 挂在 raw.githubusercontent，限速时 20 秒都拿不到，
+# 那种情况下不该让整个下拉变成空的。清单由 scripts/export-shisei-catalog.mjs
+# 从 electron/services/shisei-catalog.ts 导出，两边同一份。
+NORMAL_CATALOG = os.path.join(HERE, "normal-catalog.json")
+NORMAL_BASE = "https://raw.githubusercontent.com/wquguru/shisei/main/images/normal/w600"
+NORMAL_VIEW_LABELS = {
+    "front": "正面",
+    "diag": "斜侧",
+    "side": "侧面",
+    "above": "俯视",
+    "below": "仰视",
+}
+
 CHARDB_DATA = "https://raw.githubusercontent.com/sleepy-zone/char-db-cn/main/data.js"
 CHARDB_IMAGE_BASE = "https://charadb-2fi.pages.dev"
 
@@ -37,6 +52,7 @@ SITE_LABELS = {
     "portrait": "人像",
     "depth": "深度",
     "anime": "动漫衣装",
+    "normal": "法线",
 }
 
 
@@ -90,7 +106,38 @@ def inline_array(html: str, marker: str) -> list[dict[str, Any]]:
     return []
 
 
+def load_normal_rows() -> list[dict[str, Any]]:
+    """把内置的法线清单展开成一条一行的「一张图一行」。
+
+    清单是 {series, id, name, category, views}，一个姿势有 2–5 个视角，
+    每个视角是一张独立的图，下拉里也得是独立的一项。
+    """
+    try:
+        data = json.loads(open(NORMAL_CATALOG, "rb").read().decode("utf-8"))
+    except Exception:
+        return []
+    rows: list[dict[str, Any]] = []
+    for pose in data.get("poses") or []:
+        for view in str(pose.get("views") or "").split(","):
+            view = view.strip()
+            if not view:
+                continue
+            rows.append(
+                {
+                    "id": f"{pose.get('id')}-{view}",
+                    "名称": pose.get("name") or "",
+                    "分类": pose.get("category") or "法线",
+                    "角度": NORMAL_VIEW_LABELS.get(view, view),
+                    "文件": f"{pose.get('series')}_{pose.get('id')}_{view}.webp",
+                }
+            )
+    return rows
+
+
 def load_rows(site: str, *, refresh: bool = False) -> list[dict[str, Any]]:
+    if site == "normal":
+        # 清单在本地，不走网络，也不受上游限速影响。
+        return load_normal_rows()
     config = SITES[site]
     if "inline" not in config:
         cache = os.path.join(CACHE_DIR, f"{site}.json")
@@ -112,8 +159,10 @@ def load_rows(site: str, *, refresh: bool = False) -> list[dict[str, Any]]:
 
 
 def image_url(site: str, row: dict[str, Any]) -> str:
-    base = SITES[site]["base"]
-    if site == "depth":
+    base = NORMAL_BASE if site == "normal" else SITES[site]["base"]
+    if site == "normal":
+        tail = row.get("文件") or ""
+    elif site == "depth":
         tail = row.get("サムネ") or row.get("原寸") or ""
     elif site == "anime":
         tail = row.get("画像") or row.get("サムネ") or ""
@@ -134,6 +183,10 @@ def label(site: str, row: dict[str, Any]) -> str:
         return f"{row.get('ポーズ名', '')} · {row.get('アングル', '')}".strip(" ·")
     if site == "anime":
         return f"{row.get('カテゴリ', '')} · {row.get('id', '')}".strip(" ·")
+    if site == "normal":
+        # 和 App 侧一致：名字 · 视角。姿势编号不进标题，因为法线是按视角分的，
+        # 用户找的是「哪个姿势的哪一面」，编号对他是噪声。
+        return f"{row.get('名称', '')} · {row.get('角度', '')}".strip(" ·")
     for key in ("姿势名称", "服装名称", "标题", "发型名称", "名称"):
         if row.get(key):
             return str(row[key])

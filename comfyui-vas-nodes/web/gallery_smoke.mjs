@@ -92,10 +92,13 @@ globalThis.fetch = async (url) => {
 /* ---------- 载入 gallery.js（去掉 ESM import，改用注入的 app） ---------- */
 const source = readFileSync(join(here, "gallery.js"), "utf8")
   .replace(/^import\s+\{\s*app\s*\}\s+from\s+["'][^"']+["'];?/m, "const app = globalThis.__app;");
-const mod = new Function(`${source}\nreturn { openPicker: typeof openPicker === "function" ? openPicker : null, NODE_SITE, SITES, PAGE_SIZE };`);
-// openPicker 是模块内函数，Function 作用域外拿不到；改为把它挂到 globalThis
-const patched = source.replace("function openPicker(", "globalThis.__openPicker = function openPicker(");
+// openPicker / NODE_SITE / SITES 都是模块内的东西，Function 作用域外拿不到，
+// 所以执行时把它们挂到 globalThis 上。
+const patched =
+  source.replace("function openPicker(", "globalThis.__openPicker = function openPicker(")
+  + "\nglobalThis.__vasGallery = { NODE_SITE, SITES, PAGE_SIZE };";
 new Function(patched)();
+const { NODE_SITE, SITES } = globalThis.__vasGallery;
 
 /* ---------- 跑断言 ---------- */
 let pass = 0;
@@ -112,8 +115,8 @@ const ext = extensions.find((e) => e.name === "VirtualAssetStudio.Gallery");
 check("注册了前端扩展", Boolean(ext));
 check("扩展有 beforeRegisterNodeDef", typeof ext?.beforeRegisterNodeDef === "function");
 
-// 2. 六个节点都能拿到来源映射
-const nodeNames = ["VASPoseGallery", "VASDepthGallery", "VASCostumeGallery", "VASPortraitGallery", "VASAnimeCostumeGallery", "VASCharacterPack"];
+// 2. 七个节点都能拿到来源映射（法线是 R29 接进来的第七个源）
+const nodeNames = ["VASPoseGallery", "VASDepthGallery", "VASNormalGallery", "VASCostumeGallery", "VASPortraitGallery", "VASAnimeCostumeGallery", "VASCharacterPack"];
 const mapped = [];
 for (const name of nodeNames) {
   const nodeType = function () {};
@@ -124,7 +127,9 @@ for (const name of nodeNames) {
   const btn = fakeNode.widgets.find((w) => w.name === "浏览图库");
   mapped.push(Boolean(btn));
 }
-check("六个图库节点都挂了「浏览图库」按钮", mapped.every(Boolean), `${mapped.filter(Boolean).length}/6`);
+check("七个图库节点都挂了「浏览图库」按钮", mapped.every(Boolean), `${mapped.filter(Boolean).length}/7`);
+check("弹窗的来源列表里有法线", SITES.some((s) => s.key === "normal" && s.label === "法线"), SITES.map((s) => s.key).join(","));
+check("法线节点默认打开法线来源", NODE_SITE.VASNormalGallery === "normal", String(NODE_SITE.VASNormalGallery));
 
 // 3. 打开弹窗 → 发请求 → 渲染卡片
 const node = {

@@ -284,6 +284,16 @@ class VASDepthGallery(_GalleryBase):
     SITE = "depth"
 
 
+class VASNormalGallery(_GalleryBase):
+    """法线图库：944 张 ControlNet Normal 专用图（Shisei · CC0 1.0 可商用）。
+
+    anhao 那套插件只有深度，没有法线。这一条是我们自己多的通道：
+    深度管空间关系，法线管表面朝向，衣服褶皱和肌肉走向靠它更准。
+    """
+
+    SITE = "normal"
+
+
 class VASCostumeGallery(_GalleryBase):
     """服装库：1,407 套，另含 char-db-cn 的 440 套。多给一份英文关键词。"""
 
@@ -526,6 +536,7 @@ def _hex_to_rgb(value: str) -> tuple[float, float, float]:
 NODE_CLASS_MAPPINGS = {
     "VASPoseGallery": VASPoseGallery,
     "VASDepthGallery": VASDepthGallery,
+    "VASNormalGallery": VASNormalGallery,
     "VASCostumeGallery": VASCostumeGallery,
     "VASPortraitGallery": VASPortraitGallery,
     "VASAnimeCostumeGallery": VASAnimeCostumeGallery,
@@ -536,6 +547,7 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "VASPoseGallery": "虚拟资产 · 姿势库",
     "VASDepthGallery": "虚拟资产 · 深度图库",
+    "VASNormalGallery": "虚拟资产 · 法线图库",
     "VASCostumeGallery": "虚拟资产 · 服装库",
     "VASPortraitGallery": "虚拟资产 · 人像库",
     "VASAnimeCostumeGallery": "虚拟资产 · 动漫衣装",

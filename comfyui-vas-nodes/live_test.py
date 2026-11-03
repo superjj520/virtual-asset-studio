@@ -175,6 +175,27 @@ def main() -> int:
     )
     check("尺寸模式包含跟随身份图", "跟随身份图" in modes, " / ".join(modes))
 
+    # 法线是七个源里唯一新增的独立节点，单独验一下它真的带着 944 项选项。
+    normal = info.get("VASNormalGallery")
+    check("法线节点被 ComfyUI 加载了", bool(normal))
+    if normal:
+        normal_modes = normal["input"].get("required", {}).get("选择", [[]])[0]
+        check(
+            "法线节点有 944 项选项",
+            len(normal_modes) == 944,
+            f"{len(normal_modes)} 项",
+        )
+        check(
+            "法线选项没有重名",
+            len(set(normal_modes)) == len(normal_modes),
+            f"{len(set(normal_modes))}/{len(normal_modes)}",
+        )
+        check(
+            "法线选项是「名字 · 视角」的样子",
+            any(" · " in item for item in normal_modes[:3]),
+            " / ".join(normal_modes[:3]),
+        )
+
     presets = recipe["input"].get("optional", {}).get("画风预设", [[]])[0]
     app_styles = ROOT / "src" / "shared" / "reference-styles.ts"
     if app_styles.exists():

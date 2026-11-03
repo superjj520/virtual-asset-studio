@@ -4,7 +4,7 @@
  * 为什么要有这个：节点原本只有一个「选择」下拉，里面塞着 1,439 条
  * 「P001 · S形站姿・胯部侧顶 · 正面」。用户得靠下拉列表翻，看不到图。
  *
- * 这里给六个图库节点挂一个「浏览图库」按钮，点开是一个带缩略图的弹窗：
+ * 这里给七个图库节点挂一个「浏览图库」按钮，点开是一个带缩略图的弹窗：
  * 搜索框 + 来源切换 + 分页网格。点一张图就把它的名字写回「选择」下拉。
  *
  * 数据来自同包的 routes.py（`/vas_gallery/sites|catalogue|thumb`），
@@ -16,6 +16,7 @@ import { app } from "../../scripts/app.js";
 const SITES = [
   { key: "pose", label: "姿势" },
   { key: "depth", label: "深度图" },
+  { key: "normal", label: "法线" },
   { key: "costume", label: "服装" },
   { key: "portrait", label: "人像" },
   { key: "anime", label: "动漫衣装" },
@@ -28,6 +29,7 @@ const PAGE_SIZE = 36;
 const NODE_SITE = {
   VASPoseGallery: "pose",
   VASDepthGallery: "depth",
+  VASNormalGallery: "normal",
   VASCostumeGallery: "costume",
   VASPortraitGallery: "portrait",
   VASAnimeCostumeGallery: "anime",
