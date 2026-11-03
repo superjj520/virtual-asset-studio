@@ -29,7 +29,7 @@ const catalog: CloudReferenceCatalog = {
   attribution: "测试用云端参考库",
   fetchedAt: "2026-11-02T00:00:00.000Z",
   counts: { portrait: 0, costume: 0, hair: 0, pose: 1, depth: 0, "anime-costume": 0,
-    normal: 0 },
+    normal: 0, clay: 0, photo: 0 },
   items: [item],
 };
 

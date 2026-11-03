@@ -1,12 +1,13 @@
 /**
- * Shisei 法线图的清单（944 张 / 288 个姿势）。
+ * Shisei 姿势清单（内置，不联网）。
  *
- * 上游把它放在 raw.githubusercontent 的 catalog.json 里，但那个域名在体检时
- * 经常被限速吊住（20 秒超时都拿不到），所以把清单内置成常量：
- * 只有图片本身还需要联网，清单永远可用。
+ * 由 `node scripts/build-shisei-catalog.mjs <catalog.json>` 生成，不要手改。
+ *
+ * - SHISEI_POSES：270 个姿势 / 944 个视角，是 clay、depth、normal 三种图的共同清单
+ *   （同一批姿势、同一套文件名 `{series}_{id}_{view}.webp`，只有目录不同）。
+ * - SHISEI_PHOTOS：20 个姿势 / 89 张 AI 生成人像照片，只有 photo 目录有。
  *
  * 授权：图像 CC0 1.0（可商用、可修改、可再分发），见 docs/R52-SHISEI-CC0-ASSESSMENT.md。
- * 这条清单可以用 `node scripts/refresh-shisei-catalog.mjs` 重新生成。
  */
 export type ShiseiPoseEntry = {
   series: string;
@@ -290,5 +291,30 @@ export const SHISEI_POSES: ShiseiPoseEntry[] = [
   { series: "duo", id: "D055", name: "背向坐在对方两膝间", category: "背向坐", views: "front,above" },
 ];
 
-/** 展开后的法线图总数，供体检和界面显示核对。 */
 export const SHISEI_NORMAL_COUNT = 944;
+export const SHISEI_CLAY_COUNT = 944;
+
+export const SHISEI_PHOTOS: ShiseiPoseEntry[] = [
+  { series: "std", id: "P001", name: "后仰坐・单膝竖起", category: "坐姿", views: "front,diag,side,above,below" },
+  { series: "std", id: "P002", name: "单手支撑・双腿前伸", category: "坐姿", views: "diag,side,above,below" },
+  { series: "std", id: "P003", name: "双手后撑・挺胸坐", category: "坐姿", views: "front,diag,side,above,below" },
+  { series: "std", id: "P004", name: "三角坐・双膝左倾", category: "坐姿", views: "front,diag,side,above,below" },
+  { series: "std", id: "P005", name: "单膝竖起・手触发", category: "坐姿", views: "front,diag,side,above,below" },
+  { series: "std", id: "P006", name: "双腿斜伸・手扶腰", category: "坐姿", views: "front,diag,side,above,below" },
+  { series: "std", id: "P007", name: "双肘撑地俯卧", category: "坐姿", views: "diag,side,above,below" },
+  { series: "std", id: "P008", name: "双膝竖起・双手抱头", category: "坐姿", views: "front,diag,side,above,below" },
+  { series: "std", id: "P009", name: "右倾・肘撑坐", category: "坐姿", views: "front,diag,side,above,below" },
+  { series: "std", id: "P010", name: "手扶脚踝坐", category: "坐姿", views: "front,diag,side,above,below" },
+  { series: "std", id: "P011", name: "双手抱头・挺胸", category: "坐姿", views: "front,diag,side,above,below" },
+  { series: "std", id: "P012", name: "单膝竖起・托腮", category: "坐姿", views: "front,diag,above,below" },
+  { series: "std", id: "P013", name: "后撑・双腿离地", category: "坐姿", views: "front,above,below" },
+  { series: "std", id: "P014", name: "单膝竖起・握脚踝", category: "坐姿", views: "front,above,below" },
+  { series: "std", id: "P015", name: "站立・单手叉腰", category: "站立", views: "front,diag,side,above,below" },
+  { series: "std", id: "P016", name: "站立・双手撩发", category: "站立", views: "front,diag,side,above,below" },
+  { series: "std", id: "P017", name: "站立・回眸", category: "站立", views: "front,diag,side,above,below" },
+  { series: "std", id: "P018", name: "站立・双手叉腰", category: "站立", views: "front,diag,side,above,below" },
+  { series: "std", id: "P021", name: "站立・手扶颈侧与大腿", category: "站立", views: "front,diag,side,above,below" },
+  { series: "std", id: "P062", name: "深蹲踮脚・双手撑地", category: "蹲姿", views: "below" },
+];
+
+export const SHISEI_PHOTO_COUNT = 89;

@@ -4,7 +4,17 @@ export const CLOUD_REFERENCE_SOURCE = {
   attribution: "anhao · 姿势 / 服装 / 人像云端参考库",
 } as const;
 
-export const CLOUD_REFERENCE_KINDS = ["portrait", "costume", "hair", "pose", "depth", "normal", "anime-costume"] as const;
+export const CLOUD_REFERENCE_KINDS = [
+  "portrait",
+  "costume",
+  "hair",
+  "pose",
+  "depth",
+  "clay",
+  "normal",
+  "photo",
+  "anime-costume",
+] as const;
 export type CloudReferenceKind = (typeof CLOUD_REFERENCE_KINDS)[number];
 
 export const CLOUD_REFERENCE_KIND_LABELS: Record<CloudReferenceKind, string> = {
@@ -13,7 +23,9 @@ export const CLOUD_REFERENCE_KIND_LABELS: Record<CloudReferenceKind, string> = {
   pose: "姿势",
   hair: "发型",
   depth: "深度",
+  clay: "黏土",
   normal: "法线",
+  photo: "实拍",
   "anime-costume": "动漫衣装",
 };
 
@@ -85,6 +97,28 @@ export type CloudHealthReport = {
   totalItems: number;
   totalImages: number;
   sources: CloudSourceHealth[];
+};
+
+/** 整批下载的进度快照；每下完一张推一次，界面只读不改。 */
+export type CloudImportProgress = {
+  /** 本次要处理的条目总数（等于 skipped + pending）。 */
+  total: number;
+  /** 已经处理过的条数（含跳过和失败）。 */
+  done: number;
+  /** 本次真正待下载的条数；本地已有的不计入。 */
+  pending: number;
+  imported: number;
+  skipped: number;
+  failed: number;
+  /** 正在下载的这张叫什么，用来让用户知道它还活着。 */
+  currentTitle?: string;
+};
+
+export type CloudImportSummary = {
+  total: number;
+  imported: number;
+  skipped: number;
+  failed: number;
 };
 
 export type CloudReferenceCatalog = {

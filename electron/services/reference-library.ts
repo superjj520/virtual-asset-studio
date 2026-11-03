@@ -7,6 +7,8 @@ import {
   CLOUD_REFERENCE_SOURCE,
   type CloudHealthReport,
   type CloudImageProbe,
+  type CloudImportProgress,
+  type CloudImportSummary,
   type CloudReferenceCatalog,
   type CloudReferenceItem,
   type CloudReferenceKind,
@@ -15,7 +17,7 @@ import {
 import type { AssetRepository } from "./assets/repository";
 import type { ImportService } from "./import/import-service";
 import type { ProjectRepository } from "./projects/repository";
-import { SHISEI_POSES } from "./shisei-catalog";
+import { SHISEI_PHOTOS, SHISEI_POSES } from "./shisei-catalog";
 
 const BASE_URL = "https://ai-pose-gallery.anhao.app";
 const CHAR_DB_DATA_URL = "https://raw.githubusercontent.com/sleepy-zone/char-db-cn/main/data.js";
@@ -37,6 +39,18 @@ const NORMAL_SOURCE = {
   name: "Shisei Normal",
   url: "https://shisei.indaloop.app/en/",
   attribution: "Shisei 姿勢 · CC0 法线图，供 ControlNet Normal 使用",
+} as const;
+const CLAY_BASE = "https://raw.githubusercontent.com/wquguru/shisei/main/images/clay/w600";
+const CLAY_SOURCE = {
+  name: "Shisei Clay",
+  url: "https://shisei.indaloop.app/en/",
+  attribution: "Shisei 姿勢 · CC0 黏土渲染，带体积与明暗，适合当光影参考",
+} as const;
+const PHOTO_BASE = "https://raw.githubusercontent.com/wquguru/shisei/main/images/photo/w600";
+const PHOTO_SOURCE = {
+  name: "Shisei Photo",
+  url: "https://shisei.indaloop.app/en/",
+  attribution: "Shisei 姿勢 · CC0 AI 生成人像照片（成人形象，非真人）",
 } as const;
 const ANIME_BASE = "https://ai-costume-anime-gallery.pages.dev";
 const ANIME_SOURCE = {
@@ -84,9 +98,10 @@ type ShiseiPoseRow = {
   maps?: Record<string, string>;
 };
 
-type NormalMapRow = {
+/** Shisei 三种图（clay / normal / photo）共用同一个形状，只有 kind 与目录不同。 */
+type ShiseiMapRow = {
   id: string;
-  kind: "normal";
+  kind: "normal" | "clay" | "photo";
   title: string;
   category: string;
   tags: string[];
@@ -221,7 +236,17 @@ class CloudReferenceLibrary {
       }
     };
 
-    const [poses, costumes, portraits, charDb, depths, animeCostumes, normalMaps] = await Promise.all([
+    const [
+      poses,
+      costumes,
+      portraits,
+      charDb,
+      depths,
+      animeCostumes,
+      clayMaps,
+      normalMaps,
+      photoMaps,
+    ] = await Promise.all([
       probe(
         "pose",
         "姿势",
@@ -252,7 +277,13 @@ class CloudReferenceLibrary {
       probe("anime-costume", "动漫衣装", () => this.fetchAnimeCostumesStrict(), (rows) =>
         rows.map((row) => animeUrl(row.サムネ ?? row.画像)),
       ),
+      probe("clay", "黏土", () => this.fetchClay(), (rows) =>
+        rows.map((row) => row.imageUrl),
+      ),
       probe("normal", "法线", () => this.fetchNormalMaps(), (rows) =>
+        rows.map((row) => row.imageUrl),
+      ),
+      probe("photo", "实拍", () => this.fetchPhotos(), (rows) =>
         rows.map((row) => row.imageUrl),
       ),
     ]);
@@ -267,7 +298,9 @@ class CloudReferenceLibrary {
       { ...charDb.health, count: charDbOnly.length },
       depths.health,
       animeCostumes.health,
+      clayMaps.health,
       normalMaps.health,
+      photoMaps.health,
     ];
     // 口径必须和 list() 的 counts 一致：姿势按组算（288），不是按张算（1,439）。
     const poseGroups = groupPoses(poses.rows).length;
@@ -285,7 +318,9 @@ class CloudReferenceLibrary {
         charDbHair +
         depths.rows.length +
         animeCostumes.rows.length +
-        normalMaps.rows.length,
+        clayMaps.rows.length +
+        normalMaps.rows.length +
+        photoMaps.rows.length,
       totalImages:
         poses.rows.length +
         costumes.rows.length +
@@ -293,7 +328,9 @@ class CloudReferenceLibrary {
         charDbOnly.length +
         depths.rows.length +
         animeCostumes.rows.length +
-        normalMaps.rows.length,
+        clayMaps.rows.length +
+        normalMaps.rows.length +
+        photoMaps.rows.length,
       sources,
     };
   }
@@ -333,26 +370,89 @@ class CloudReferenceLibrary {
    * 不再每次去 raw.githubusercontent 拉 catalog.json——那个域名体检时限速吊住，
    * 会让整个素材库看起来打不开。
    */
-  private async fetchNormalMapsStrict(): Promise<NormalMapRow[]> {
-    const rows: NormalMapRow[] = [];
+  /** clay 与 normal 是同一批姿势、同一套文件名，只有目录不同，所以共用 SHISEI_POSES。 */
+  private buildMapRows(
+    base: string,
+    kind: "normal" | "clay",
+    label: string,
+  ): ShiseiMapRow[] {
+    const rows: ShiseiMapRow[] = [];
     for (const pose of SHISEI_POSES) {
       for (const view of pose.views.split(",").filter(Boolean)) {
         const file = `${pose.series}_${pose.id}_${view}.webp`;
         rows.push({
-          id: `normal-${pose.id}-${view}`,
-          kind: "normal" as const,
+          id: `${kind}-${pose.id}-${view}`,
+          kind,
           title: `${pose.name} · ${NORMAL_VIEW_LABELS[view] ?? view}`,
-          category: pose.category || "法线",
-          tags: [pose.category, pose.name, NORMAL_VIEW_LABELS[view]].filter(
+          category: pose.category || label,
+          tags: [pose.category, pose.name, NORMAL_VIEW_LABELS[view], label].filter(
             (value): value is string => Boolean(value),
           ),
-          thumbUrl: `${NORMAL_BASE}/${file}`,
-          imageUrl: `${NORMAL_BASE}/${file}`,
+          thumbUrl: `${base}/${file}`,
+          imageUrl: `${base}/${file}`,
         });
       }
     }
-    if (rows.length === 0) throw new Error("Shisei 法线图一条都没展开出来。");
+    if (rows.length === 0) throw new Error(`Shisei ${label}图一条都没展开出来。`);
     return rows;
+  }
+
+  private async fetchNormalMapsStrict(): Promise<ShiseiMapRow[]> {
+    return this.buildMapRows(NORMAL_BASE, "normal", "法线");
+  }
+
+  /**
+   * 实拍照片只有 20 个姿势有（89 张），清单形状与 clay/normal 不同，
+   * 所以走 SHISEI_PHOTOS 而不是 SHISEI_POSES。
+   */
+  private buildPhotoRows(): ShiseiMapRow[] {
+    const rows: ShiseiMapRow[] = [];
+    for (const pose of SHISEI_PHOTOS) {
+      for (const view of pose.views.split(",").filter(Boolean)) {
+        const file = `${pose.series}_${pose.id}_${view}.webp`;
+        rows.push({
+          id: `photo-${pose.id}-${view}`,
+          kind: "photo",
+          title: `${pose.name} · ${NORMAL_VIEW_LABELS[view] ?? view}`,
+          category: pose.category || "实拍",
+          tags: [pose.category, pose.name, NORMAL_VIEW_LABELS[view], "实拍", "photo"].filter(
+            (value): value is string => Boolean(value),
+          ),
+          thumbUrl: `${PHOTO_BASE}/${file}`,
+          imageUrl: `${PHOTO_BASE}/${file}`,
+        });
+      }
+    }
+    if (rows.length === 0) throw new Error("Shisei 实拍照片一条都没展开出来。");
+    return rows;
+  }
+
+  /** clay 与法线同一批 944 张，只换目录。 */
+  private async fetchClayStrict(): Promise<ShiseiMapRow[]> {
+    return this.buildMapRows(CLAY_BASE, "clay", "黏土");
+  }
+
+  private async fetchPhotosStrict(): Promise<ShiseiMapRow[]> {
+    return this.buildPhotoRows();
+  }
+
+  /** 降级版本与法线同款：这两个源挂了不该让整个素材库打不开。 */
+  private async fetchClay(): Promise<ShiseiMapRow[]> {
+    if (!this.includeNormal) return [];
+    try {
+      return await this.fetchClayStrict();
+    } catch {
+      return [];
+    }
+  }
+
+  private async fetchPhotos(): Promise<ShiseiMapRow[]> {
+    if (!this.includeNormal) return [];
+    try {
+      return await this.fetchPhotosStrict();
+    } catch {
+      return [];
+    }
   }
 
   private async fetchAnimeCostumesStrict(): Promise<AnimeCostumeRow[]> {
@@ -449,8 +549,94 @@ class CloudReferenceLibrary {
     }
   }
 
+  /**
+   * 把云端目录整批落到本地资产库。
+   *
+   * 默认只做「还没下过的」：先扫一遍已有 reference_image 的
+   * metadata.cloudReference.itemId，已有的直接跳过，所以中途断了重跑会接着下，
+   * 不会重复入库。目录有 9,075 张，串行会慢到没法用，这里用固定并发池。
+   */
+  async importAll(
+    options: {
+      kinds?: CloudReferenceKind[];
+      concurrency?: number;
+      projectId?: string;
+      onProgress?: (state: CloudImportProgress) => void;
+    } = {},
+  ): Promise<CloudImportSummary> {
+    const { kinds, concurrency = 4, projectId, onProgress } = options;
+    const catalog = await this.list();
+    const wanted = kinds && kinds.length > 0
+      ? catalog.items.filter((item) => kinds.includes(item.kind))
+      : catalog.items;
+
+    const existing = new Set<string>();
+    for (const asset of this.assets.list({ type: "reference_image" })) {
+      const cloud = asset.metadata?.cloudReference as { itemId?: unknown } | undefined;
+      if (typeof cloud?.itemId === "string") existing.add(cloud.itemId);
+    }
+
+    const pending = wanted.filter((item) => !existing.has(item.id));
+    const summary: CloudImportSummary = {
+      total: wanted.length,
+      imported: 0,
+      skipped: wanted.length - pending.length,
+      failed: 0,
+    };
+    if (pending.length === 0) return summary;
+
+    let done = summary.skipped;
+    const report = (currentTitle?: string) =>
+      onProgress?.({
+        ...summary,
+        done,
+        pending: pending.length,
+        currentTitle,
+      });
+
+    const queue = [...pending];
+    const worker = async () => {
+      for (;;) {
+        const item = queue.shift();
+        if (!item) return;
+        let lastError: unknown;
+        // 上游偶尔 5xx 或超时，一次失败不代表这张图没了；重试两次再记失败。
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            await this.importItem(item, projectId);
+            summary.imported += 1;
+            lastError = undefined;
+            break;
+          } catch (error) {
+            lastError = error;
+            await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+          }
+        }
+        if (lastError) summary.failed += 1;
+        done += 1;
+        report(item.title);
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: Math.max(1, Math.min(concurrency, 8)) }, worker),
+    );
+    report();
+    return summary;
+  }
+
   private async load(): Promise<CloudReferenceCatalog> {
-    const [poses, costumes, portraits, charDb, depths, animeCostumes, normalMaps] = await Promise.all([
+    const [
+      poses,
+      costumes,
+      portraits,
+      charDb,
+      depths,
+      animeCostumes,
+      normalMaps,
+      clayMaps,
+      photoMaps,
+    ] = await Promise.all([
       this.fetchJson<PoseRow[]>("/data/pose-zh.json"),
       this.fetchJson<CostumeRow[]>("/data/costume-zh.json"),
       this.fetchJson<PortraitRow[]>("/data/portrait-zh.json"),
@@ -458,6 +644,8 @@ class CloudReferenceLibrary {
       this.fetchDepthPoses(),
       this.fetchAnimeCostumes(),
       this.fetchNormalMaps(),
+      this.fetchClay(),
+      this.fetchPhotos(),
     ]);
     const poseItems = groupPoses(poses);
     const costumeItems = costumes.map((row) => ({
@@ -600,11 +788,13 @@ class CloudReferenceLibrary {
       ...normalize(depthItems, DEPTH_SOURCE),
       ...normalize(animeItems, ANIME_SOURCE),
       ...normalize(normalMaps, NORMAL_SOURCE),
+      ...normalize(clayMaps, CLAY_SOURCE),
+      ...normalize(photoMaps, PHOTO_SOURCE),
     ];
     const value: CloudReferenceCatalog = {
-      sourceName: `${CLOUD_REFERENCE_SOURCE.name} + ${CHAR_DB_SOURCE.name} + ${DEPTH_SOURCE.name} + ${ANIME_SOURCE.name} + ${NORMAL_SOURCE.name}`,
+      sourceName: `${CLOUD_REFERENCE_SOURCE.name} + ${CHAR_DB_SOURCE.name} + ${DEPTH_SOURCE.name} + ${ANIME_SOURCE.name} + ${NORMAL_SOURCE.name} + ${CLAY_SOURCE.name} + ${PHOTO_SOURCE.name}`,
       sourceUrl: CLOUD_REFERENCE_SOURCE.url,
-      attribution: `${CLOUD_REFERENCE_SOURCE.attribution}；${CHAR_DB_SOURCE.attribution}；${DEPTH_SOURCE.attribution}；${ANIME_SOURCE.attribution}；${NORMAL_SOURCE.attribution}`,
+      attribution: `${CLOUD_REFERENCE_SOURCE.attribution}；${CHAR_DB_SOURCE.attribution}；${DEPTH_SOURCE.attribution}；${ANIME_SOURCE.attribution}；${NORMAL_SOURCE.attribution}；${CLAY_SOURCE.attribution}；${PHOTO_SOURCE.attribution}`,
       fetchedAt: new Date().toISOString(),
       counts: {
         portrait: portraitItems.length,
@@ -612,7 +802,9 @@ class CloudReferenceLibrary {
         hair: charDbOnly.filter((row) => row.set === "hair").length,
         pose: poseItems.length + charDbOnly.filter((row) => row.set === "pose").length,
         depth: depthItems.length,
+        clay: clayMaps.length,
         normal: normalMaps.length,
+        photo: photoMaps.length,
         "anime-costume": animeItems.length,
       },
       imageCounts: {
@@ -621,7 +813,9 @@ class CloudReferenceLibrary {
         hair: charDbOnly.filter((row) => row.set === "hair").length,
         pose: poses.length + charDbOnly.filter((row) => row.set === "pose").length,
         depth: depths.length,
+        clay: clayMaps.length,
         normal: normalMaps.length,
+        photo: photoMaps.length,
         "anime-costume": animeCostumes.length,
       },
       totalImages:
@@ -631,7 +825,9 @@ class CloudReferenceLibrary {
         charDbOnly.length +
         depths.length +
         animeCostumes.length +
-        normalMaps.length,
+        normalMaps.length +
+        clayMaps.length +
+        photoMaps.length,
       items,
     };
     this.cache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
@@ -677,7 +873,7 @@ class CloudReferenceLibrary {
   }
 
   /** 降级版本：法线源挂掉不该让整个素材库打不开。 */
-  private async fetchNormalMaps(): Promise<NormalMapRow[]> {
+  private async fetchNormalMaps(): Promise<ShiseiMapRow[]> {
     if (!this.includeNormal) return [];
     try {
       return await this.fetchNormalMapsStrict();

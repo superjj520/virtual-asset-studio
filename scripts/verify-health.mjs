@@ -27,7 +27,8 @@ const PORT = 9603;
 const PROFILE = mkdtempSync(join(tmpdir(), "vas-verify-"));
 const SHOT = join(ROOT, "artifacts/screenshots/cloud-health-sample.png");
 /**
- * 单步超时。health() 现在要等七个源，其中 raw.githubusercontent 限速时
+ * 单步超时。health() 现在要等九个源，其中 raw.githubusercontent 那几个（Shisei 的
+ * clay / normal / photo）限速时
  * 每张图能拖到 20 秒；一次抽 10 张并发，留 120 秒才不会被误判成「卡死」。
  */
 const STEP_TIMEOUT = 120_000;
@@ -175,7 +176,8 @@ async function main() {
   })()`);
   check("默认档位真的抓 3 张", viaIpc?.three === 3, `images=${viaIpc?.three ?? viaIpc?.miss}`);
   check("传 10 时真的抓 10 张（IPC 透传生效）", viaIpc?.ten === 10, `images=${viaIpc?.ten}`);
-  // 法线是这一轮新接的第七个源，单独断言它——不跟着其他六源的网络抖动一起红。
+  // Shisei 的 clay / normal / photo 是内置清单（不经网络就能列出来），单独断言——
+  // 不跟着其余六源的网络抖动一起红。
   check(
     "法线源在体检列表里",
     Array.isArray(viaIpc?.labels) && viaIpc.labels.some((label) => /法线/.test(label ?? "")),
@@ -203,7 +205,7 @@ async function main() {
     const trs = [...document.querySelectorAll(".cloud-health-table tbody tr")];
     return trs.map(tr => tr.textContent.replace(/\s+/g, " ").trim());
   })()`);
-  check("七个来源都有结果", (detail?.length ?? 0) === 7, (detail ?? []).join(" | ").slice(0, 220));
+  check("九个来源都有结果", (detail?.length ?? 0) === 9, (detail ?? []).join(" | ").slice(0, 260));
   check("每个来源都带条数", (detail ?? []).every((t) => /[0-9]/.test(t)));
 
   await evaluate(`(() => { const el = document.querySelector(".cloud-health-table"); el?.scrollIntoView({ block: "center" }); return !!el; })()`);

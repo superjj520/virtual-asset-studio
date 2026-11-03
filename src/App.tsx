@@ -29,7 +29,11 @@ import { CreationLaunchpad, type CreationLaunchKind } from "./creation/CreationL
 import { ReferenceSheetComposer } from "./reference/ReferenceSheetComposer";
 import { applyReferenceSheetToCard, type ReferenceSheetRecipe } from "./shared/reference-sheet";
 import { identityAnchorWarning } from "./shared/identity-anchor";
-import type { CloudHealthReport } from "./shared/reference-library";
+import type {
+  CloudHealthReport,
+  CloudImportProgress,
+  CloudImportSummary,
+} from "./shared/reference-library";
 import { listWorkflowParameters, parameterKey } from "./shared/workflow-parameters";
 import { CREATION_PRESET_ARTWORKS, SCENE_ARTWORKS, VisualCharacterCreator } from "./creation/VisualCharacterCreator";
 import {
@@ -654,6 +658,10 @@ export default function App() {
   const [cloudHealth, setCloudHealth] = useState<CloudHealthReport | null>(null);
   const [cloudHealthBusy, setCloudHealthBusy] = useState(false);
   const [cloudHealthSample, setCloudHealthSample] = useState(3);
+  /** 整批下载的实时进度；null 表示还没开始过。 */
+  const [cloudImport, setCloudImport] = useState<CloudImportProgress | null>(null);
+  const [cloudImportBusy, setCloudImportBusy] = useState(false);
+  const [cloudImportResult, setCloudImportResult] = useState<CloudImportSummary | null>(null);
   const [customImageBaseUrl, setCustomImageBaseUrl] = useState("");
   const [customImageModel, setCustomImageModel] = useState("");
   const [budget, setBudget] = useState<BudgetStatus>({ plannedSpendUsd: 0 });
@@ -1794,6 +1802,30 @@ export default function App() {
       setNotice(error instanceof Error ? error.message : "素材库体检失败。");
     } finally {
       setCloudHealthBusy(false);
+    }
+  };
+  const runCloudImport = async () => {
+    setCloudImportBusy(true);
+    setCloudImportResult(null);
+    setCloudImport({ total: 0, done: 0, pending: 0, imported: 0, skipped: 0, failed: 0 });
+    // 订阅要在 invoke 之前挂上，否则第一批进度会在监听器就位之前就推出去。
+    const unsubscribe = window.studio.referenceLibrary.onImportProgress((state) =>
+      setCloudImport(state),
+    );
+    try {
+      const result = await window.studio.referenceLibrary.importAll();
+      setCloudImportResult(result);
+      setNotice(
+        `素材库已下载到本地：新增 ${result.imported} 条，跳过本地已有的 ${result.skipped} 条${
+          result.failed > 0 ? `，${result.failed} 条失败` : ""
+        }。`,
+      );
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "批量下载失败。");
+    } finally {
+      unsubscribe();
+      setCloudImportBusy(false);
+      setCloudImport(null);
     }
   };
 
@@ -7019,9 +7051,9 @@ export default function App() {
             </div>
           </section>
           <section className="form-panel">
-            <p className="eyebrow">素材库体检 / 七个来源逐个测</p>
+            <p className="eyebrow">素材库体检 / 九个来源逐个测</p>
             <p className="result-note">
-              点一下会把七个来源各拉一遍，显示真实条数与失败原因。上游改了结构、限流或者挂掉，这里会直接说出来——不用听我转述。
+              点一下会把九个来源各拉一遍，显示真实条数与失败原因。上游改了结构、限流或者挂掉，这里会直接说出来——不用听我转述。
             </p>
             <div className="provider-row cloud-health-actions">
               <div>
@@ -7089,6 +7121,46 @@ export default function App() {
                   ))}
                 </tbody>
               </table>
+            ) : null}
+          </section>
+          <section className="form-panel">
+            <p className="eyebrow">本地缓存 / 按需引用还是整批下载</p>
+            <p className="result-note">
+              目录里的七千多条云在线上，浏览、搜索、筛选都不占本地磁盘；只有你在参考卡里点「用这张」的那一张才真下载入库。想离线也能用，就在这里整批拉下来——已经下过的会自动跳过，中途断了重跑会接着下。
+            </p>
+            <div className="provider-row cloud-health-actions">
+              <div>
+                <strong>本地素材缓存</strong>
+                <p className="result-note">
+                  {cloudImportBusy && cloudImport
+                    ? `正在下载 ${cloudImport.done} / ${cloudImport.total} · 新增 ${cloudImport.imported}${
+                        cloudImport.failed > 0 ? ` · 失败 ${cloudImport.failed}` : ""
+                      }${cloudImport.currentTitle ? ` · ${cloudImport.currentTitle}` : ""}`
+                    : cloudImportResult
+                      ? `上次下载：新增 ${cloudImportResult.imported} 条，跳过 ${cloudImportResult.skipped} 条${
+                          cloudImportResult.failed > 0
+                            ? `，失败 ${cloudImportResult.failed} 条`
+                            : ""
+                        }`
+                      : "还没整批下载过；选中的图已经在本地。"}
+                </p>
+              </div>
+              <button
+                aria-label="把素材库下载到本地"
+                className="cloud-health-start"
+                onClick={() => void runCloudImport()}
+                disabled={cloudImportBusy}
+              >
+                {cloudImportBusy ? "正在下载…" : "下载到本地"}
+              </button>
+            </div>
+            {cloudImportBusy && cloudImport && cloudImport.total > 0 ? (
+              <progress
+                className="cloud-import-progress"
+                max={cloudImport.total}
+                value={cloudImport.done}
+                aria-label="素材库下载进度"
+              />
             ) : null}
           </section>
           <section className="form-panel">

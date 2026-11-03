@@ -84,15 +84,18 @@ describe("云端参考库", () => {
       { includeNormal: false },
     );
     const catalog = await library.list();
-    // 这个用例只关心其余六源解析得对不对，构造时 includeNormal:false 关掉法线
-    //（法线清单内置，恒 944 条，开着会把断言全盖掉）。法线自己有独立用例覆盖。
+    // 这个用例只关心其余六源解析得对不对，构造时 includeNormal:false 一并关掉
+    // Shisei 那三源（clay/normal/photo 清单内置，恒 944/944/89 条，开着会把断言全盖掉）。
+    // 它们各自有独立用例覆盖。
     expect(catalog.counts).toEqual({
       portrait: 1,
       costume: 2,
       hair: 1,
       pose: 3,
       depth: 0,
+      clay: 0,
       normal: 0,
+      photo: 0,
       "anime-costume": 0,
     });
     expect(catalog.imageCounts).toEqual({
@@ -101,7 +104,9 @@ describe("云端参考库", () => {
       hair: 1,
       pose: 4,
       depth: 0,
+      clay: 0,
       normal: 0,
+      photo: 0,
       "anime-costume": 0,
     });
     expect(catalog.totalImages).toBe(8);
@@ -115,8 +120,8 @@ describe("云端参考库", () => {
 
     // 体检：逐源报条数，总量口径必须和 counts 一致。
     const health = await library.health();
-    // 法线是第七个源，即使 includeNormal:false 也保留条目（count 为 0），
-    // 这样界面上的七行表格在单测里也是七行，不会少一行。
+    // Shisei 的三个源（clay / normal / photo）即使 includeNormal:false 也保留条目
+    //（count 为 0），这样界面上的九行表格在单测里也是九行，不会少行。
     expect(health.sources.map((row) => row.key)).toEqual([
       "pose",
       "costume",
@@ -124,7 +129,9 @@ describe("云端参考库", () => {
       "char-db",
       "depth",
       "anime-costume",
+      "clay",
       "normal",
+      "photo",
     ]);
     const byKey = new Map(health.sources.map((row) => [row.key, row]));
     expect(byKey.get("pose")?.count).toBe(3);
@@ -633,5 +640,68 @@ describe("素材库体检的抽样档位", () => {
     const { library, thumbRequests } = setup(80);
     await library.health(999);
     expect(thumbRequests()).toBe(50);
+  });
+
+  it("整批下载会把本地已有的条目跳过，不会重复入库", async () => {
+    const asset = { id: "asset-1", metadata: {} } as Asset;
+    const importer = {
+      import: vi.fn().mockResolvedValue({ asset }),
+    } as unknown as ImportService;
+    const assets = {
+      updateConfirmation: vi.fn(),
+      mergeMetadata: vi.fn(),
+      findById: vi.fn().mockReturnValue(asset),
+      // 本地已经有一条 pose-P001 了：整批下载不该把它再下一次。
+      list: vi.fn().mockReturnValue([
+        { metadata: { cloudReference: { itemId: "pose-P001" } } },
+        { metadata: {} },
+      ]),
+    } as unknown as AssetRepository;
+    const projects = { attachAsset: vi.fn() } as unknown as ProjectRepository;
+    vi.stubGlobal("fetch", vi.fn(async () => image()));
+    const library = new CloudReferenceLibrary(importer, assets, projects, {
+      includeNormal: false,
+    });
+    vi.spyOn(library, "list").mockResolvedValue({
+      sourceName: "s",
+      sourceUrl: "https://ai-pose-gallery.anhao.app",
+      attribution: "a",
+      fetchedAt: "",
+      counts: { pose: 2, costume: 0, portrait: 0, depth: 0, anime: 0, normal: 0, chardb: 0 },
+      items: [
+        {
+          id: "pose-P001",
+          kind: "pose",
+          title: "已下过的",
+          category: "姿势",
+          tags: [],
+          sourceName: "anhao",
+          sourceUrl: "https://ai-pose-gallery.anhao.app",
+          thumbUrl: "https://ai-pose-gallery.anhao.app/img/1.webp",
+          imageUrl: "https://ai-pose-gallery.anhao.app/img/1.webp",
+        },
+        {
+          id: "pose-P002",
+          kind: "pose",
+          title: "新的一张",
+          category: "姿势",
+          tags: [],
+          sourceName: "anhao",
+          sourceUrl: "https://ai-pose-gallery.anhao.app",
+          thumbUrl: "https://ai-pose-gallery.anhao.app/img/2.webp",
+          imageUrl: "https://ai-pose-gallery.anhao.app/img/2.webp",
+        },
+      ],
+    } as never);
+
+    const progress: number[] = [];
+    const summary = await library.importAll({
+      onProgress: (state) => progress.push(state.done),
+    });
+
+    expect(summary).toEqual({ total: 2, imported: 1, skipped: 1, failed: 0 });
+    expect(importer.import).toHaveBeenCalledTimes(1);
+    // 跳过的也算「处理过」，所以进度从 1 起、最后到 2。
+    expect(progress.at(-1)).toBe(2);
   });
 });
