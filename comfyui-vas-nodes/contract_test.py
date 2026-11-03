@@ -182,29 +182,38 @@ print("✓ 重名标签会补组内序号，唯一标签保持原样")
 # 之前 latent 的宽高写死 1024×1024。人像九成是竖构图，出方图会裁掉头顶或
 # 留白；anhao 那边按姿势图比例缩到约 1 MP（1024×1536）。改成用
 # ResolutionSelector 算宽高之后，别处再写死就又退回去了。
-_workflow = HERE / "workflows" / "qwen-image-edit-2509.json"
-if not _workflow.exists():
-    raise SystemExit("✗ 找不到 workflows/qwen-image-edit-2509.json")
-_data = json.loads(_workflow.read_text(encoding="utf-8"))
-_nodes = {k: v for k, v in _data.items() if isinstance(v, dict) and "class_type" in v}
-_selectors = [k for k, v in _nodes.items() if v["class_type"] == "ResolutionSelector"]
-if not _selectors:
-    raise SystemExit("✗ 工作流里没有 ResolutionSelector，输出尺寸又变成写死的了")
-_selector = _selectors[0]
-_latents = [k for k, v in _nodes.items() if v["class_type"].startswith("EmptySD3Latent")]
-if not _latents:
-    raise SystemExit("✗ 工作流里没有空 latent 节点")
-for _key in _latents:
-    _inputs = _nodes[_key].get("inputs", {})
-    for _field, _index in (("width", 0), ("height", 1)):
-        _value = _inputs.get(_field)
-        if not (isinstance(_value, list) and len(_value) == 2):
-            raise SystemExit(f"✗ 节点 {_key} 的 {_field} 写死成了 {_value!r}")
-        if _value != [_selector, _index]:
-            raise SystemExit(f"✗ 节点 {_key} 的 {_field} 连到了 {_value}，应为 {[_selector, _index]}")
-_controls = _nodes[_selector].get("_meta", {}).get("studio", {}).get("controls", [])
-_declared = {c.get("input") for c in _controls}
-for _expect in ("aspect_ratio", "megapixels"):
-    if _expect not in _declared:
-        raise SystemExit(f"✗「输出尺寸」没把 {_expect} 声明成可编辑参数")
-print("✓ 工作流的输出尺寸由 ResolutionSelector 算出来，比例和像素都可编辑")
+# 两个版本（fp8 与 GGUF）都得守同一条规矩，别只盯着其中一个。
+def _check_workflow(path):
+    data = json.loads(path.read_text(encoding="utf-8"))
+    nodes = {k: v for k, v in data.items() if isinstance(v, dict) and "class_type" in v}
+    selectors = [k for k, v in nodes.items() if v["class_type"] == "ResolutionSelector"]
+    if not selectors:
+        return f"{path.name}：没有 ResolutionSelector，输出尺寸又变成写死的了"
+    selector = selectors[0]
+    latents = [k for k, v in nodes.items() if v["class_type"].startswith("EmptySD3Latent")]
+    if not latents:
+        return f"{path.name}：没有空 latent 节点"
+    for key in latents:
+        inputs = nodes[key].get("inputs", {})
+        for field, index in (("width", 0), ("height", 1)):
+            value = inputs.get(field)
+            if not (isinstance(value, list) and len(value) == 2):
+                return f"{path.name} 节点 {key} 的 {field} 写死成了 {value!r}"
+            if value != [selector, index]:
+                return f"{path.name} 节点 {key} 的 {field} 连到了 {value}，应为 {[selector, index]}"
+    controls = nodes[selector].get("_meta", {}).get("studio", {}).get("controls", [])
+    declared = {c.get("input") for c in controls}
+    for expect in ("aspect_ratio", "megapixels"):
+        if expect not in declared:
+            return f"{path.name}：「输出尺寸」没把 {expect} 声明成可编辑参数"
+    return None
+
+
+_workflows = sorted((HERE / "workflows").glob("qwen-image-edit-*.json"))
+if not _workflows:
+    raise SystemExit("✗ workflows 目录下没有 qwen-image-edit 工作流")
+for _wf in _workflows:
+    _problem = _check_workflow(_wf)
+    if _problem:
+        raise SystemExit(f"✗ {_problem}")
+print(f"✓ {len(_workflows)} 个工作流的输出尺寸都由 ResolutionSelector 算出来，比例和像素都可编辑")
