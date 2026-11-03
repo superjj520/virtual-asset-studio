@@ -12,6 +12,18 @@ const module = (label: string, value: string) => ({
   value: clean(value),
 });
 
+/**
+ * 把创作卡编译成提示词。
+ *
+ * 两个刻意的改动（依据见 docs/R55-PROMPT-COMPETITOR-TRUEJPEG.md）：
+ *
+ * 1. **分段输出**，不再用分号连成一行。对吃长文本的模型（Qwen-Image-Edit、Seedream）
+ *    换行是明确的分段信号，分号只是标点。
+ * 2. **`avoid` 同时进 `positive` 末尾的「避免」段**。`negative` 字段照旧给它，
+ *    但 cfg=1 的工作流里反向词根本不起作用（Qwen-Image-Edit 官方那条就是
+ *    cfg 1 + Lightning 4 步），只靠 negative 等于没写。竞品 truejpeg 的 144 条作品
+ *    negative 全空、71% 把「不要/避免」写进正向段落，是同一个结论。
+ */
 export const compilePrompt = (card: CreativeCard): PromptBuild => {
   const modules = [
     module("创作意图", card.intent),
@@ -25,11 +37,13 @@ export const compilePrompt = (card: CreativeCard): PromptBuild => {
     module("光线", card.lighting),
     module("镜头", card.camera),
     module("具体视觉风格", card.style),
+    module("画面质感", card.texture ?? ""),
     module("已验证学习策略", card.learningModule ?? ""),
     module("画幅", normalizeCreativeAspectRatio(card.aspectRatio)),
+    module("避免", card.avoid),
   ].filter((item) => item.value);
   return {
-    positive: modules.map((item) => `${item.label}：${item.value}`).join("；"),
+    positive: modules.map((item) => `${item.label}：${item.value}`).join("\n"),
     negative: clean(card.avoid),
     modules,
   };

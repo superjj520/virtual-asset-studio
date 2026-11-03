@@ -450,6 +450,12 @@ export type CreativeCard = {
   lighting: string;
   camera: string;
   style: string;
+  /**
+   * 画面质感：噪点、颗粒、色偏、柔焦、高光溢出这类「像不像 AI 图」的具体描述。
+   * 与 `style` 分工不同——`style` 说是哪种影像语言（真人电影摄影 / 动画赛璐璐），
+   * 这里是同一影像语言下的质感参数。竞品 truejpeg 里这一段独立成块、覆盖 84% 的作品。
+   */
+  texture?: string;
   /** 每次出图都优先服从的贴合锚点；用于避免简化输入后画面漂移。 */
   mustKeep?: string;
   paradigmIds?: string[];

@@ -9,6 +9,42 @@ it('将创作卡编译为可审查的模块化提示词', () => {
   expect(result.negative).toBe('卡通、文字、水印');
 });
 
+it('提示词一句一段，不再用分号连成一行', () => {
+  const result = compilePrompt({
+    intent: '古风电影人像', subject: '成年东方女性', identityAnchor: '黑色长发',
+    bodyAndWardrobe: '月白礼服', expressionAndPose: '直视镜头', scene: '深蓝夜景',
+    lighting: '暖白主光', camera: '85mm', style: '真人电影摄影', avoid: '',
+    aspectRatio: '1:1', referenceAssetIds: [],
+  });
+  const lines = result.positive.split('\n');
+  expect(lines.length).toBe(result.modules.length);
+  expect(lines.every((line) => line.includes('：'))).toBe(true);
+  expect(result.positive).not.toContain('；');
+});
+
+it('避免项除了进 negative，也落到正向提示词的最后一段', () => {
+  const result = compilePrompt({
+    intent: '角色主视觉', subject: '成年女性', identityAnchor: '', bodyAndWardrobe: '',
+    expressionAndPose: '', scene: '', lighting: '', camera: '', style: '',
+    avoid: '不要墨镜、避免纸片身材', aspectRatio: '2:3', referenceAssetIds: [],
+  });
+  // cfg=1 的工作流不认反向词，所以正向里必须也有一份。
+  expect(result.negative).toBe('不要墨镜、避免纸片身材');
+  expect(result.positive.split('\n').at(-1)).toBe('避免：不要墨镜、避免纸片身材');
+});
+
+it('画面质感与视觉风格分开写，各占一段', () => {
+  const result = compilePrompt({
+    intent: '人像', subject: '成年女性', identityAnchor: '', bodyAndWardrobe: '',
+    expressionAndPose: '', scene: '', lighting: '', camera: '',
+    style: '真人电影摄影',
+    texture: '2000s 便携数码直闪质感：粗颗粒、暗部青绿偏色、高光轻微溢出但不糊',
+    avoid: '', aspectRatio: '2:3', referenceAssetIds: [],
+  });
+  expect(result.positive).toContain('具体视觉风格：真人电影摄影');
+  expect(result.positive).toContain('画面质感：2000s 便携数码直闪质感');
+});
+
 it('将必须保持项编译为高优先级贴合锚点', () => {
   const result = compilePrompt({
     intent: '角色场景创作', subject: '成年女性', identityAnchor: '黑色长发', bodyAndWardrobe: '', expressionAndPose: '', scene: '玻璃温室', lighting: '', camera: '', style: '',
