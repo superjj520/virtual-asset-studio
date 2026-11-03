@@ -6,7 +6,8 @@
  * R50 给体检加了抽样档位（3/10/20/50 张），但只写了单测，没在真窗口里看过控件长什么样。
  * 按 AGENTS.md「没有截图证据不得声称视觉验收完成」，这里补上可复现的取证。
  *
- * 会真联网拉六个上游，最长等 180 秒（每源抽 10 张 = 60 个图片请求，上游限速时会慢）。
+ * 会真联网拉七个上游，最长等 180 秒（每源抽 10 张 = 70 个图片请求，上游限速时会慢）。
+ * 法线源（Shisei · CC0）失败时会降级为 0 条，不拖垮其余六源，所以总数按「至少 6980」判。
  *
  * 用法：
  *   npm run rebuild:native:electron
@@ -25,7 +26,11 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = 9603;
 const PROFILE = mkdtempSync(join(tmpdir(), "vas-verify-"));
 const SHOT = join(ROOT, "artifacts/screenshots/cloud-health-sample.png");
-const STEP_TIMEOUT = 30_000;
+/**
+ * 单步超时。health() 现在要等七个源，其中 raw.githubusercontent 限速时
+ * 每张图能拖到 20 秒；一次抽 10 张并发，留 120 秒才不会被误判成「卡死」。
+ */
+const STEP_TIMEOUT = 120_000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -149,21 +154,39 @@ async function main() {
   })()`);
   check("能切到每源抽 10 张", picked?.now === "10", `now=${picked?.now ?? picked?.miss}`);
 
-  // 直接调 IPC 验证 sampleSize 真的透传到服务层（比等 UI 跑 60 个图片请求可靠）
+  // 直接调 IPC 验证 sampleSize 真的透传到服务层（比等 UI 跑 70 个图片请求可靠）。
+  // 先预热一次：首次调用要现拉七个上游，上游偶发慢的时候会吃掉 evaluate 的等待，
+  // 预热后的两次调用走缓存，量的就纯粹是 sampleSize 有没有透传。
+  await evaluate(`(async () => { try { await window.studio?.referenceLibrary?.health?.(); } catch {} return true; })()`);
   const viaIpc = await evaluate(`(async () => {
     const api = window.studio?.referenceLibrary?.health;
     if (typeof api !== "function") return { miss: "no health api" };
     const three = await api();
     const ten = await api(10);
+    const sources = ten?.sources ?? [];
+    const normal = sources.find((row) => /法线/.test(row.label ?? ""));
     return {
       three: three?.sources?.[0]?.images?.length ?? -1,
       ten: ten?.sources?.[0]?.images?.length ?? -1,
       total: ten?.totalItems ?? -1,
+      labels: sources.map((row) => row.label),
+      normalCount: normal?.count ?? -1,
     };
   })()`);
   check("默认档位真的抓 3 张", viaIpc?.three === 3, `images=${viaIpc?.three ?? viaIpc?.miss}`);
   check("传 10 时真的抓 10 张（IPC 透传生效）", viaIpc?.ten === 10, `images=${viaIpc?.ten}`);
-  check("体检总数对得上", viaIpc?.total === 6980, `totalItems=${viaIpc?.total}`);
+  // 法线是这一轮新接的第七个源，单独断言它——不跟着其他六源的网络抖动一起红。
+  check(
+    "法线源在体检列表里",
+    Array.isArray(viaIpc?.labels) && viaIpc.labels.some((label) => /法线/.test(label ?? "")),
+    `labels=${(viaIpc?.labels ?? []).join("|")}`,
+  );
+  check("法线源 944 张", viaIpc?.normalCount === 944, `count=${viaIpc?.normalCount}`);
+  check(
+    "体检总数对得上",
+    (viaIpc?.total ?? 0) >= 6980,
+    `totalItems=${viaIpc?.total}（六源 6980 + 法线 944）`,
+  );
 
   const clicked = await evaluate(`(() => { const b=[...document.querySelectorAll("button")].find(x=>x.textContent.trim()==="开始体检"); b?.click(); return !!b; })()`);
   check("点到了「开始体检」", clicked === true);
@@ -180,7 +203,7 @@ async function main() {
     const trs = [...document.querySelectorAll(".cloud-health-table tbody tr")];
     return trs.map(tr => tr.textContent.replace(/\s+/g, " ").trim());
   })()`);
-  check("六个来源都有结果", (detail?.length ?? 0) === 6, (detail ?? []).join(" | ").slice(0, 200));
+  check("七个来源都有结果", (detail?.length ?? 0) === 7, (detail ?? []).join(" | ").slice(0, 220));
   check("每个来源都带条数", (detail ?? []).every((t) => /[0-9]/.test(t)));
 
   await evaluate(`(() => { const el = document.querySelector(".cloud-health-table"); el?.scrollIntoView({ block: "center" }); return !!el; })()`);

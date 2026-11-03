@@ -4,7 +4,7 @@ export const CLOUD_REFERENCE_SOURCE = {
   attribution: "anhao · 姿势 / 服装 / 人像云端参考库",
 } as const;
 
-export const CLOUD_REFERENCE_KINDS = ["portrait", "costume", "hair", "pose", "depth", "anime-costume"] as const;
+export const CLOUD_REFERENCE_KINDS = ["portrait", "costume", "hair", "pose", "depth", "normal", "anime-costume"] as const;
 export type CloudReferenceKind = (typeof CLOUD_REFERENCE_KINDS)[number];
 
 export const CLOUD_REFERENCE_KIND_LABELS: Record<CloudReferenceKind, string> = {
@@ -13,6 +13,7 @@ export const CLOUD_REFERENCE_KIND_LABELS: Record<CloudReferenceKind, string> = {
   pose: "姿势",
   hair: "发型",
   depth: "深度",
+  normal: "法线",
   "anime-costume": "动漫衣装",
 };
 

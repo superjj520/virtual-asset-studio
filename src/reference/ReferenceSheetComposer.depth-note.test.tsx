@@ -47,6 +47,7 @@ const catalog: CloudReferenceCatalog = {
     pose: 1,
     depth: 1,
     "anime-costume": 0,
+    normal: 0,
   },
   items: [poseItem, depthItem],
 };

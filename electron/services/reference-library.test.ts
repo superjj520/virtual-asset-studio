@@ -81,10 +81,29 @@ describe("云端参考库", () => {
       {} as ImportService,
       {} as AssetRepository,
       {} as ProjectRepository,
+      { includeNormal: false },
     );
     const catalog = await library.list();
-    expect(catalog.counts).toEqual({ portrait: 1, costume: 2, hair: 1, pose: 3, depth: 0, "anime-costume": 0 });
-    expect(catalog.imageCounts).toEqual({ portrait: 1, costume: 2, hair: 1, pose: 4, depth: 0, "anime-costume": 0 });
+    // 这个用例只关心其余六源解析得对不对，构造时 includeNormal:false 关掉法线
+    //（法线清单内置，恒 944 条，开着会把断言全盖掉）。法线自己有独立用例覆盖。
+    expect(catalog.counts).toEqual({
+      portrait: 1,
+      costume: 2,
+      hair: 1,
+      pose: 3,
+      depth: 0,
+      normal: 0,
+      "anime-costume": 0,
+    });
+    expect(catalog.imageCounts).toEqual({
+      portrait: 1,
+      costume: 2,
+      hair: 1,
+      pose: 4,
+      depth: 0,
+      normal: 0,
+      "anime-costume": 0,
+    });
     expect(catalog.totalImages).toBe(8);
     expect(catalog.items).toHaveLength(7);
     expect(catalog.items.filter((item) => item.kind === "pose")).toHaveLength(3);
@@ -96,6 +115,8 @@ describe("云端参考库", () => {
 
     // 体检：逐源报条数，总量口径必须和 counts 一致。
     const health = await library.health();
+    // 法线是第七个源，即使 includeNormal:false 也保留条目（count 为 0），
+    // 这样界面上的七行表格在单测里也是七行，不会少一行。
     expect(health.sources.map((row) => row.key)).toEqual([
       "pose",
       "costume",
@@ -103,6 +124,7 @@ describe("云端参考库", () => {
       "char-db",
       "depth",
       "anime-costume",
+      "normal",
     ]);
     const byKey = new Map(health.sources.map((row) => [row.key, row]));
     expect(byKey.get("pose")?.count).toBe(3);
@@ -137,6 +159,7 @@ describe("云端参考库", () => {
       {} as ImportService,
       {} as AssetRepository,
       {} as ProjectRepository,
+      { includeNormal: false },
     );
     const health = await library.health();
     const pose = health.sources.find((row) => row.key === "pose");
@@ -171,6 +194,7 @@ describe("云端参考库", () => {
       {} as ImportService,
       {} as AssetRepository,
       {} as ProjectRepository,
+      { includeNormal: false },
     );
     const catalog = await library.list();
     const pose = catalog.items.find((item) => item.kind === "pose");
@@ -207,6 +231,7 @@ describe("云端参考库", () => {
       {} as ImportService,
       {} as AssetRepository,
       {} as ProjectRepository,
+      { includeNormal: false },
     );
     const catalog = await library.list();
     expect(catalog.items.find((item) => item.kind === "pose")?.variants).toBeUndefined();
@@ -236,6 +261,7 @@ describe("云端参考库", () => {
       {} as ImportService,
       {} as AssetRepository,
       {} as ProjectRepository,
+      { includeNormal: false },
     );
     const catalog = await library.list();
     expect(catalog.counts.depth).toBe(1);
@@ -274,6 +300,7 @@ describe("云端参考库", () => {
       {} as ImportService,
       {} as AssetRepository,
       {} as ProjectRepository,
+      { includeNormal: false },
     );
     const catalog = await library.list();
     expect(catalog.counts["anime-costume"]).toBe(1);
@@ -318,6 +345,7 @@ describe("云端参考库", () => {
       {} as ImportService,
       {} as AssetRepository,
       {} as ProjectRepository,
+      { includeNormal: false },
     );
     const catalog = await library.list();
     const item = catalog.items.find((entry) => entry.kind === "anime-costume");
@@ -348,6 +376,7 @@ describe("云端参考库", () => {
       {} as ImportService,
       {} as AssetRepository,
       {} as ProjectRepository,
+      { includeNormal: false },
     );
     const catalog = await library.list();
     expect(catalog.counts.depth).toBe(0);
@@ -407,6 +436,7 @@ describe("云端参考库", () => {
       {} as ImportService,
       {} as AssetRepository,
       {} as ProjectRepository,
+      { includeNormal: false },
     );
     await expect(
       library.importItem({
@@ -498,6 +528,7 @@ describe("深度图借用姿势库的中文名", () => {
       {} as ImportService,
       {} as AssetRepository,
       {} as ProjectRepository,
+      { includeNormal: false },
     );
     const catalog = await library.list();
     const depth = catalog.items.find((item) => item.id === "depth-full_sexy_P001_front");

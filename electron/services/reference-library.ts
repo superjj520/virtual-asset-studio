@@ -15,6 +15,7 @@ import {
 import type { AssetRepository } from "./assets/repository";
 import type { ImportService } from "./import/import-service";
 import type { ProjectRepository } from "./projects/repository";
+import { SHISEI_POSES } from "./shisei-catalog";
 
 const BASE_URL = "https://ai-pose-gallery.anhao.app";
 const CHAR_DB_DATA_URL = "https://raw.githubusercontent.com/sleepy-zone/char-db-cn/main/data.js";
@@ -25,6 +26,17 @@ const DEPTH_SOURCE = {
   name: "POSE-DB Depth",
   url: "https://ai-pose-depth-gallery.pages.dev/",
   attribution: "depth ポーズ集 POSE-DB-02 · 姿势深度图，供 ControlNet Depth 使用",
+} as const;
+/**
+ * Shisei 的法线图。它和 anhao 是同一份姿势名单的两套画，
+ * 所以姿势不重复收录；但法线图我们一张都没有，944 张全部 CC0 1.0，
+ * 可以商用、修改、再分发。走 raw.githubusercontent 的 w600 档。
+ */
+const NORMAL_BASE = "https://raw.githubusercontent.com/wquguru/shisei/main/images/normal/w600";
+const NORMAL_SOURCE = {
+  name: "Shisei Normal",
+  url: "https://shisei.indaloop.app/en/",
+  attribution: "Shisei 姿勢 · CC0 法线图，供 ControlNet Normal 使用",
 } as const;
 const ANIME_BASE = "https://ai-costume-anime-gallery.pages.dev";
 const ANIME_SOURCE = {
@@ -58,6 +70,37 @@ type AnimeCostumeRow = {
   サムネ?: string;
   画像?: string;
   原寸?: string;
+};
+
+/** Shisei 的姿势条目：只用到名字、分类和 maps。 */
+type ShiseiPoseRow = {
+  id: string;
+  series: string;
+  name_cn?: string;
+  name_en?: string;
+  name_jp?: string;
+  class_cn?: string;
+  class_en?: string;
+  maps?: Record<string, string>;
+};
+
+type NormalMapRow = {
+  id: string;
+  kind: "normal";
+  title: string;
+  category: string;
+  tags: string[];
+  thumbUrl: string;
+  imageUrl: string;
+};
+
+/** Shisei 的五个视角，跟姿势库同一套角度名。 */
+const NORMAL_VIEW_LABELS: Record<string, string> = {
+  front: "正面",
+  diag: "斜侧",
+  side: "侧面",
+  above: "俯视",
+  below: "仰视",
 };
 
 type DepthRow = {
@@ -116,14 +159,18 @@ class CloudReferenceLibrary {
    */
   private readonly thumbnailCache = new Map<string, string>();
   private readonly maxThumbnails: number;
+  private readonly includeNormal: boolean;
 
   constructor(
     private readonly importer: ImportService,
     private readonly assets: AssetRepository,
     private readonly projects: ProjectRepository,
-    options: { maxThumbnails?: number } = {},
+    options: { maxThumbnails?: number; includeNormal?: boolean } = {},
   ) {
     this.maxThumbnails = Math.max(1, options.maxThumbnails ?? 300);
+    // 法线清单内置，不走网络，所以单测里它恒定是 944 条，会盖过「其余六源解析对不对」的断言。
+    // 需要只看六源的用例传 false。
+    this.includeNormal = options.includeNormal !== false;
   }
 
   /**
@@ -173,7 +220,7 @@ class CloudReferenceLibrary {
       }
     };
 
-    const [poses, costumes, portraits, charDb, depths, animeCostumes] = await Promise.all([
+    const [poses, costumes, portraits, charDb, depths, animeCostumes, normalMaps] = await Promise.all([
       probe(
         "pose",
         "姿势",
@@ -204,6 +251,9 @@ class CloudReferenceLibrary {
       probe("anime-costume", "动漫衣装", () => this.fetchAnimeCostumesStrict(), (rows) =>
         rows.map((row) => animeUrl(row.サムネ ?? row.画像)),
       ),
+      probe("normal", "法线", () => this.fetchNormalMaps(), (rows) =>
+        rows.map((row) => row.imageUrl),
+      ),
     ]);
 
     const charDbOnly = charDb.rows.filter(
@@ -216,6 +266,7 @@ class CloudReferenceLibrary {
       { ...charDb.health, count: charDbOnly.length },
       depths.health,
       animeCostumes.health,
+      normalMaps.health,
     ];
     // 口径必须和 list() 的 counts 一致：姿势按组算（288），不是按张算（1,439）。
     const poseGroups = groupPoses(poses.rows).length;
@@ -232,14 +283,16 @@ class CloudReferenceLibrary {
         portraits.rows.length +
         charDbHair +
         depths.rows.length +
-        animeCostumes.rows.length,
+        animeCostumes.rows.length +
+        normalMaps.rows.length,
       totalImages:
         poses.rows.length +
         costumes.rows.length +
         portraits.rows.length +
         charDbOnly.length +
         depths.rows.length +
-        animeCostumes.rows.length,
+        animeCostumes.rows.length +
+        normalMaps.rows.length,
       sources,
     };
   }
@@ -271,6 +324,33 @@ class CloudReferenceLibrary {
     if (!response.ok) throw new Error(`深度图库读取失败（${response.status}）。`);
     const rows = parseInlineArray<DepthRow>(await response.text(), "const D=");
     if (rows.length === 0) throw new Error("深度图库返回了 0 条，可能页面结构变了。");
+    return rows;
+  }
+
+  /**
+   * Shisei 的法线图。清单内置在 `shisei-catalog.ts`（944 张 / 270 个姿势），
+   * 不再每次去 raw.githubusercontent 拉 catalog.json——那个域名体检时限速吊住，
+   * 会让整个素材库看起来打不开。
+   */
+  private async fetchNormalMapsStrict(): Promise<NormalMapRow[]> {
+    const rows: NormalMapRow[] = [];
+    for (const pose of SHISEI_POSES) {
+      for (const view of pose.views.split(",").filter(Boolean)) {
+        const file = `${pose.series}_${pose.id}_${view}.webp`;
+        rows.push({
+          id: `normal-${pose.id}-${view}`,
+          kind: "normal" as const,
+          title: `${pose.name} · ${NORMAL_VIEW_LABELS[view] ?? view}`,
+          category: pose.category || "法线",
+          tags: [pose.category, pose.name, NORMAL_VIEW_LABELS[view]].filter(
+            (value): value is string => Boolean(value),
+          ),
+          thumbUrl: `${NORMAL_BASE}/${file}`,
+          imageUrl: `${NORMAL_BASE}/${file}`,
+        });
+      }
+    }
+    if (rows.length === 0) throw new Error("Shisei 法线图一条都没展开出来。");
     return rows;
   }
 
@@ -369,13 +449,14 @@ class CloudReferenceLibrary {
   }
 
   private async load(): Promise<CloudReferenceCatalog> {
-    const [poses, costumes, portraits, charDb, depths, animeCostumes] = await Promise.all([
+    const [poses, costumes, portraits, charDb, depths, animeCostumes, normalMaps] = await Promise.all([
       this.fetchJson<PoseRow[]>("/data/pose-zh.json"),
       this.fetchJson<CostumeRow[]>("/data/costume-zh.json"),
       this.fetchJson<PortraitRow[]>("/data/portrait-zh.json"),
       this.fetchCharDb(),
       this.fetchDepthPoses(),
       this.fetchAnimeCostumes(),
+      this.fetchNormalMaps(),
     ]);
     const poseItems = groupPoses(poses);
     const costumeItems = costumes.map((row) => ({
@@ -486,11 +567,12 @@ class CloudReferenceLibrary {
       ...normalize(charDbItems, CHAR_DB_SOURCE),
       ...normalize(depthItems, DEPTH_SOURCE),
       ...normalize(animeItems, ANIME_SOURCE),
+      ...normalize(normalMaps, NORMAL_SOURCE),
     ];
     const value: CloudReferenceCatalog = {
-      sourceName: `${CLOUD_REFERENCE_SOURCE.name} + ${CHAR_DB_SOURCE.name} + ${DEPTH_SOURCE.name} + ${ANIME_SOURCE.name}`,
+      sourceName: `${CLOUD_REFERENCE_SOURCE.name} + ${CHAR_DB_SOURCE.name} + ${DEPTH_SOURCE.name} + ${ANIME_SOURCE.name} + ${NORMAL_SOURCE.name}`,
       sourceUrl: CLOUD_REFERENCE_SOURCE.url,
-      attribution: `${CLOUD_REFERENCE_SOURCE.attribution}；${CHAR_DB_SOURCE.attribution}；${DEPTH_SOURCE.attribution}；${ANIME_SOURCE.attribution}`,
+      attribution: `${CLOUD_REFERENCE_SOURCE.attribution}；${CHAR_DB_SOURCE.attribution}；${DEPTH_SOURCE.attribution}；${ANIME_SOURCE.attribution}；${NORMAL_SOURCE.attribution}`,
       fetchedAt: new Date().toISOString(),
       counts: {
         portrait: portraitItems.length,
@@ -498,6 +580,7 @@ class CloudReferenceLibrary {
         hair: charDbOnly.filter((row) => row.set === "hair").length,
         pose: poseItems.length + charDbOnly.filter((row) => row.set === "pose").length,
         depth: depthItems.length,
+        normal: normalMaps.length,
         "anime-costume": animeItems.length,
       },
       imageCounts: {
@@ -506,6 +589,7 @@ class CloudReferenceLibrary {
         hair: charDbOnly.filter((row) => row.set === "hair").length,
         pose: poses.length + charDbOnly.filter((row) => row.set === "pose").length,
         depth: depths.length,
+        normal: normalMaps.length,
         "anime-costume": animeCostumes.length,
       },
       totalImages:
@@ -514,7 +598,8 @@ class CloudReferenceLibrary {
         poses.length +
         charDbOnly.length +
         depths.length +
-        animeCostumes.length,
+        animeCostumes.length +
+        normalMaps.length,
       items,
     };
     this.cache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
@@ -559,6 +644,16 @@ class CloudReferenceLibrary {
     }
   }
 
+  /** 降级版本：法线源挂掉不该让整个素材库打不开。 */
+  private async fetchNormalMaps(): Promise<NormalMapRow[]> {
+    if (!this.includeNormal) return [];
+    try {
+      return await this.fetchNormalMapsStrict();
+    } catch {
+      return [];
+    }
+  }
+
   private async fetchJson<T>(path: string): Promise<T> {
     const response = await transport(`${BASE_URL}${path}`);
     if (!response.ok)
@@ -567,21 +662,30 @@ class CloudReferenceLibrary {
   }
 }
 
+/**
+ * 单个上游请求最长等 45 秒。raw.githubusercontent 这类源限速时会把连接吊住，
+ * 不设上限的话体检和素材库会一直转圈——用户看到的是「打不开」，不是「慢」。
+ * 45 而不是 20：anhao 主站不是限速源，只是偶尔慢（实测有过 17 秒），
+ * 20 秒会把「慢一点」误判成「挂了」。
+ */
+const TRANSPORT_TIMEOUT_MS = 45_000;
+
 const transport = async (url: string): Promise<Response> => {
+  const signal = AbortSignal.timeout(TRANSPORT_TIMEOUT_MS);
   if (process.versions.electron) {
     const { net } = await import("electron");
     try {
-      return await net.fetch(url);
+      return await net.fetch(url, { signal });
     } catch (error) {
       // Chromium 的网络栈跟随系统代理。用户开着「系统代理」但代理软件没运行时，
       // 这里会直接抛 ERR_PROXY_CONNECTION_FAILED，整个素材库看起来像全挂了。
       // Node 侧的 fetch 不读系统代理，用它兜一次，代价只是可能连不上需要代理的站点。
       const reason = error instanceof Error ? error.message : String(error);
       if (!/ERR_PROXY|ERR_TUNNEL|ERR_CONNECTION|ERR_NAME_NOT_RESOLVED/i.test(reason)) throw error;
-      return fetch(url);
+      return fetch(url, { signal });
     }
   }
-  return fetch(url);
+  return fetch(url, { signal });
 };
 
 /** 从列表里均匀抽三张（首、中、尾），用来验图是否还打得开。 */
@@ -669,6 +773,7 @@ const CLOUD_ORIGINS = new Set([
   new URL(CHAR_DB_THUMB_BASE).origin,
   new URL(DEPTH_BASE).origin,
   new URL(ANIME_BASE).origin,
+  new URL(NORMAL_BASE).origin,
 ]);
 
 const assertCloudUrl = (value: string): void => {

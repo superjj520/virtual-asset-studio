@@ -63,10 +63,14 @@ shisei 的 944 张深度是另一套画风。normal map 我们**确实一张都�
 但当前 ComfyUI 工作流只接了 `{{depth_image}}`，没有任何节点吃 normal。
 接进来也只是多一个用户点了没反应的分区——这正是「应付」的定义。
 
+> **后续（R29 已处理）**：上面第 1 条重开条件已经满足——ComfyUI 侧先补了 `{{normal_image}}`
+> 通道（提交 `45f76d4`），所以法线图不再是「点了没反应的分区」，已作为第七个源接进来
+> （944 张，分类名「法线」）。姿势本身仍然不重复收录，理由见上文。
+
 ## 五、什么条件下值得重开
 
-1. **ComfyUI 侧先支持 ControlNet Normal**：`comfyui-vas-nodes` 加 `{{normal_image}}` 占位符，
-   参考板加 normal 槽位，出图链路真正用它。这时 944 张 normal 才有意义。
+1. ~~**ComfyUI 侧先支持 ControlNet Normal**~~ —— **已满足**（`{{normal_image}}` 已接入
+   `comfyui-image-provider.ts`，944 张 normal 已作为「法线」分类上线）。
 2. **或者现有深度源挂掉**：它是第三方个人站，没有 SLA。shisei 的 CC0 深度图可以作为备份源，
    按「系列 + 编号」映射，接受画风差异。
 3. **或者上游名单扩到男性单人**：shisei 目前单人系列全女，duo 系列（55 个姿势）里有男性主体，

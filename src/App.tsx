@@ -7017,9 +7017,9 @@ export default function App() {
             </div>
           </section>
           <section className="form-panel">
-            <p className="eyebrow">素材库体检 / 六个来源逐个测</p>
+            <p className="eyebrow">素材库体检 / 七个来源逐个测</p>
             <p className="result-note">
-              点一下会把六个来源各拉一遍，显示真实条数与失败原因。上游改了结构、限流或者挂掉，这里会直接说出来——不用听我转述。
+              点一下会把七个来源各拉一遍，显示真实条数与失败原因。上游改了结构、限流或者挂掉，这里会直接说出来——不用听我转述。
             </p>
             <div className="provider-row cloud-health-actions">
               <div>
