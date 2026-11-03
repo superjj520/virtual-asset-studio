@@ -20,17 +20,27 @@ const OUT = join(ROOT, "comfyui-vas-nodes/normal-catalog.json");
 
 const text = readFileSync(SRC, "utf8");
 
-// 每一条都是单行对象字面量，字段顺序固定：series / id / name / category / views
+// 每一条都是单行对象字面量，字段顺序固定：series / id / name / category / views。
+// 文件里现在有两份清单（SHISEI_POSES 与 SHISEI_PHOTOS），形状一样，
+// 所以必须只切 SHISEI_POSES 那一段——否则两份会被加在一起，张数对不上。
+const posesBlock = text.slice(
+  text.indexOf("export const SHISEI_POSES:"),
+  text.indexOf("export const SHISEI_NORMAL_COUNT"),
+);
 const rowRe = /series:\s*"([^"]+)",\s*id:\s*"([^"]+)",\s*name:\s*"([^"]*)",\s*category:\s*"([^"]*)",\s*views:\s*"([^"]*)"/g;
 
 const poses = [];
-for (const m of text.matchAll(rowRe)) {
+for (const m of posesBlock.matchAll(rowRe)) {
   const [, series, id, name, category, views] = m;
   poses.push({ series, id, name, category, views });
 }
 
 if (!poses.length) {
   console.error("✗ 一条都没解析出来，检查 shisei-catalog.ts 的格式");
+  process.exit(1);
+}
+if (!posesBlock) {
+  console.error("✗ 没找到 SHISEI_POSES 段，检查生成脚本还写不写这个名字");
   process.exit(1);
 }
 
