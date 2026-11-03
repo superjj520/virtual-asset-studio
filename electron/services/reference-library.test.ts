@@ -704,4 +704,68 @@ describe("素材库体检的抽样档位", () => {
     // 跳过的也算「处理过」，所以进度从 1 起、最后到 2。
     expect(progress.at(-1)).toBe(2);
   });
+
+  it("姿势的每个视角各下一张，不只留正面那一张", async () => {
+    const asset = { id: "asset-1", metadata: {} } as Asset;
+    // 用数组记录实际送进 import 的条目，断言的是「到底下了哪几张」而不是次数。
+    const imported: Array<{ sourcePath: string; rightsReason: string }> = [];
+    const importer = {
+      import: vi.fn(async (request: { sourcePath: string; rightsReason: string }) => {
+        imported.push(request);
+        return { asset };
+      }),
+    } as unknown as ImportService;
+    const assets = {
+      updateConfirmation: vi.fn(),
+      mergeMetadata: vi.fn(),
+      findById: vi.fn().mockReturnValue(asset),
+      list: vi.fn().mockReturnValue([]),
+    } as unknown as AssetRepository;
+    const projects = { attachAsset: vi.fn() } as unknown as ProjectRepository;
+    vi.stubGlobal("fetch", vi.fn(async () => image()));
+    const library = new CloudReferenceLibrary(importer, assets, projects, {
+      includeNormal: false,
+    });
+    const base = "https://ai-pose-gallery.anhao.app";
+    vi.spyOn(library, "list").mockResolvedValue({
+      sourceName: "s",
+      sourceUrl: base,
+      attribution: "a",
+      fetchedAt: "",
+      counts: { pose: 1, costume: 0, portrait: 0, depth: 0, anime: 0, normal: 0, chardb: 0 },
+      items: [
+        {
+          id: "pose-单人/P001",
+          kind: "pose",
+          title: "S形站姿",
+          category: "姿势",
+          tags: [],
+          sourceName: "anhao",
+          sourceUrl: base,
+          thumbUrl: `${base}/img/front.webp`,
+          imageUrl: `${base}/img/front.webp`,
+          variants: [
+            // 正面与主图是同一个文件，不该再下一遍
+            { id: "pose-P001-正面", label: "正面", thumbUrl: `${base}/img/front.webp`, imageUrl: `${base}/img/front.webp` },
+            { id: "pose-P001-侧面", label: "侧面", thumbUrl: `${base}/img/side.webp`, imageUrl: `${base}/img/side.webp` },
+            { id: "pose-P001-俯视", label: "俯视", thumbUrl: `${base}/img/top.webp`, imageUrl: `${base}/img/top.webp` },
+          ],
+        },
+      ],
+    } as never);
+
+    const summary = await library.importAll({});
+
+    expect(summary).toEqual({ total: 3, imported: 3, skipped: 0, failed: 0 });
+    // 三张确实是三个不同的文件地址，不是同一个 URL 下三遍。
+    expect(new Set(imported.map((item) => item.sourcePath)).size).toBe(3);
+    // 视角被当成独立条目入库，权利记录里能看出下的是哪个角度。
+    const reasons = imported.map((item) => item.rightsReason);
+    expect(reasons).toHaveLength(3);
+    expect(reasons.some((reason) => reason.includes("pose / pose-单人/P001"))).toBe(true);
+    expect(reasons.some((reason) => reason.includes("pose-P001-侧面"))).toBe(true);
+    expect(reasons.some((reason) => reason.includes("pose-P001-俯视"))).toBe(true);
+    // 正面与主图同文件，记录在主条目上，不再单下一次。
+    expect(reasons.some((reason) => reason.includes("pose-P001-正面"))).toBe(false);
+  });
 });

@@ -566,9 +566,12 @@ class CloudReferenceLibrary {
   ): Promise<CloudImportSummary> {
     const { kinds, concurrency = 4, projectId, onProgress } = options;
     const catalog = await this.list();
-    const wanted = kinds && kinds.length > 0
+    const selected = kinds && kinds.length > 0
       ? catalog.items.filter((item) => kinds.includes(item.kind))
       : catalog.items;
+    // 姿势是「一条记录 + 5 个视角」。只下 item.imageUrl 的话，本地只留一张正面图，
+    // 用户在界面里切「侧面 / 俯视」时本地根本没有那张——素材看着下载完了，实际少了 80%。
+    const wanted = expandVariants(selected);
 
     const existing = new Set<string>();
     for (const asset of this.assets.list({ type: "reference_image" })) {
@@ -1067,6 +1070,34 @@ const groupPoses = (rows: PoseRow[]): Array<Omit<CloudReferenceItem, "sourceName
       ...(angles.length > 1 ? { variants: angles } : {}),
     };
   });
+};
+
+/**
+ * 把「一条记录 + N 个视角」摊平成独立条目。
+ *
+ * 视角不是同一条记录的别名，它们各自是磁盘上一张不同的图：姿势 288 组 × 5 个角度
+ * 共 1,439 张，只下 `item.imageUrl` 会落下 1,151 张。用户在界面里切到「侧面」时，
+ * 云端能取到、本地取不到，离线就等于没有这个角度。
+ *
+ * 与 `item.imageUrl` 指向同一文件的视角直接跳过，避免同一张图下两遍。
+ */
+const expandVariants = (items: CloudReferenceItem[]): CloudReferenceItem[] => {
+  const expanded: CloudReferenceItem[] = [];
+  for (const item of items) {
+    expanded.push(item);
+    for (const variant of item.variants ?? []) {
+      if (variant.imageUrl === item.imageUrl) continue;
+      const { variants: _variants, ...rest } = item;
+      expanded.push({
+        ...rest,
+        id: variant.id,
+        title: `${item.title} · ${variant.label}`,
+        thumbUrl: variant.thumbUrl,
+        imageUrl: variant.imageUrl,
+      });
+    }
+  }
+  return expanded;
 };
 
 export { CloudReferenceLibrary };
