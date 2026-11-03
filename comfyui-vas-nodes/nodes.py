@@ -294,6 +294,27 @@ class VASNormalGallery(_GalleryBase):
     SITE = "normal"
 
 
+class VASClayGallery(_GalleryBase):
+    """黏土图库：944 张带体积与明暗的人偶渲染（Shisei · CC0 1.0 可商用）。
+
+    和线稿、深度、法线是同一批姿势的另一种画法：线稿管构图、深度管空间、
+    法线管表面朝向，黏土管的是「体积和光从哪来」，当光影参考最直接。
+    """
+
+    SITE = "clay"
+
+
+class VASPhotoGallery(_GalleryBase):
+    """实拍图库：89 张 AI 生成的人像照片（Shisei · CC0 1.0 可商用）。
+
+    只有 20 个姿势有照片（std 系列的 P001–P018 加 P021、P062），是按真实
+    人像光照和材质渲染出来的版本：要质感、要肤色、要布料的走向时用它，
+    要精确构图时回到线稿。
+    """
+
+    SITE = "photo"
+
+
 class VASCostumeGallery(_GalleryBase):
     """服装库：1,407 套，另含 char-db-cn 的 440 套。多给一份英文关键词。"""
 
@@ -537,6 +558,8 @@ NODE_CLASS_MAPPINGS = {
     "VASPoseGallery": VASPoseGallery,
     "VASDepthGallery": VASDepthGallery,
     "VASNormalGallery": VASNormalGallery,
+    "VASClayGallery": VASClayGallery,
+    "VASPhotoGallery": VASPhotoGallery,
     "VASCostumeGallery": VASCostumeGallery,
     "VASPortraitGallery": VASPortraitGallery,
     "VASAnimeCostumeGallery": VASAnimeCostumeGallery,
@@ -548,6 +571,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "VASPoseGallery": "虚拟资产 · 姿势库",
     "VASDepthGallery": "虚拟资产 · 深度图库",
     "VASNormalGallery": "虚拟资产 · 法线图库",
+    "VASClayGallery": "虚拟资产 · 黏土图库",
+    "VASPhotoGallery": "虚拟资产 · 实拍图库",
     "VASCostumeGallery": "虚拟资产 · 服装库",
     "VASPortraitGallery": "虚拟资产 · 人像库",
     "VASAnimeCostumeGallery": "虚拟资产 · 动漫衣装",

@@ -16,7 +16,9 @@ import { app } from "../../scripts/app.js";
 const SITES = [
   { key: "pose", label: "姿势" },
   { key: "depth", label: "深度图" },
+  { key: "clay", label: "黏土" },
   { key: "normal", label: "法线" },
+  { key: "photo", label: "实拍" },
   { key: "costume", label: "服装" },
   { key: "portrait", label: "人像" },
   { key: "anime", label: "动漫衣装" },
@@ -29,7 +31,9 @@ const PAGE_SIZE = 36;
 const NODE_SITE = {
   VASPoseGallery: "pose",
   VASDepthGallery: "depth",
+  VASClayGallery: "clay",
   VASNormalGallery: "normal",
+  VASPhotoGallery: "photo",
   VASCostumeGallery: "costume",
   VASPortraitGallery: "portrait",
   VASAnimeCostumeGallery: "anime",

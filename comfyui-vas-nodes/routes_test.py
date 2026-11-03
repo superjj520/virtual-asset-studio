@@ -43,7 +43,19 @@ CHARDB_ROWS = [
     {"id": "HAR-0001", "set": "hair", "fields": {"发型": "long"}},
 ]
 
-FAKE = {"pose": POSE_ROWS, "depth": DEPTH_ROWS, "normal": NORMAL_ROWS, "costume": [], "portrait": [], "anime": []}
+# clay 与 normal 是同一批文件（只换目录），photo 条数少一些：这里都用手造的
+# 50 条假数据，验的是「路由认得这个源、缩略图走代理」，不是上游真实条数
+#（真实条数由 selftest.py 联网时核）。
+FAKE = {
+    "pose": POSE_ROWS,
+    "depth": DEPTH_ROWS,
+    "clay": NORMAL_ROWS,
+    "normal": NORMAL_ROWS,
+    "photo": NORMAL_ROWS,
+    "costume": [],
+    "portrait": [],
+    "anime": [],
+}
 
 
 def fake_load_rows(site, *, refresh=False):
@@ -55,15 +67,16 @@ def fake_load_char_db(*, refresh=False):
 
 
 def fake_image_url(site, row):
-    if site == "normal":
-        return f"https://raw.githubusercontent.com/wquguru/shisei/main/images/normal/w600/{row.get('文件', '')}"
+    if site in ("normal", "clay", "photo"):
+        folder = {"normal": "normal", "clay": "clay", "photo": "photo"}[site]
+        return f"https://raw.githubusercontent.com/wquguru/shisei/main/images/{folder}/w600/{row.get('文件', '')}"
     if site == "depth":
         return f"https://ai-pose-depth-gallery.pages.dev/{row.get('サムネ', '')}"
     return f"https://ai-pose-gallery.anhao.app/{row.get('縮略圖', '')}"
 
 
 def fake_label(site, row):
-    if site == "normal":
+    if site in ("normal", "clay", "photo"):
         return f"{row.get('名称')} · {row.get('角度')}"
     if site == "depth":
         return f"{row.get('ポーズ名')} · {row.get('アングル')}"
@@ -118,13 +131,25 @@ def main() -> int:
 
     print("检查法线源：")
     check("normal" in routes.SITE_KEYS, f"SITE_KEYS 里应有 normal，实得 {routes.SITE_KEYS}")
-    check(len(routes.SITE_KEYS) == 7, f"应有七个来源，实得 {len(routes.SITE_KEYS)}")
+    # Shisei 的三个源（clay / normal / photo）都要在：清单内置、不走网络，加起来一共九个。
+    for shisei in ("clay", "normal", "photo"):
+        check(shisei in routes.SITE_KEYS, f"SITE_KEYS 里应有 {shisei}，实得 {routes.SITE_KEYS}")
+    check(len(routes.SITE_KEYS) == 9, f"应有九个来源，实得 {len(routes.SITE_KEYS)}")
     norm = routes.search_entries("normal", "", 0, 10)
     check(norm["total"] == 50, f"法线应为 50 条，实得 {norm['total']}")
     check(norm["items"][0]["thumb"].startswith("/vas_gallery/thumb?"), "法线缩略图也应走代理")
     norm_hit = routes.search_entries("normal", "正面", 0, 10)
     check(norm_hit["matched"] == 50, f"搜「正面」应命中 50，实得 {norm_hit['matched']}")
     print(f"  ✓ normal {norm['total']} 条，搜「正面」命中 {norm_hit['matched']}")
+
+    print("检查黏土与实拍源：")
+    clay = routes.search_entries("clay", "", 0, 10)
+    check(clay["total"] == 50, f"黏土应为 50 条，实得 {clay['total']}")
+    check(clay["items"][0]["thumb"].startswith("/vas_gallery/thumb?"), "黏土缩略图也应走代理")
+    photo = routes.search_entries("photo", "", 0, 10)
+    check(photo["total"] == 50, f"实拍应为 50 条（假数据），实得 {photo['total']}")
+    check(photo["items"][0]["thumb"].startswith("/vas_gallery/thumb?"), "实拍缩略图也应走代理")
+    print(f"  ✓ clay {clay['total']} 条 / photo {photo['total']} 条")
 
     print("检查缩略图白名单：")
     for bad_url, why in [

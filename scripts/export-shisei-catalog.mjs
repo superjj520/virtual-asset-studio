@@ -27,13 +27,24 @@ const posesBlock = text.slice(
   text.indexOf("export const SHISEI_POSES:"),
   text.indexOf("export const SHISEI_NORMAL_COUNT"),
 );
+const photosBlock = text.slice(
+  text.indexOf("export const SHISEI_PHOTOS:"),
+  text.indexOf("export const SHISEI_PHOTO_COUNT"),
+);
 const rowRe = /series:\s*"([^"]+)",\s*id:\s*"([^"]+)",\s*name:\s*"([^"]*)",\s*category:\s*"([^"]*)",\s*views:\s*"([^"]*)"/g;
 
-const poses = [];
-for (const m of posesBlock.matchAll(rowRe)) {
-  const [, series, id, name, category, views] = m;
-  poses.push({ series, id, name, category, views });
-}
+const read = (block) => {
+  const out = [];
+  for (const m of block.matchAll(rowRe)) {
+    const [, series, id, name, category, views] = m;
+    out.push({ series, id, name, category, views });
+  }
+  return out;
+};
+
+const poses = read(posesBlock);
+// 实拍照片只有 20 个姿势有（89 张），形状相同但清单不同，所以分开给。
+const photos = read(photosBlock);
 
 if (!poses.length) {
   console.error("✗ 一条都没解析出来，检查 shisei-catalog.ts 的格式");
@@ -52,9 +63,27 @@ if (declared && declared !== expanded) {
   process.exit(1);
 }
 
+const photoExpanded = photos.reduce(
+  (sum, p) => sum + p.views.split(",").filter(Boolean).length,
+  0,
+);
+
 writeFileSync(
   OUT,
-  `${JSON.stringify({ count: expanded, poses }, null, 1)}\n`,
+  `${JSON.stringify(
+    {
+      count: expanded,
+      photoCount: photoExpanded,
+      // clay 与 normal 是同一批、同文件名，只换目录：poses 这一段两者共用。
+      poses,
+      photos,
+    },
+    null,
+    1,
+  )}\n`,
   "utf8",
 );
-console.log(`✓ 导出 ${poses.length} 个姿势 / ${expanded} 张法线图 → ${OUT}`);
+console.log(
+  `✓ 导出 ${poses.length} 个姿势 / ${expanded} 张（clay 与 normal 共用这一份）` +
+    `、${photos.length} 个姿势 / ${photoExpanded} 张实拍 → ${OUT}`,
+);

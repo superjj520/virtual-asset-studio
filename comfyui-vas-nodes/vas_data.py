@@ -33,6 +33,11 @@ SITES: dict[str, dict[str, str]] = {
 # 从 electron/services/shisei-catalog.ts 导出，两边同一份。
 NORMAL_CATALOG = os.path.join(HERE, "normal-catalog.json")
 NORMAL_BASE = "https://raw.githubusercontent.com/wquguru/shisei/main/images/normal/w600"
+# 同一批姿势的另外两种渲染：clay 带体积明暗（光影参考），photo 是 AI 生成人像照片。
+# 文件名与法线完全一样，只有目录不同。
+CLAY_BASE = "https://raw.githubusercontent.com/wquguru/shisei/main/images/clay/w600"
+PHOTO_BASE = "https://raw.githubusercontent.com/wquguru/shisei/main/images/photo/w600"
+SHISEI_BASES = {"normal": NORMAL_BASE, "clay": CLAY_BASE, "photo": PHOTO_BASE}
 NORMAL_VIEW_LABELS = {
     "front": "正面",
     "diag": "斜侧",
@@ -106,18 +111,23 @@ def inline_array(html: str, marker: str) -> list[dict[str, Any]]:
     return []
 
 
-def load_normal_rows() -> list[dict[str, Any]]:
-    """把内置的法线清单展开成一条一行的「一张图一行」。
+def load_shisei_rows(which: str) -> list[dict[str, Any]]:
+    """把内置的 Shisei 清单展开成「一张图一行」。
 
     清单是 {series, id, name, category, views}，一个姿势有 2–5 个视角，
     每个视角是一张独立的图，下拉里也得是独立的一项。
+
+    clay 与 normal 共用 poses 段（同一批、同文件名）；photo 用 photos 段
+    （只有 20 个姿势有）。
     """
     try:
         data = json.loads(open(NORMAL_CATALOG, "rb").read().decode("utf-8"))
     except Exception:
         return []
+    section = "photos" if which == "photo" else "poses"
+    fallback = "实拍" if which == "photo" else "法线"
     rows: list[dict[str, Any]] = []
-    for pose in data.get("poses") or []:
+    for pose in data.get(section) or []:
         for view in str(pose.get("views") or "").split(","):
             view = view.strip()
             if not view:
@@ -126,7 +136,7 @@ def load_normal_rows() -> list[dict[str, Any]]:
                 {
                     "id": f"{pose.get('id')}-{view}",
                     "名称": pose.get("name") or "",
-                    "分类": pose.get("category") or "法线",
+                    "分类": pose.get("category") or fallback,
                     "角度": NORMAL_VIEW_LABELS.get(view, view),
                     "文件": f"{pose.get('series')}_{pose.get('id')}_{view}.webp",
                 }
@@ -134,10 +144,15 @@ def load_normal_rows() -> list[dict[str, Any]]:
     return rows
 
 
+def load_normal_rows() -> list[dict[str, Any]]:
+    """兼容旧名字：法线图那一份。"""
+    return load_shisei_rows("normal")
+
+
 def load_rows(site: str, *, refresh: bool = False) -> list[dict[str, Any]]:
-    if site == "normal":
+    if site in SHISEI_BASES:
         # 清单在本地，不走网络，也不受上游限速影响。
-        return load_normal_rows()
+        return load_shisei_rows(site)
     config = SITES[site]
     if "inline" not in config:
         cache = os.path.join(CACHE_DIR, f"{site}.json")
@@ -159,8 +174,8 @@ def load_rows(site: str, *, refresh: bool = False) -> list[dict[str, Any]]:
 
 
 def image_url(site: str, row: dict[str, Any]) -> str:
-    base = NORMAL_BASE if site == "normal" else SITES[site]["base"]
-    if site == "normal":
+    base = SHISEI_BASES[site] if site in SHISEI_BASES else SITES[site]["base"]
+    if site in SHISEI_BASES:
         tail = row.get("文件") or ""
     elif site == "depth":
         tail = row.get("サムネ") or row.get("原寸") or ""

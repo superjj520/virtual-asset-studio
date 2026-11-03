@@ -38,7 +38,7 @@ MAX_IMAGE_BYTES = 12 * 1024 * 1024
 MAX_LIMIT = 200
 DEFAULT_LIMIT = 60
 
-SITE_KEYS = ["pose", "depth", "normal", "costume", "portrait", "anime", "chardb"]
+SITE_KEYS = ["pose", "depth", "clay", "normal", "photo", "costume", "portrait", "anime", "chardb"]
 
 
 def site_catalogue(site: str, *, refresh: bool = False) -> list[dict[str, Any]]:
