@@ -29,6 +29,15 @@ contextBridge.exposeInMainWorld("studio", {
     thumbnail: (url) => ipcRenderer.invoke("reference-library:thumbnail", url),
     import: (item, projectId) =>
       ipcRenderer.invoke("reference-library:import", item, projectId),
+    // 整批下载：invoke 一直等到全部下完，进度走事件；返回取消订阅函数。
+    importAll: (options) =>
+      ipcRenderer.invoke("reference-library:import-all", options),
+    onImportProgress: (callback) => {
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on("reference-library:import-progress", listener);
+      return () =>
+        ipcRenderer.removeListener("reference-library:import-progress", listener);
+    },
   },
   imageReviews: {
     workspace: (projectId) => ipcRenderer.invoke("image-reviews:workspace", projectId),

@@ -44,6 +44,13 @@ interface Window {
         item: import("./shared/reference-library").CloudReferenceItem,
         projectId?: string,
       ) => Promise<import("./shared/types").Asset>;
+      importAll: (options?: {
+        kinds?: import("./shared/reference-library").CloudReferenceKind[];
+        concurrency?: number;
+      }) => Promise<import("./shared/reference-library").CloudImportSummary>;
+      onImportProgress: (
+        callback: (state: import("./shared/reference-library").CloudImportProgress) => void,
+      ) => () => void;
     };
     referenceSheets: {
       compose: (input: {

@@ -35,7 +35,7 @@ import {
 } from "../src/shared/reference-sheet";
 import { findReferenceStyle } from "../src/shared/reference-styles";
 import { estimateGenerationCostUsd, findGenerationModel } from "../src/shared/generation-models";
-import type { CloudReferenceItem } from "../src/shared/reference-library";
+import type { CloudReferenceItem, CloudReferenceKind } from "../src/shared/reference-library";
 import type {
   Asset,
   CreativeCard,
@@ -727,6 +727,24 @@ export const createStudioRuntime = (
         "reference-library:import",
         (_event, item: CloudReferenceItem, projectId?: string) =>
           cloudReferenceLibrary.importItem(item, projectId ?? libraryProject.id),
+      );
+      /**
+       * 整批下载会跑好几分钟。做成 invoke 的话渲染进程只能干等，
+       * 所以进度靠事件推回，界面自己显示「下到第几张」。
+       */
+      ipcMain.handle(
+        "reference-library:import-all",
+        (event, options?: { kinds?: string[]; concurrency?: number }) =>
+          cloudReferenceLibrary.importAll({
+            kinds: options?.kinds as CloudReferenceKind[] | undefined,
+            concurrency: options?.concurrency,
+            projectId: libraryProject.id,
+            onProgress: (state) => {
+              if (!event.sender.isDestroyed()) {
+                event.sender.send("reference-library:import-progress", state);
+              }
+            },
+          }),
       );
       ipcMain.handle("assets:list", (_event, query) => assets.list(query));
       ipcMain.handle("assets:usage", (_event, assetId: string) => assets.usage(assetId));
