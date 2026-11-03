@@ -58,6 +58,7 @@ interface Window {
         slots: import("./shared/reference-sheet").ReferenceSheetSlotInput[];
         name?: string;
         styleId?: string;
+        textureId?: string;
       }) => Promise<{
         asset: import("./shared/types").Asset;
         recipe: import("./shared/reference-sheet").ReferenceSheetRecipe;

@@ -1,6 +1,7 @@
 import type { CloudReferenceKind } from "./reference-library";
 import type { CreativeCard } from "./types";
 import type { ReferenceStyle } from "./reference-styles";
+import type { TexturePreset } from "./texture-presets";
 
 /**
  * 参考卡把“身份、服装、姿态、场景”从多张参考图压缩成一张本地合成的参考板。
@@ -104,6 +105,8 @@ export type ReferenceSheetRecipe = {
   normal?: ReferenceSheetSlot;
   prompt: ReferenceSheetPrompt;
   style?: ReferenceStyle;
+  /** 画面质感：噪点、颗粒、色偏、高光滚降——和画风正交，别混为一谈。 */
+  texture?: TexturePreset;
   rightsBasis: string;
   createdAt: string;
 };
@@ -284,6 +287,7 @@ const roleInstruction: Record<
 export const buildReferenceSheetPrompt = (
   slots: ReferenceSheetSlotInput[],
   style?: ReferenceStyle,
+  texture?: TexturePreset,
 ): ReferenceSheetPrompt => {
   const normalized = normalizeReferenceSheetSlots(slots);
   const layout = referenceSheetLayout(normalized);
@@ -295,6 +299,7 @@ export const buildReferenceSheetPrompt = (
     };
   });
   if (style) modules.push({ label: "画风", value: style.positive });
+  if (texture) modules.push({ label: "画面质感", value: texture.positive });
   const negative = [
     "拼贴画、分屏、四宫格、六宫格、参考板边框、分格线、文字、水印、多个主体、身份漂移、服装不一致、肢体畸形",
     style?.negative,
@@ -349,6 +354,7 @@ export const applyReferenceSheetToCard = (
     ...card,
     ...(recipe.depth ? { depthAssetId: recipe.depth.assetId } : {}),
     ...(recipe.normal ? { normalAssetId: recipe.normal.assetId } : {}),
+    ...(recipe.texture ? { texture: recipe.texture.positive } : {}),
     identityAnchor: identityLabel
       ? `${identityLabel}人物身份：沿用参考板中的脸型、五官、肤色、年龄感、发色与发型走向，不重新设计`
       : card.identityAnchor,

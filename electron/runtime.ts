@@ -34,6 +34,7 @@ import {
   type ReferenceSheetRecipe,
 } from "../src/shared/reference-sheet";
 import { findReferenceStyle } from "../src/shared/reference-styles";
+import { findTexturePreset } from "../src/shared/texture-presets";
 import { estimateGenerationCostUsd, findGenerationModel } from "../src/shared/generation-models";
 import type { CloudReferenceItem, CloudReferenceKind } from "../src/shared/reference-library";
 import type {
@@ -597,6 +598,7 @@ export const createStudioRuntime = (
     slots: unknown;
     name?: string;
     styleId?: string;
+    textureId?: string;
   }): Promise<{ asset: Asset; recipe: ReferenceSheetRecipe }> => {
     const rawSlots = Array.isArray(input?.slots) ? input.slots : [];
     // 深度图与法线图都不参与拼图：它们约束构图骨架与表面朝向，
@@ -624,7 +626,8 @@ export const createStudioRuntime = (
     }));
     const layout = referenceSheetLayout(slots);
     const style = findReferenceStyle(input?.styleId);
-    const prompt = buildReferenceSheetPrompt(slots, style);
+    const texture = findTexturePreset(input?.textureId);
+    const prompt = buildReferenceSheetPrompt(slots, style, texture);
     const images = await Promise.all(
       resolved.map(async ({ slot, asset }) => {
         const panel = layout.panels.find((candidate) => candidate.role === slot.role);
@@ -670,6 +673,7 @@ export const createStudioRuntime = (
         ? { normal: { ...normal, name: referenceForGeneration(normal.assetId, projectId).name } }
         : {}),
       ...(style ? { style } : {}),
+      ...(texture ? { texture } : {}),
       rightsBasis:
         "由已审片、已授权的本地参考图合成；不引入第三方素材，权利随来源资产保留。",
       createdAt: new Date().toISOString(),

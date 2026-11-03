@@ -10,6 +10,7 @@ import {
   type ReferenceSheetRecipe,
   type ReferenceSheetRole,
 } from "./reference-sheet";
+import { findTexturePreset } from "./texture-presets";
 import { findReferenceStyle } from "./reference-styles";
 
 const card: CreativeCard = {
@@ -349,4 +350,66 @@ describe("深度图落到创作卡", () => {
     };
     expect(applyReferenceSheetToCard(card, recipe).depthAssetId).toBeUndefined();
   });
+});
+
+it('画面质感单独成段，和画风分开写', () => {
+  const withTexture = buildReferenceSheetPrompt(
+    [
+      { role: 'identity', assetId: 'a' },
+      { role: 'wardrobe', assetId: 'b' },
+    ],
+    findReferenceStyle('cinematic_real'),
+    findTexturePreset('ccd_flash'),
+  );
+  expect(withTexture.positive).toContain('画风：电影写实摄影');
+  expect(withTexture.positive).toContain('画面质感：2000s 日系便携 CCD');
+  // 质感是独立一段，不是塞进画风那一行里。
+  const styleLine = withTexture.positive.split('\n').find((line) => line.startsWith('画风：'));
+  expect(styleLine).not.toContain('CCD');
+});
+
+it('不选质感时不凭空生成质感段', () => {
+  const withoutTexture = buildReferenceSheetPrompt(
+    [
+      { role: 'identity', assetId: 'a' },
+      { role: 'wardrobe', assetId: 'b' },
+    ],
+    findReferenceStyle('cinematic_real'),
+  );
+  expect(withoutTexture.positive).not.toContain('画面质感');
+});
+
+it('用参考板时把质感写进创作卡，出图链路才拿得到', () => {
+  const card = applyReferenceSheetToCard(
+    {
+      intent: '角色创作',
+      subject: '成年女性',
+      identityAnchor: '',
+      bodyAndWardrobe: '',
+      expressionAndPose: '',
+      scene: '',
+      lighting: '',
+      camera: '',
+      style: '',
+      avoid: '',
+      aspectRatio: '2:3',
+      referenceAssetIds: [],
+    },
+    {
+      version: 1,
+      layout: referenceSheetLayout([
+        { role: 'identity', assetId: 'a' },
+        { role: 'wardrobe', assetId: 'b' },
+      ]),
+      slots: [
+        { role: 'identity', assetId: 'a', name: '身份' },
+        { role: 'wardrobe', assetId: 'b', name: '服装' },
+      ],
+      prompt: { positive: '', negative: '', modules: [] },
+      texture: findTexturePreset('film_grain'),
+      rightsBasis: '测试',
+      createdAt: new Date().toISOString(),
+    },
+  );
+  expect(card.texture).toContain('35mm 胶片负片质感');
 });

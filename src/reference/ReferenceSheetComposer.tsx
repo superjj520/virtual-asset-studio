@@ -20,6 +20,7 @@ import {
   type CloudReferenceKind,
 } from "../shared/reference-library";
 import { REFERENCE_STYLES, findReferenceStyle } from "../shared/reference-styles";
+import { TEXTURE_PRESETS, findTexturePreset } from "../shared/texture-presets";
 
 type ReferenceSheetComposerProps = {
   assets: Asset[];
@@ -95,6 +96,8 @@ export function ReferenceSheetComposer({
   const [cloudError, setCloudError] = useState("");
   const [importingCloudId, setImportingCloudId] = useState("");
   const [styleId, setStyleId] = useState(REFERENCE_STYLES[0].id);
+  // 空串表示「不额外指定质感」，只靠画风说话。
+  const [textureId, setTextureId] = useState("");
 
   const eligible = useMemo(
     () => assets.filter((asset) => canReuseAsset(asset) && isImageAsset(asset) && !asset.metadata?.referenceSheet),
@@ -145,6 +148,7 @@ export function ReferenceSheetComposer({
         assetId: slots[role]?.id ?? "",
       })),
     findReferenceStyle(styleId),
+    findTexturePreset(textureId),
   );
   const selectedHint = [...REFERENCE_SHEET_ROLES, ...REFERENCE_SHEET_EXTRA_ROLES]
     .filter((role) => slots[role])
@@ -304,6 +308,7 @@ export function ReferenceSheetComposer({
         projectId,
         slots: payload,
         styleId,
+        textureId,
       });
       setResult(composed.asset);
       setRecipe(composed.recipe);
@@ -430,6 +435,37 @@ export function ReferenceSheetComposer({
                     title={style.summary}
                   >
                     {style.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="reference-sheet-style">
+              <div className="reference-sheet-style-head">
+                <span>画面质感</span>
+                <small>
+                  {findTexturePreset(textureId)?.summary ?? "不额外指定，只靠画风说话"}
+                </small>
+              </div>
+              <div className="reference-sheet-style-chips" role="group" aria-label="画面质感">
+                <button
+                  type="button"
+                  className={textureId === "" ? "active" : ""}
+                  onClick={() => setTextureId("")}
+                  aria-pressed={textureId === ""}
+                  title="不写质感段，成片质感由画风与光线决定"
+                >
+                  不指定
+                </button>
+                {TEXTURE_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className={preset.id === textureId ? "active" : ""}
+                    onClick={() => setTextureId(preset.id)}
+                    aria-pressed={preset.id === textureId}
+                    title={preset.summary}
+                  >
+                    {preset.label}
                   </button>
                 ))}
               </div>

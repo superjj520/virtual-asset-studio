@@ -27,6 +27,7 @@
     "verify:health": "node scripts/verify-health.mjs",
     "verify:all": "node scripts/verify-all.mjs",
     "verify:normal-slot": "node scripts/verify-normal-slot.mjs",
+    "verify:texture": "node scripts/verify-texture.mjs",
     "verify:quality": "node scripts/reference-quality.mjs",
     "verify:import": "node scripts/verify-import.mjs",
     "build:service": "node scripts/build-service.mjs",
