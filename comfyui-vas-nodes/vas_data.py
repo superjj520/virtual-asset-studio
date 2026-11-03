@@ -140,9 +140,34 @@ def label(site: str, row: dict[str, Any]) -> str:
     return str(row.get("id", ""))
 
 
+def dedupe_labels(labels: list[str]) -> list[str]:
+    """把重名的标签补上组内序号，保证下拉里每一项都能唯一定位。
+
+    人像库是「同一个发型的多张样本」：「短发・标准款」有 301 条，标签完全一样的话
+    下拉里就是 301 个一模一样的选项，用户没法说自己要的是哪一张。
+    只出现一次的标签保持原样，不在界面上无端加后缀。
+    姿势/深度/动漫衣装本来就把编号或角度写进标签，天然唯一，加不到它们身上。
+    """
+    total: dict[str, int] = {}
+    for text in labels:
+        total[text] = total.get(text, 0) + 1
+    seen: dict[str, int] = {}
+    out: list[str] = []
+    for text in labels:
+        if total[text] > 1:
+            n = seen.get(text, 0) + 1
+            seen[text] = n
+            out.append(f"{text} · {n}")
+        else:
+            out.append(text)
+    return out
+
+
 def choices(site: str, *, refresh: bool = False) -> list[str]:
     labels = [label(site, row) for row in load_rows(site, refresh=refresh)]
-    return labels or ["（数据还没下载成功，检查网络后重启 ComfyUI）"]
+    if not labels:
+        return ["（数据还没下载成功，检查网络后重启 ComfyUI）"]
+    return dedupe_labels(labels)
 
 
 def load_char_db(*, refresh: bool = False) -> list[dict[str, Any]]:

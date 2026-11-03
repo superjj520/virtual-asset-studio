@@ -26,7 +26,8 @@
     "smoke:restore": "D=$(mktemp -d /tmp/vas-restore-XXXX) && SMOKE_USERDATA=$D node scripts/smoke-packaged.mjs && SMOKE_USERDATA=$D SMOKE_PHASE=verify node scripts/smoke-packaged.mjs; rc=$?; rm -rf \"$D\"; exit $rc",
     "verify:health": "node scripts/verify-health.mjs",
     "verify:all": "node scripts/verify-all.mjs",
-    "verify:normal-slot": "node scripts/verify-normal-slot.mjs"
+    "verify:normal-slot": "node scripts/verify-normal-slot.mjs",
+    "verify:quality": "node scripts/reference-quality.mjs"
   },
   "dependencies": {
     "@img/sharp-libvips-darwin-arm64": "^1.3.3",

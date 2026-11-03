@@ -159,3 +159,20 @@ if return_problems:
         print(f"  ✗ {problem}")
     raise SystemExit(f"✗ {len(return_problems)} 处返回值个数与 RETURN_TYPES 不一致")
 print("✓ 每个 run() 的返回值个数都和 RETURN_TYPES 对得上")
+
+# ---- 下拉选项必须能唯一定位 ----
+# 人像库同一个发型有多张样本（「短发・标准款」301 条）。标签不去重的话，
+# ComfyUI 的下拉里就是 301 个一模一样的串，用户选了也拿不准是哪一张。
+import vas_data
+
+sample = ["短发・标准款"] * 3 + ["长发・大波浪", "短发・标准款"] * 2 + ["独有的标题"]
+deduped = vas_data.dedupe_labels(sample)
+if len(set(deduped)) != len(deduped):
+    raise SystemExit(f"✗ dedupe_labels 之后还有重名：{deduped}")
+if "短发・标准款 · 1" not in deduped or "短发・标准款 · 5" not in deduped:
+    raise SystemExit(f"✗ 重名标签没按出现顺序编号：{deduped}")
+if "独有的标题" not in deduped:
+    raise SystemExit(f"✗ 只出现一次的标签被无端加了后缀：{deduped}")
+if len(deduped) != len(sample):
+    raise SystemExit(f"✗ 去重不能丢条目：{len(sample)} → {len(deduped)}")
+print("✓ 重名标签会补组内序号，唯一标签保持原样")

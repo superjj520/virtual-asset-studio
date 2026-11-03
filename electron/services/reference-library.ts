@@ -119,6 +119,7 @@ type CostumeRow = {
   分类?: string;
   服装名称?: string;
   标签?: string[];
+  关键词?: string;
   缩略图?: string;
   预览图?: string;
   原图?: string;
@@ -464,19 +465,50 @@ class CloudReferenceLibrary {
       kind: "costume" as const,
       title: row.服装名称 ?? row.id,
       category: row.分类 ?? "服装",
-      tags: row.标签 ?? [],
+      // 英文关键词也要进搜索语料：用户习惯打「white shirt」，
+      // 而中文名是「象牙白荷叶边针织衫」，只靠中文名什么都搜不到。
+      tags: [
+        ...(row.标签 ?? []),
+        ...(row.关键词 ?? "").split(/\s+/).filter(Boolean),
+      ],
       thumbUrl: absoluteUrl(row.缩略图 ?? row.预览图),
       imageUrl: absoluteUrl(row.原图 ?? row.预览图 ?? row.缩略图),
     }));
-    const portraitItems = portraits.map((row) => ({
-      id: `portrait-${row.id}`,
-      kind: "portrait" as const,
-      title: row.标题 ?? row.发型名称 ?? row.id,
-      category: row.分区 ?? "人像",
-      tags: [row.发长, row.发型名称].filter((value): value is string => Boolean(value)),
-      thumbUrl: absoluteUrl(row.缩略图),
-      imageUrl: absoluteUrl(row.原图 ?? row.缩略图),
-    }));
+    /**
+     * 人像库是「同一个发型的多张样本」：标题就是发型名，所以「短发・标准款」有 301 条。
+     * 直接拿来当 title，ComfyUI 的人像节点下拉里会出现 301 个一模一样的选项，
+     * 用户根本没法说自己要的是哪一张。同名时补一个组内序号——重名的才补，
+     * 只出现一次的标题保持原样，不在界面上无端多出后缀。
+     */
+    const portraitTitleTotal = new Map<string, number>();
+    for (const row of portraits) {
+      const base = row.标题 ?? row.发型名称 ?? row.id;
+      portraitTitleTotal.set(base, (portraitTitleTotal.get(base) ?? 0) + 1);
+    }
+    const portraitTitleSeen = new Map<string, number>();
+    const portraitItems = portraits.map((row) => {
+      const base = row.标题 ?? row.发型名称 ?? row.id;
+      const total = portraitTitleTotal.get(base) ?? 1;
+      let title = base;
+      if (total > 1) {
+        const seen = (portraitTitleSeen.get(base) ?? 0) + 1;
+        portraitTitleSeen.set(base, seen);
+        title = `${base} · ${seen}`;
+      }
+      return {
+        id: `portrait-${row.id}`,
+        kind: "portrait" as const,
+        title,
+        category: row.分区 ?? "人像",
+        // 上游每条都带一个「检索」串（id + 分区 + 发长 + 发型名），直接当搜索语料，
+        // 用户打「正脸」「发长」这类词也能命中，不用只靠标题。
+        tags: [row.分区, row.发长, row.发型名称].filter(
+          (value): value is string => Boolean(value),
+        ),
+        thumbUrl: absoluteUrl(row.缩略图),
+        imageUrl: absoluteUrl(row.原图 ?? row.缩略图),
+      };
+    });
     const normalize = (
       items: Array<Omit<CloudReferenceItem, "sourceName" | "sourceUrl">>,
       source: { name: string; url: string } = CLOUD_REFERENCE_SOURCE,
