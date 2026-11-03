@@ -9,6 +9,7 @@
  * 需要真 torch 的检查（真的编码一张图）不在范围内——本机没有 GPU 模型。
  */
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -16,6 +17,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const NODES = join(ROOT, "comfyui-vas-nodes");
 const PYTHON = process.env.PYTHON ?? "python3";
 const online = process.argv.includes("--online");
+// live_test.py 要 import torch，只有装过 ComfyUI 依赖的解释器才跑得动。
+// 本机默认指向 /tmp/comfy-venv（见 docs 里的重建步骤），没有就跳过这一项。
+const LIVE_PYTHON = process.env.LIVE_PYTHON ?? "/tmp/comfy-venv/bin/python";
+const hasLive = existsSync(LIVE_PYTHON);
 
 const steps = [
   { name: "节点契约（ComfyUI 能不能加载）", cmd: PYTHON, args: [join(NODES, "contract_test.py")] },
@@ -25,6 +30,10 @@ const steps = [
   { name: "图库路由", cmd: PYTHON, args: [join(NODES, "routes_test.py")] },
   { name: "前端选图弹窗", cmd: process.execPath, args: [join(NODES, "web/gallery_smoke.mjs")] },
 ];
+if (hasLive) {
+  // ComfyUI 没起时这个脚本自己打印「跳过」并返回 0，所以不必在这里判断端口。
+  steps.push({ name: "在真 ComfyUI 里跑参考板节点", cmd: LIVE_PYTHON, args: [join(NODES, "live_test.py")] });
+}
 if (online) {
   steps.push({ name: "六个上游源的条数（需要网络）", cmd: PYTHON, args: [join(NODES, "selftest.py")] });
 }
