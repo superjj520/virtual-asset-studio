@@ -48,12 +48,25 @@ export type ReferenceSheetSlot = ReferenceSheetSlotInput & {
 export const isDepthSlot = (slot: { kind?: CloudReferenceKind }): boolean =>
   slot.kind === "depth";
 
+/** 法线图同理：它走 ControlNet Normal，拼进参考板只会被当成一张普通参考图。 */
+export const isNormalSlot = (slot: { kind?: CloudReferenceKind }): boolean =>
+  slot.kind === "normal";
+
 export const splitReferenceSheetSlots = (
   slots: ReferenceSheetSlotInput[],
-): { board: ReferenceSheetSlotInput[]; depth?: ReferenceSheetSlotInput } => {
-  const board = slots.filter((slot) => !isDepthSlot(slot));
+): {
+  board: ReferenceSheetSlotInput[];
+  depth?: ReferenceSheetSlotInput;
+  normal?: ReferenceSheetSlotInput;
+} => {
+  const board = slots.filter((slot) => !isDepthSlot(slot) && !isNormalSlot(slot));
   const depth = slots.find((slot) => isDepthSlot(slot));
-  return depth ? { board, depth } : { board };
+  const normal = slots.find((slot) => isNormalSlot(slot));
+  return {
+    board,
+    ...(depth ? { depth } : {}),
+    ...(normal ? { normal } : {}),
+  };
 };
 
 export type ReferenceSheetPanel = {
@@ -87,6 +100,8 @@ export type ReferenceSheetRecipe = {
   slots: ReferenceSheetSlot[];
   /** 深度图不拼进参考板，单独记下来，出图时作为 ControlNet 的深度输入。 */
   depth?: ReferenceSheetSlot;
+  /** 法线图同理，走 ControlNet Normal；ComfyUI 那边是 {{normal_image}}。 */
+  normal?: ReferenceSheetSlot;
   prompt: ReferenceSheetPrompt;
   style?: ReferenceStyle;
   rightsBasis: string;
@@ -333,6 +348,7 @@ export const applyReferenceSheetToCard = (
   return {
     ...card,
     ...(recipe.depth ? { depthAssetId: recipe.depth.assetId } : {}),
+    ...(recipe.normal ? { normalAssetId: recipe.normal.assetId } : {}),
     identityAnchor: identityLabel
       ? `${identityLabel}人物身份：沿用参考板中的脸型、五官、肤色、年龄感、发色与发型走向，不重新设计`
       : card.identityAnchor,
@@ -358,9 +374,14 @@ export const applyReferenceSheetToCard = (
           ? `补充参考 ${extraLabels.join("、")}：只提取材质、配饰或光影等明确细节；发色、发型、肤色、脸型、年龄、服装结构、姿态和场景必须严格沿用身份/服装/姿态/场景参考，补充参考不得覆盖。`
           : "",
       ),
-      recipe.depth
-        ? `已附深度图「${recipe.depth.name}」：它约束构图骨架，没有被拼进参考板。只有支持 ControlNet 深度的模型或 ComfyUI 的深度节点才会用到它。`
-        : "",
+      mergeText(
+        recipe.normal
+          ? `已附法线图「${recipe.normal.name}」：它约束表面朝向，没有被拼进参考板。只有 ComfyUI 工作流里带 {{normal_image}} 占位符时才会用到它。`
+          : "",
+        recipe.depth
+          ? `已附深度图「${recipe.depth.name}」：它约束构图骨架，没有被拼进参考板。只有支持 ControlNet 深度的模型或 ComfyUI 的深度节点才会用到它。`
+          : "",
+      ),
     ),
     avoid: mergeText(card.avoid, recipe.prompt.negative),
   };

@@ -2184,6 +2184,7 @@ export default function App() {
         referenceAssetIds: normalizedCard.referenceAssetIds,
         referenceBindings: normalizedCard.referenceBindings,
         ...(normalizedCard.depthAssetId ? { depthAssetId: normalizedCard.depthAssetId } : {}),
+        ...(normalizedCard.normalAssetId ? { normalAssetId: normalizedCard.normalAssetId } : {}),
         qualityTier,
         modelId: effectiveGenerationModelId,
         seed: candidateSeed,
@@ -2855,6 +2856,7 @@ export default function App() {
         referenceAssetIds: card.referenceAssetIds,
         referenceBindings: card.referenceBindings,
         ...(card.depthAssetId ? { depthAssetId: card.depthAssetId } : {}),
+        ...(card.normalAssetId ? { normalAssetId: card.normalAssetId } : {}),
         variants: buildBatchVariables({
           values: variables,
           positive: promptBuild.positive,

@@ -462,6 +462,7 @@ export type CreativeCard = {
   referenceBindings?: ReferenceAssetBinding[];
   /** 深度图资产：不参与参考板拼图，出图时作为 ControlNet 的深度输入单独送出。 */
   depthAssetId?: string;
+  normalAssetId?: string;
   /** 用户在系列规划中确认的镜头顺序与生成策略。 */
   candidatePlan?: CreativeCandidatePlanItem[];
   /** 已采用、允许进入后续生产的系列镜头标签；仅 series_pack 使用。 */
@@ -841,6 +842,7 @@ export type GenerationBatch = {
   referenceBindings: ReferenceAssetBinding[];
   /** 批次继承的深度图：不参与参考板拼图，出图时单独作为 ControlNet 深度输入。 */
   depthAssetId?: string;
+  normalAssetId?: string;
   estimatedCostUsd?: number;
   /** 已完成变体的实际费用合计；未执行或未计费时为空。 */
   actualCostUsd?: number;

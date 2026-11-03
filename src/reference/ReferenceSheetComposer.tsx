@@ -333,7 +333,7 @@ export function ReferenceSheetComposer({
     : REFERENCE_SHEET_ROLES;
   const boardLayout = referenceSheetLayout(
     boardRoles
-      .filter((role) => slotKinds[role] !== "depth")
+      .filter((role) => slotKinds[role] !== "depth" && slotKinds[role] !== "normal")
       .map((role) => ({
         role,
         assetId: slots[role]?.id ?? role,
@@ -667,9 +667,11 @@ export function ReferenceSheetComposer({
                       )}
                     </div>
                   )}
-                  {cloudKind === "depth" && (
+                  {(cloudKind === "depth" || cloudKind === "normal") && (
                     <p className="reference-sheet-depth-note" role="note">
-                      深度图是给 ComfyUI 的 ControlNet 用的：选进参考板只会被拼进那张图里当普通参考图，不会变成深度约束。要按深度出图，请在 ComfyUI 的「姿势库」节点上打开「用深度图」开关，它会按 id 换成同一张图的深度版。
+                      {cloudKind === "depth"
+                        ? "深度图不拼进参考板：合成时会被单独拆出来，出图时作为 ControlNet 的深度输入送给 ComfyUI。工作流里没有 {{depth_image}} 占位符时不会生效。"
+                        : "法线图不拼进参考板：合成时会被单独拆出来，出图时走 ControlNet Normal。只有 ComfyUI 工作流里带 {{normal_image}} 占位符时才会用到它，否则 ComfyUI 那边会报错提示你加节点。"}
                     </p>
                   )}
                   <p className="reference-sheet-attribution">

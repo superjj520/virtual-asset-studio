@@ -336,7 +336,7 @@ export const createStudioRuntime = (
   };
   const refineWithResult = async (
     providerId: ProviderId,
-    input: { prompt: string; size: ImageGenerationSize; referencePath: string; referenceMediaType: string; references?: Array<{ path: string; mediaType: string }>; depthPath?: string; depthMediaType?: string; model?: string; onRemoteTask?: (task: FalRemoteTask) => void },
+    input: { prompt: string; size: ImageGenerationSize; referencePath: string; referenceMediaType: string; references?: Array<{ path: string; mediaType: string }>; depthPath?: string; depthMediaType?: string; normalPath?: string; normalMediaType?: string; model?: string; onRemoteTask?: (task: FalRemoteTask) => void },
   ): Promise<{ image: Buffer; remoteTask?: FalRemoteTask }> => {
     if (providerId === "fal") {
       const result = await fal.refineImageWithTask(input);
@@ -599,8 +599,9 @@ export const createStudioRuntime = (
     styleId?: string;
   }): Promise<{ asset: Asset; recipe: ReferenceSheetRecipe }> => {
     const rawSlots = Array.isArray(input?.slots) ? input.slots : [];
-    // 深度图不参与拼图：它约束构图骨架，拼进参考板只会被模型当成风格线稿。
-    const { board: slots, depth } = splitReferenceSheetSlots(
+    // 深度图与法线图都不参与拼图：它们约束构图骨架与表面朝向，
+    // 拼进参考板只会被模型当成风格线稿。
+    const { board: slots, depth, normal } = splitReferenceSheetSlots(
       normalizeReferenceSheetSlots(rawSlots),
     );
     if (slots.length < 2)
@@ -664,6 +665,9 @@ export const createStudioRuntime = (
       prompt,
       ...(depth
         ? { depth: { ...depth, name: referenceForGeneration(depth.assetId, projectId).name } }
+        : {}),
+      ...(normal
+        ? { normal: { ...normal, name: referenceForGeneration(normal.assetId, projectId).name } }
         : {}),
       ...(style ? { style } : {}),
       rightsBasis:
@@ -1660,6 +1664,7 @@ export const createStudioRuntime = (
             referenceAssetIds?: string[];
             referenceBindings?: ReferenceAssetBinding[];
             depthAssetId?: string;
+            normalAssetId?: string;
             qualityTier?: "draft" | "standard" | "premium";
             modelId?: string;
             seed?: number;
@@ -1686,6 +1691,11 @@ export const createStudioRuntime = (
           // 深度图单独走一条通道：它不进参考板拼图，只作为 ControlNet 的深度输入。
           const depthReference = input.depthAssetId
             ? referenceForGeneration(input.depthAssetId, input.projectId)
+            : undefined;
+          // 法线图同理，走 ControlNet Normal；工作流里没有 {{normal_image}} 时
+          // provider 会报错而不是静默丢掉，免得用户以为生效了。
+          const normalReference = input.normalAssetId
+            ? referenceForGeneration(input.normalAssetId, input.projectId)
             : undefined;
           const primaryReference = references[0];
           const sheetRecipe = primaryReference?.metadata?.referenceSheet as
@@ -1800,6 +1810,9 @@ export const createStudioRuntime = (
                     references: generationReferences.map((reference) => ({ path: reference.managedPath, mediaType: reference.mediaType })),
                     ...(depthReference
                       ? { depthPath: depthReference.managedPath, depthMediaType: depthReference.mediaType }
+                      : {}),
+                    ...(normalReference
+                      ? { normalPath: normalReference.managedPath, normalMediaType: normalReference.mediaType }
                       : {}),
                     model: requestedModel?.model,
                     onRemoteTask: (remoteTask) => jobs.update(job.id, { status: "in_progress", result: { remoteTask, progressStage: "remote", requestedAspectRatio: input.aspectRatio, actualSize: size } }),

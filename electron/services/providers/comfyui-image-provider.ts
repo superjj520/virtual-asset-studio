@@ -184,7 +184,6 @@ export class ComfyUiImageProvider {
     referenceNames?: string[];
     depthName?: string;
     normalName?: string;
-    normalName?: string;
     /** 参数级覆盖：`节点/字段` → 值，来自设置页的高级参数编辑。 */
     overrides?: Record<string, string | number | boolean>;
   }): ComfyWorkflow {
@@ -377,6 +376,8 @@ export class ComfyUiImageProvider {
     references?: Array<{ path: string; mediaType: string }>;
     depthPath?: string;
     depthMediaType?: string;
+    normalPath?: string;
+    normalMediaType?: string;
   }): Promise<Buffer> {
     const files = input.references?.length
       ? input.references
@@ -386,6 +387,9 @@ export class ComfyUiImageProvider {
     const depthName = input.depthPath
       ? await this.uploadImage({ path: input.depthPath, mediaType: input.depthMediaType ?? "image/png" })
       : undefined;
-    return this.generateImage({ ...input, referenceNames, depthName });
+    const normalName = input.normalPath
+      ? await this.uploadImage({ path: input.normalPath, mediaType: input.normalMediaType ?? "image/png" })
+      : undefined;
+    return this.generateImage({ ...input, referenceNames, depthName, normalName });
   }
 }

@@ -266,6 +266,27 @@ describe("深度图独立通道", () => {
     expect(depth?.assetId).toBe("a1");
   });
 
+  it("把法线图也分出来：它走 ControlNet Normal，不是参考板分区", () => {
+    const { board, normal, depth } = splitReferenceSheetSlots([
+      { role: "identity", assetId: "a1", kind: "portrait" },
+      { role: "extra1", assetId: "a2", kind: "normal" },
+    ]);
+    expect(board.map((slot) => slot.assetId)).toEqual(["a1"]);
+    expect(normal?.assetId).toBe("a2");
+    expect(depth).toBeUndefined();
+  });
+
+  it("深度图和法线图同时存在时各走各的通道，都不进拼图", () => {
+    const { board, depth, normal } = splitReferenceSheetSlots([
+      { role: "identity", assetId: "a1" },
+      { role: "extra1", assetId: "a2", kind: "depth" },
+      { role: "extra2", assetId: "a3", kind: "normal" },
+    ]);
+    expect(board.map((slot) => slot.assetId)).toEqual(["a1"]);
+    expect(depth?.assetId).toBe("a2");
+    expect(normal?.assetId).toBe("a3");
+  });
+
   it("没有深度图时 board 就是全部槽位", () => {
     const { board, depth } = splitReferenceSheetSlots([
       { role: "identity", assetId: "a1" },

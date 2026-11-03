@@ -258,6 +258,7 @@ interface Window {
         referenceAssetIds?: string[];
         referenceBindings?: import("./shared/types").ReferenceAssetBinding[];
         depthAssetId?: string;
+        normalAssetId?: string;
         variants: Array<{ label: string; prompt: string }>;
       }) => Promise<import("./shared/types").GenerationBatch>;
       list: (
@@ -385,6 +386,7 @@ interface Window {
         referenceAssetIds?: string[];
         referenceBindings?: import("./shared/types").ReferenceAssetBinding[];
         depthAssetId?: string;
+        normalAssetId?: string;
         qualityTier?: import("./shared/types").GenerationQualityTier;
         modelId?: string;
         seed?: number;
