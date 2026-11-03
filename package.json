@@ -28,7 +28,10 @@
     "verify:all": "node scripts/verify-all.mjs",
     "verify:normal-slot": "node scripts/verify-normal-slot.mjs",
     "verify:quality": "node scripts/reference-quality.mjs",
-    "verify:import": "node scripts/verify-import.mjs"
+    "verify:import": "node scripts/verify-import.mjs",
+    "build:service": "node scripts/build-service.mjs",
+    "serve:materials": "npm run build:service && node --experimental-sqlite dist/service/materials.mjs",
+    "verify:materials": "npm run build:service && node --experimental-sqlite scripts/verify-materials.mjs"
   },
   "dependencies": {
     "@img/sharp-libvips-darwin-arm64": "^1.3.3",
