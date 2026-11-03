@@ -7125,7 +7125,7 @@ export default function App() {
             <p className="result-note">
               填写 ComfyUI 地址（默认 http://127.0.0.1:8188）与 checkpoint，就能用本机显卡出图。工作流留空时走内置模板；粘贴 ComfyUI 导出的
               API 格式 JSON 可接 LoRA、ControlNet 和自定义节点，模板里用 {`{{prompt}}`}、{`{{negative}}`}、{`{{seed}}`}、{`{{width}}`}、{`{{height}}`}、
-              {`{{reference_image}}`}（参考图）、{`{{depth_image}}`}（深度图）取当前创作参数。
+              {`{{reference_image}}`}（参考图）、{`{{depth_image}}`}（深度图）、{`{{normal_image}}`}（法线图）取当前创作参数。
             </p>
             <p className="result-note">
               内置模板只做纯文本出图：KSampler + Checkpoint，链路里没有 LoadImage 节点。要用参考图或深度图，得导入含 LoadImage

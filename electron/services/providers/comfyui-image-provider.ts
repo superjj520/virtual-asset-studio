@@ -16,6 +16,13 @@ const USES_REFERENCE_PLACEHOLDER = /\{\{reference_image(_\d+)?\}\}/;
 /** 深度图占位符：接 ControlNet Depth，对应云端参考库的「深度」分类。 */
 const USES_DEPTH_PLACEHOLDER = /\{\{depth_image\}\}/;
 
+/**
+ * 法线图占位符：接 ControlNet Normal。
+ * anhao 那套插件只有深度，没有法线——这是节点包多出来的一条通道。
+ * 法线图对光照方向和表面朝向比深度更敏感，做硬表面或强光场景时比深度更稳。
+ */
+const USES_NORMAL_PLACEHOLDER = /\{\{normal_image\}\}/;
+
 const referenceVariables = (names?: string[]): Record<string, string> => {
   if (!names?.length) return {};
   const variables: Record<string, string> = { reference_image: names[0] };
@@ -176,6 +183,8 @@ export class ComfyUiImageProvider {
     quality?: "medium" | "high";
     referenceNames?: string[];
     depthName?: string;
+    normalName?: string;
+    normalName?: string;
     /** 参数级覆盖：`节点/字段` → 值，来自设置页的高级参数编辑。 */
     overrides?: Record<string, string | number | boolean>;
   }): ComfyWorkflow {
@@ -190,6 +199,7 @@ export class ComfyUiImageProvider {
       checkpoint: this.checkpoint() ?? "",
       ...referenceVariables(input.referenceNames),
       ...(input.depthName ? { depth_image: input.depthName } : {}),
+      ...(input.normalName ? { normal_image: input.normalName } : {}),
     };
     const custom = this.options.workflow?.()?.trim();
     let base: unknown = COMFYUI_BUILTIN_WORKFLOW;
@@ -214,6 +224,10 @@ export class ComfyUiImageProvider {
       throw new Error(
         "当前 ComfyUI 工作流没有 {{depth_image}} 占位符，深度图会被忽略。请加一个 LoadImage 节点接 ControlDepth，把它的 image 写成 {{depth_image}}。",
       );
+    if (input.normalName && !USES_NORMAL_PLACEHOLDER.test(JSON.stringify(base)))
+      throw new Error(
+        "当前 ComfyUI 工作流没有 {{normal_image}} 占位符，法线图会被忽略。请加一个 LoadImage 节点接 ControlNet Normal，把它的 image 写成 {{normal_image}}。",
+      );
     const filled = applyWorkflowPlaceholders(base, variables) as Record<string, unknown>;
     // 工作流可以用 _meta.studio.referenceCombinations 声明「只接受哪几种参考图组合」。
     // 用户挂的组合不在名单里时提前报错，别等出图才发现身份没锁住。
@@ -233,6 +247,38 @@ export class ComfyUiImageProvider {
     return applyWorkflowOverrides(filled, overrides).workflow as ComfyWorkflow;
   }
 
+  /**
+   * 把 ComfyUI 的英文报错翻成能照着做的中文。它是 launchd 常驻服务（ai.magpie.comfyui），
+   * 起不来最常见的原因就是被系统收掉或端口被占，所以提示里直接给重启命令。
+   */
+  private explainFailure(detail: string): string {
+    const raw = String(detail ?? "");
+    if (/not enough memory|out of memory|OutOfMemory/i.test(raw))
+      return "本机内存不足，采样阶段被系统打断了。降到 512–768 边长、或换 sd_xl_turbo 底模再试。";
+    if (/value not in list|not in list.*ckpt_name|CheckpointLoaderSimple/i.test(raw))
+      return "选中的 checkpoint 文件在 ComfyUI 里不存在。打开设置页把底模改成清单里出现过的文件名，或确认文件已放进 models/checkpoints。";
+    if (/prompt_outputs_failed_validation|Return type mismatch/i.test(raw))
+      return `工作流和当前 ComfyUI 版本对不上（节点参数被改过）。把设置页的自定义工作流清空后再试。原始报错：${raw.slice(0, 160)}`;
+    if (/ECONNREFUSED|fetch failed|socket hang up|connect ETIMEDOUT/i.test(raw))
+      return "连不上本机 ComfyUI。它应该是常驻服务，重启一下：launchctl kickstart -k gui/$(id -u)/ai.magpie.comfyui";
+    return raw.slice(0, 300);
+  }
+
+  /** 中断当前任务并释放缓存；两条命令都是尽力而为，失败不影响报错。 */
+  private async abortAndRelease(): Promise<void> {
+    const baseUrl = this.baseUrl();
+    if (!baseUrl) return;
+    await fetch(`${baseUrl}/interrupt`, { method: "POST", signal: AbortSignal.timeout(15_000) }).catch(
+      () => undefined,
+    );
+    await fetch(`${baseUrl}/free`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ unload_models: true, free_memory: true }),
+      signal: AbortSignal.timeout(20_000),
+    }).catch(() => undefined);
+  }
+
   async generateImage(input: {
     prompt: string;
     negative?: string;
@@ -241,6 +287,7 @@ export class ComfyUiImageProvider {
     quality?: "medium" | "high";
     referenceNames?: string[];
     depthName?: string;
+    normalName?: string;
     overrides?: Record<string, string | number | boolean>;
   }): Promise<Buffer> {
     const baseUrl = this.baseUrl();
@@ -255,7 +302,7 @@ export class ComfyUiImageProvider {
     });
     if (!queued.ok) {
       const detail = (await queued.text().catch(() => "")).slice(0, 300);
-      throw new Error(`ComfyUI 拒绝了工作流（${queued.status}）${detail ? `：${detail}` : ""}`);
+      throw new Error(`ComfyUI 拒绝了工作流（${queued.status}）${detail ? `：${this.explainFailure(detail)}` : ""}`);
     }
     const payload = (await queued.json()) as { prompt_id?: string; node_errors?: unknown };
     const promptId = payload.prompt_id;
@@ -276,7 +323,7 @@ export class ComfyUiImageProvider {
       const entry = history?.[promptId];
       if (!entry) continue;
       const failure = executionError(entry);
-      if (failure) throw new Error(`ComfyUI 执行失败：${failure}`);
+      if (failure) throw new Error(`ComfyUI 执行失败：${this.explainFailure(failure)}`);
       const image = firstImage(entry);
       if (!image) continue;
       const query = new URLSearchParams({
@@ -290,7 +337,10 @@ export class ComfyUiImageProvider {
       if (!file.ok) throw new Error(`ComfyUI 图片下载失败（${file.status}）。`);
       return Buffer.from(await file.arrayBuffer());
     }
-    throw new Error("ComfyUI 生成超时；请检查队列是否卡住。");
+    await this.abortAndRelease();
+    throw new Error(
+      "ComfyUI 生成超时，已经中断这条任务并释放缓存。出图卡住基本是内存不够（看 sysctl vm.swapusage），降尺寸或换 sd_xl_turbo 再试。",
+    );
   }
 
   /** 把参考图传到 ComfyUI，返回文件名；占位符里填这个名字，工作流才读得到。 */

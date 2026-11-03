@@ -29,7 +29,7 @@ const baseCard = (hair: string): CreativeCard => ({
   style: "写真",
   aspectRatio: "3:4",
   avoid: "拼贴、分屏、多个主体、水印",
-} as CreativeCard);
+} as unknown as CreativeCard);
 
 describe("身份一致性的对照条件", () => {
   it("两张卡只有发色不同，其余提示词逐字一致", () => {

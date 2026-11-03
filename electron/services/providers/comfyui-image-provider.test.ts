@@ -468,3 +468,92 @@ it("工作流声明的参考组合不含当前组合时报错，且不发 /promp
   ).rejects.toThrow(/只接受这些参考图组合/);
   expect(server.requests.filter((r) => r.url === "/prompt").length).toBe(0);
 });
+
+it("checkpoint 不存在时把 ComfyUI 的英文报错翻成交互能照做的中文", async () => {
+  const server = await startMock((request, response) => {
+    if (request.url === "/prompt") {
+      response.statusCode = 400;
+      response.end("value not in list: ckpt_name not in ['sd_xl_base_1.0.safetensors']");
+      return;
+    }
+    response.end("{}");
+  });
+  const provider = providerFor({ baseUrl: server.url, checkpoint: "missing.safetensors" });
+  await expect(provider.generateImage({ prompt: "杯子", size: "1024x1024" })).rejects.toThrow(
+    /checkpoint 文件在 ComfyUI 里不存在/,
+  );
+});
+
+it("执行阶段 OOM 时给出内存建议而不是原始堆栈", async () => {
+  const server = await startMock((request, response) => {
+    if (request.url === "/prompt") {
+      response.end(JSON.stringify({ prompt_id: "p-oom" }));
+      return;
+    }
+    response.end(
+      JSON.stringify({
+        "p-oom": {
+          status: {
+            status_str: "error",
+            completed: false,
+            messages: [["execution_error", { exception_message: "RuntimeError: Not enough memory" }]],
+          },
+        },
+      }),
+    );
+  });
+  const provider = providerFor({ baseUrl: server.url, checkpoint: "sd_xl_base_1.0.safetensors" });
+  await expect(provider.generateImage({ prompt: "杯子", size: "1024x1024" })).rejects.toThrow(/内存不足/);
+});
+
+// 法线图通道：anhao 那套插件只有深度，这是我们多出来的一条。
+  const withNormal = {
+    "1": { class_type: "LoadImage", inputs: { image: "{{normal_image}}" } },
+    "2": { class_type: "LoadImage", inputs: { image: "{{reference_image}}" } },
+    "3": { class_type: "KSampler", inputs: { seed: "{{seed}}" } },
+  };
+
+  it("工作流有 {{normal_image}} 时把占位符换成上传后的文件名", () => {
+    const provider = new ComfyUiImageProvider({
+      baseUrl: () => "http://127.0.0.1:8188",
+      checkpoint: () => "sd_xl_base_1.0.safetensors",
+      workflow: () => JSON.stringify(withNormal),
+    });
+    const filled = provider.buildWorkflow({
+      prompt: "一个角色",
+      size: "square" as never,
+      referenceNames: ["ref.png"],
+      normalName: "normal.png",
+    });
+    const serialized = JSON.stringify(filled);
+    expect(serialized).toContain("normal.png");
+    expect(serialized).not.toContain("{{normal_image}}");
+  });
+
+  it("给了法线图但工作流没有占位符时报错，不静默丢弃", () => {
+    const provider = new ComfyUiImageProvider({
+      baseUrl: () => "http://127.0.0.1:8188",
+      checkpoint: () => "sd_xl_base_1.0.safetensors",
+      workflow: () => JSON.stringify({ "2": { class_type: "LoadImage", inputs: { image: "{{reference_image}}" } } }),
+    });
+    expect(() =>
+      provider.buildWorkflow({
+        prompt: "一个角色",
+        size: "square" as never,
+        referenceNames: ["ref.png"],
+        normalName: "normal.png",
+      }),
+    ).toThrow(/没有 \{\{normal_image\}\} 占位符/);
+  });
+
+  it("不给法线图时不校验占位符，老工作流照常跑", () => {
+    const provider = new ComfyUiImageProvider({
+      baseUrl: () => "http://127.0.0.1:8188",
+      checkpoint: () => "sd_xl_base_1.0.safetensors",
+      workflow: () => JSON.stringify({ "2": { class_type: "LoadImage", inputs: { image: "{{reference_image}}" } } }),
+    });
+    expect(() =>
+      provider.buildWorkflow({ prompt: "一个角色", size: "square" as never, referenceNames: ["ref.png"] }),
+    ).not.toThrow();
+  });
+
