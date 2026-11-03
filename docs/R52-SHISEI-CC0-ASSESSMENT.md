@@ -87,3 +87,39 @@ curl -sL https://raw.githubusercontent.com/wquguru/shisei/main/data/catalog.json
 curl -sL https://raw.githubusercontent.com/wquguru/shisei/main/LICENSE-images
 ```
 
+---
+
+## 后续（2026-11-03）：三类图全部接入
+
+上面那份评估当时的结论是「只接法线，别的重复」。用户随后直接把仓库地址发过来
+说「新增素材补充」，于是重新按「哪些是真的新东西」过了一遍，结论变了：
+
+| 目录 | 张数 | 和我们已有的关系 | 结论 |
+| --- | --- | --- | --- |
+| `images/line/` | 1,440 | 与姿势库是同一份名单的两套画 | 不接（会看到两个「S形站姿」分不清） |
+| `images/depth/` | 944 | 与深度库重复 | 不接 |
+| `images/clay/` | 944 | **没有对应物** | **接入** |
+| `images/normal/` | 944 | 没有对应物 | 已接（上一轮） |
+| `images/photo/` | 89 | **没有对应物** | **接入** |
+
+黏土和实拍为什么算真增量：
+
+- **黏土**比线稿多的是体积与明暗。线稿告诉你轮廓、深度告诉你空间、法线告诉你
+  表面朝向，黏土告诉你「光从哪来、体积有多厚」——当光影参考用，这几样不重叠。
+- **实拍**是同一批姿势按人像光照和材质渲染出来的版本（只有 20 个姿势有，
+  89 张）。要质感、肤色、布料走向时用它，要精确构图时回到线稿。
+
+现在的口径：
+
+- App 素材库 **9,075 → 10,108 张**（8,957 条记录），九个来源
+- ComfyUI 节点 **8 → 10 个**（`VASClayGallery` / `VASPhotoGallery`），
+  真机 `/object_info` 实测 10 个全加载，选项数 944 / 89 对得上
+- 清单仍然内置：`scripts/build-shisei-catalog.mjs` 从上游 `data/catalog.json`
+  生成 `electron/services/shisei-catalog.ts`，`scripts/export-shisei-catalog.mjs`
+  再导出给节点包。TS 是唯一真相，Python 侧读导出的 JSON。
+
+`images/line/` 依然不接，理由没变：和 anhao 那套是同一份姿势名单的两套画，
+接进来用户会在两个「S形站姿・胯部侧顶」之间二选一，而选哪个对下游没有区别。
+真要用 Shisei 的线稿风格，等上游名单扩到男性单人（现在四个系列的单人组全是
+女性，解决不了 R48 记下的那个缺口）再说。
+
