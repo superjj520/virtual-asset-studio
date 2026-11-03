@@ -196,6 +196,24 @@ def main() -> int:
             " / ".join(normal_modes[:3]),
         )
 
+    # 黏土与实拍是同一批清单的另外两种渲染，各验一遍条数与「名字 · 视角」格式。
+    for node_name, expected in (("VASClayGallery", 944), ("VASPhotoGallery", 89)):
+        node = info.get(node_name)
+        check(f"{node_name} 被 ComfyUI 加载了", bool(node))
+        if not node:
+            continue
+        choices = node["input"].get("required", {}).get("选择", [[]])[0]
+        check(
+            f"{node_name} 有 {expected} 项选项",
+            len(choices) == expected,
+            f"{len(choices)} 项",
+        )
+        check(
+            f"{node_name} 选项没有重名",
+            len(set(choices)) == len(choices),
+            f"{len(set(choices))}/{len(choices)}",
+        )
+
     presets = recipe["input"].get("optional", {}).get("画风预设", [[]])[0]
     app_styles = ROOT / "src" / "shared" / "reference-styles.ts"
     if app_styles.exists():
