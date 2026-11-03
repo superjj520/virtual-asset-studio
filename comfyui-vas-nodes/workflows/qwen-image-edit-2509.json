@@ -1,420 +1,461 @@
 {
-  "_comment": "虚拟资产创作工作台 · Qwen-Image-Edit 2509 三图合成。把人像（图1）+ 服装（图2）+ 姿势（图3）合成为一张人物图。导入前先把三个模型文件按 docs/R54-QWEN-EDIT-WORKFLOW.md 的清单放进对应目录，再把三个图库节点的「选择」换成你要的那条（这里是写工作流时的第一项，上游更新后可能变）。",
-  "1": {
-    "class_type": "UNETLoader",
-    "inputs": {
-      "unet_name": "qwen_image_edit_2509_fp8_e4m3fn.safetensors",
-      "weight_dtype": "default"
-    },
-    "_meta": {
-      "title": "扩散模型"
-    }
+ "_comment": "虚拟资产创作工作台 · Qwen-Image-Edit 2509 三图合成。把人像（图1）+ 服装（图2）+ 姿势（图3）合成为一张人物图。导入前先把三个模型文件按 docs/R54-QWEN-EDIT-WORKFLOW.md 的清单放进对应目录，再把三个图库节点的「选择」换成你要的那条（这里是写工作流时的第一项，上游更新后可能变）。",
+ "1": {
+  "class_type": "UNETLoader",
+  "inputs": {
+   "unet_name": "qwen_image_edit_2509_fp8_e4m3fn.safetensors",
+   "weight_dtype": "default"
   },
-  "2": {
-    "class_type": "LoraLoaderModelOnly",
-    "inputs": {
-      "model": [
-        "1",
-        0
-      ],
-      "lora_name": "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors",
-      "strength_model": 1.0
-    },
-    "_meta": {
-      "title": "4 步加速 LoRA"
-    }
-  },
-  "3": {
-    "class_type": "ModelSamplingAuraFlow",
-    "inputs": {
-      "model": [
-        "2",
-        0
-      ],
-      "shift": 3.0
-    },
-    "_meta": {
-      "title": "采样偏移"
-    }
-  },
-  "4": {
-    "class_type": "CFGNorm",
-    "inputs": {
-      "model": [
-        "3",
-        0
-      ],
-      "strength": 1.0
-    },
-    "_meta": {
-      "title": "CFG 归一化",
-      "studio": {
-        "controls": [
-          {
-            "input": "strength",
-            "label": "归一化强度",
-            "group": "采样",
-            "description": "cfg=1 时影响很小，一般不用动"
-          }
-        ]
-      }
-    }
-  },
-  "5": {
-    "class_type": "CLIPLoader",
-    "inputs": {
-      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
-      "type": "qwen_image"
-    },
-    "_meta": {
-      "title": "文本/视觉编码器"
-    }
-  },
-  "6": {
-    "class_type": "VAELoader",
-    "inputs": {
-      "vae_name": "qwen_image_vae.safetensors"
-    },
-    "_meta": {
-      "title": "VAE"
-    }
-  },
-  "7": {
-    "class_type": "VASPortraitGallery",
-    "inputs": {
-      "选择": "短发・标准款 · 1",
-      "尺寸模式": "缩放到指定尺寸",
-      "宽度": 1024,
-      "高度": 1024,
-      "水平镜像": false,
-      "刷新数据": false
-    },
-    "_meta": {
-      "title": "人像（图1 · 身份）",
-      "studio": {
-        "controls": [
-          {
-            "input": "宽度",
-            "label": "参考图宽",
-            "group": "尺寸",
-            "description": "只影响送进模型前的参考图大小，不决定出图尺寸"
-          },
-          {
-            "input": "高度",
-            "label": "参考图高",
-            "group": "尺寸",
-            "description": "只影响送进模型前的参考图大小，不决定出图尺寸"
-          }
-        ]
-      }
-    }
-  },
-  "8": {
-    "class_type": "VASCostumeGallery",
-    "inputs": {
-      "选择": "象牙白荷叶边针织衫・牛仔迷你半身裙・大衣・短袜・白色运动鞋",
-      "尺寸模式": "缩放到指定尺寸",
-      "宽度": 1024,
-      "高度": 1024,
-      "水平镜像": false,
-      "刷新数据": false
-    },
-    "_meta": {
-      "title": "服装（图2）"
-    }
-  },
-  "9": {
-    "class_type": "VASPoseGallery",
-    "inputs": {
-      "选择": "P001 · S形站姿・胯部侧顶 · 正面",
-      "尺寸模式": "缩放到指定尺寸",
-      "宽度": 1024,
-      "高度": 1024,
-      "水平镜像": false,
-      "刷新数据": false,
-      "用深度图": false
-    },
-    "_meta": {
-      "title": "姿势（图3）",
-      "studio": {
-        "controls": [
-          {
-            "input": "用深度图",
-            "label": "姿势改用深度图",
-            "group": "参考",
-            "description": "打开后用同编号的深度图替代线稿人偶，模型更容易读懂空间关系"
-          }
-        ]
-      }
-    }
-  },
-  "10": {
-    "class_type": "TextEncodeQwenImageEditPlus",
-    "inputs": {
-      "clip": [
-        "5",
-        0
-      ],
-      "prompt": "图1是人物身份（脸型、五官、发色发型），图2是服装（款式、材质、颜色），图3是姿势与构图。生成一张人物图：保持图1的脸和头发完全一致，穿上图2的服装，采用图3的站姿与镜头角度。自然光，真实皮肤质感，画面干净。",
-      "vae": [
-        "6",
-        0
-      ],
-      "image1": [
-        "7",
-        0
-      ],
-      "image2": [
-        "8",
-        0
-      ],
-      "image3": [
-        "9",
-        0
-      ]
-    },
-    "_meta": {
-      "title": "正向提示词",
-      "studio": {
-        "controls": [
-          {
-            "input": "prompt",
-            "label": "正向提示词",
-            "group": "提示词",
-            "description": "按「图1/图2/图3」指代三张参考图；cfg=1 时反向词不生效，「不要文字水印」这类要求写在这里"
-          }
-        ]
-      }
-    }
-  },
-  "11": {
-    "class_type": "TextEncodeQwenImageEditPlus",
-    "inputs": {
-      "clip": [
-        "5",
-        0
-      ],
-      "prompt": "",
-      "vae": [
-        "6",
-        0
-      ]
-    },
-    "_meta": {
-      "title": "反向提示词（cfg=1 时不生效）"
-    }
-  },
-  "12": {
-    "class_type": "VAEEncode",
-    "inputs": {
-      "pixels": [
-        "7",
-        0
-      ],
-      "vae": [
-        "6",
-        0
-      ]
-    },
-    "_meta": {
-      "title": "人像编码（像素级参考）"
-    }
-  },
-  "13": {
-    "class_type": "ReferenceLatent",
-    "inputs": {
-      "conditioning": [
-        "10",
-        0
-      ],
-      "latent": [
-        "12",
-        0
-      ]
-    },
-    "_meta": {
-      "title": "人像参考"
-    }
-  },
-  "14": {
-    "class_type": "VAEEncode",
-    "inputs": {
-      "pixels": [
-        "8",
-        0
-      ],
-      "vae": [
-        "6",
-        0
-      ]
-    },
-    "_meta": {
-      "title": "服装编码（像素级参考）"
-    }
-  },
-  "15": {
-    "class_type": "ReferenceLatent",
-    "inputs": {
-      "conditioning": [
-        "13",
-        0
-      ],
-      "latent": [
-        "14",
-        0
-      ]
-    },
-    "_meta": {
-      "title": "服装参考"
-    }
-  },
-  "16": {
-    "class_type": "EmptySD3LatentImage",
-    "inputs": {
-      "width": 1024,
-      "height": 1024,
-      "batch_size": 1
-    },
-    "_meta": {
-      "title": "画布",
-      "studio": {
-        "controls": [
-          {
-            "input": "width",
-            "label": "出图宽",
-            "group": "尺寸"
-          },
-          {
-            "input": "height",
-            "label": "出图高",
-            "group": "尺寸"
-          }
-        ]
-      }
-    }
-  },
-  "17": {
-    "class_type": "KSampler",
-    "inputs": {
-      "model": [
-        "4",
-        0
-      ],
-      "positive": [
-        "15",
-        0
-      ],
-      "negative": [
-        "11",
-        0
-      ],
-      "latent_image": [
-        "16",
-        0
-      ],
-      "seed": 20261103,
-      "steps": 4,
-      "cfg": 1.0,
-      "sampler_name": "euler",
-      "scheduler": "simple",
-      "denoise": 1.0
-    },
-    "_meta": {
-      "title": "采样",
-      "studio": {
-        "controls": [
-          {
-            "input": "seed",
-            "label": "种子",
-            "group": "采样",
-            "description": "换种子重试是最快的调整手段"
-          },
-          {
-            "input": "steps",
-            "label": "步数",
-            "group": "采样",
-            "description": "Lightning LoRA 是 4 步模型，调大没有收益"
-          }
-        ]
-      }
-    }
-  },
-  "18": {
-    "class_type": "VAEDecode",
-    "inputs": {
-      "samples": [
-        "17",
-        0
-      ],
-      "vae": [
-        "6",
-        0
-      ]
-    },
-    "_meta": {
-      "title": "解码"
-    }
-  },
-  "19": {
-    "class_type": "SaveImage",
-    "inputs": {
-      "images": [
-        "18",
-        0
-      ],
-      "filename_prefix": "vas_recipe"
-    },
-    "_meta": {
-      "title": "保存成图"
-    }
-  },
-  "20": {
-    "class_type": "VASCharacterRecipe",
-    "inputs": {
-      "身份": [
-        "7",
-        0
-      ],
-      "服装": [
-        "8",
-        0
-      ],
-      "姿态": [
-        "9",
-        0
-      ],
-      "底色": "#101014",
-      "尺寸模式": "缩放到指定尺寸",
-      "宽度": 1024,
-      "高度": 1024,
-      "水平镜像": false,
-      "画风预设": "电影写实",
-      "补充提示词": ""
-    },
-    "_meta": {
-      "title": "参考板（给模型看的那张拼图）",
-      "studio": {
-        "controls": [
-          {
-            "input": "尺寸模式",
-            "label": "拼板尺寸模式",
-            "group": "参考板",
-            "description": "「跟随身份图」按人像原尺寸出板，宽度/高度两参数不参与"
-          }
-        ]
-      }
-    }
-  },
-  "21": {
-    "class_type": "PreviewImage",
-    "inputs": {
-      "images": [
-        "20",
-        0
-      ]
-    },
-    "_meta": {
-      "title": "预览参考板"
-    }
+  "_meta": {
+   "title": "扩散模型"
   }
+ },
+ "2": {
+  "class_type": "LoraLoaderModelOnly",
+  "inputs": {
+   "model": [
+    "1",
+    0
+   ],
+   "lora_name": "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors",
+   "strength_model": 1.0
+  },
+  "_meta": {
+   "title": "4 步加速 LoRA"
+  }
+ },
+ "3": {
+  "class_type": "ModelSamplingAuraFlow",
+  "inputs": {
+   "model": [
+    "2",
+    0
+   ],
+   "shift": 3.0
+  },
+  "_meta": {
+   "title": "采样偏移"
+  }
+ },
+ "4": {
+  "class_type": "CFGNorm",
+  "inputs": {
+   "model": [
+    "3",
+    0
+   ],
+   "strength": 1.0
+  },
+  "_meta": {
+   "title": "CFG 归一化",
+   "studio": {
+    "controls": [
+     {
+      "input": "strength",
+      "label": "归一化强度",
+      "group": "采样",
+      "description": "cfg=1 时影响很小，一般不用动"
+     }
+    ]
+   }
+  }
+ },
+ "5": {
+  "class_type": "CLIPLoader",
+  "inputs": {
+   "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+   "type": "qwen_image"
+  },
+  "_meta": {
+   "title": "文本/视觉编码器"
+  }
+ },
+ "6": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "qwen_image_vae.safetensors"
+  },
+  "_meta": {
+   "title": "VAE"
+  }
+ },
+ "7": {
+  "class_type": "VASPortraitGallery",
+  "inputs": {
+   "选择": "短发・标准款 · 1",
+   "尺寸模式": "缩放到指定尺寸",
+   "宽度": 1024,
+   "高度": 1024,
+   "水平镜像": false,
+   "刷新数据": false
+  },
+  "_meta": {
+   "title": "人像（图1 · 身份）",
+   "studio": {
+    "controls": [
+     {
+      "input": "宽度",
+      "label": "参考图宽",
+      "group": "尺寸",
+      "description": "只影响送进模型前的参考图大小，不决定出图尺寸"
+     },
+     {
+      "input": "高度",
+      "label": "参考图高",
+      "group": "尺寸",
+      "description": "只影响送进模型前的参考图大小，不决定出图尺寸"
+     }
+    ]
+   }
+  }
+ },
+ "8": {
+  "class_type": "VASCostumeGallery",
+  "inputs": {
+   "选择": "象牙白荷叶边针织衫・牛仔迷你半身裙・大衣・短袜・白色运动鞋",
+   "尺寸模式": "缩放到指定尺寸",
+   "宽度": 1024,
+   "高度": 1024,
+   "水平镜像": false,
+   "刷新数据": false
+  },
+  "_meta": {
+   "title": "服装（图2）"
+  }
+ },
+ "9": {
+  "class_type": "VASPoseGallery",
+  "inputs": {
+   "选择": "P001 · S形站姿・胯部侧顶 · 正面",
+   "尺寸模式": "缩放到指定尺寸",
+   "宽度": 1024,
+   "高度": 1024,
+   "水平镜像": false,
+   "刷新数据": false,
+   "用深度图": false
+  },
+  "_meta": {
+   "title": "姿势（图3）",
+   "studio": {
+    "controls": [
+     {
+      "input": "用深度图",
+      "label": "姿势改用深度图",
+      "group": "参考",
+      "description": "打开后用同编号的深度图替代线稿人偶，模型更容易读懂空间关系"
+     }
+    ]
+   }
+  }
+ },
+ "10": {
+  "class_type": "TextEncodeQwenImageEditPlus",
+  "inputs": {
+   "clip": [
+    "5",
+    0
+   ],
+   "prompt": "图1是人物身份（脸型、五官、发色发型），图2是服装（款式、材质、颜色），图3是姿势与构图。生成一张人物图：保持图1的脸和头发完全一致，穿上图2的服装，采用图3的站姿与镜头角度。自然光，真实皮肤质感，画面干净。",
+   "vae": [
+    "6",
+    0
+   ],
+   "image1": [
+    "7",
+    0
+   ],
+   "image2": [
+    "8",
+    0
+   ],
+   "image3": [
+    "9",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "正向提示词",
+   "studio": {
+    "controls": [
+     {
+      "input": "prompt",
+      "label": "正向提示词",
+      "group": "提示词",
+      "description": "按「图1/图2/图3」指代三张参考图；cfg=1 时反向词不生效，「不要文字水印」这类要求写在这里"
+     }
+    ]
+   }
+  }
+ },
+ "11": {
+  "class_type": "TextEncodeQwenImageEditPlus",
+  "inputs": {
+   "clip": [
+    "5",
+    0
+   ],
+   "prompt": "",
+   "vae": [
+    "6",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "反向提示词（cfg=1 时不生效）"
+  }
+ },
+ "12": {
+  "class_type": "VAEEncode",
+  "inputs": {
+   "pixels": [
+    "7",
+    0
+   ],
+   "vae": [
+    "6",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "人像编码（像素级参考）"
+  }
+ },
+ "13": {
+  "class_type": "ReferenceLatent",
+  "inputs": {
+   "conditioning": [
+    "10",
+    0
+   ],
+   "latent": [
+    "12",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "人像参考"
+  }
+ },
+ "14": {
+  "class_type": "VAEEncode",
+  "inputs": {
+   "pixels": [
+    "8",
+    0
+   ],
+   "vae": [
+    "6",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "服装编码（像素级参考）"
+  }
+ },
+ "15": {
+  "class_type": "ReferenceLatent",
+  "inputs": {
+   "conditioning": [
+    "13",
+    0
+   ],
+   "latent": [
+    "14",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "服装参考"
+  }
+ },
+ "16": {
+  "class_type": "EmptySD3LatentImage",
+  "inputs": {
+   "width": [
+    "22",
+    0
+   ],
+   "height": [
+    "22",
+    1
+   ],
+   "batch_size": 1
+  },
+  "_meta": {
+   "title": "空 latent（尺寸由「输出尺寸」决定）"
+  }
+ },
+ "17": {
+  "class_type": "KSampler",
+  "inputs": {
+   "model": [
+    "4",
+    0
+   ],
+   "positive": [
+    "15",
+    0
+   ],
+   "negative": [
+    "11",
+    0
+   ],
+   "latent_image": [
+    "16",
+    0
+   ],
+   "seed": 20261103,
+   "steps": 4,
+   "cfg": 1.0,
+   "sampler_name": "euler",
+   "scheduler": "simple",
+   "denoise": 1.0
+  },
+  "_meta": {
+   "title": "采样",
+   "studio": {
+    "controls": [
+     {
+      "input": "seed",
+      "label": "种子",
+      "group": "采样",
+      "description": "换种子重试是最快的调整手段"
+     },
+     {
+      "input": "steps",
+      "label": "步数",
+      "group": "采样",
+      "description": "Lightning LoRA 是 4 步模型，调大没有收益"
+     }
+    ]
+   }
+  }
+ },
+ "18": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "17",
+    0
+   ],
+   "vae": [
+    "6",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "解码"
+  }
+ },
+ "19": {
+  "class_type": "SaveImage",
+  "inputs": {
+   "images": [
+    "18",
+    0
+   ],
+   "filename_prefix": "vas_recipe"
+  },
+  "_meta": {
+   "title": "保存成图"
+  }
+ },
+ "20": {
+  "class_type": "VASCharacterRecipe",
+  "inputs": {
+   "身份": [
+    "7",
+    0
+   ],
+   "服装": [
+    "8",
+    0
+   ],
+   "姿态": [
+    "9",
+    0
+   ],
+   "底色": "#101014",
+   "尺寸模式": "缩放到指定尺寸",
+   "宽度": 1024,
+   "高度": 1024,
+   "水平镜像": false,
+   "画风预设": "电影写实",
+   "补充提示词": ""
+  },
+  "_meta": {
+   "title": "参考板（给模型看的那张拼图）",
+   "studio": {
+    "controls": [
+     {
+      "input": "尺寸模式",
+      "label": "拼板尺寸模式",
+      "group": "参考板",
+      "description": "「跟随身份图」按人像原尺寸出板，宽度/高度两参数不参与"
+     }
+    ]
+   }
+  }
+ },
+ "21": {
+  "class_type": "PreviewImage",
+  "inputs": {
+   "images": [
+    "20",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "预览参考板"
+  }
+ },
+ "22": {
+  "class_type": "ResolutionSelector",
+  "inputs": {
+   "aspect_ratio": "2:3 (Portrait Photo)",
+   "megapixels": 1.5,
+   "multiple": 16
+  },
+  "_meta": {
+   "title": "输出尺寸",
+   "studio": {
+    "controls": [
+     {
+      "input": "aspect_ratio",
+      "label": "画面比例",
+      "group": "尺寸",
+      "description": "人像多用 2:3 或 3:4；道具与场景可用 1:1。",
+      "options": [
+       {
+        "value": "1:1 (Square)",
+        "label": "方形 1:1"
+       },
+       {
+        "value": "2:3 (Portrait Photo)",
+        "label": "竖版照片 2:3"
+       },
+       {
+        "value": "3:4 (Portrait Standard)",
+        "label": "竖版标准 3:4"
+       },
+       {
+        "value": "9:16 (Portrait Widescreen)",
+        "label": "竖屏 9:16"
+       },
+       {
+        "value": "16:9 (Widescreen)",
+        "label": "宽屏 16:9"
+       }
+      ]
+     },
+     {
+      "input": "megapixels",
+      "label": "总像素（百万）",
+      "group": "尺寸",
+      "description": "1.5 对应约 1000×1500。显存紧张时调到 1.0。"
+     }
+    ]
+   }
+  }
+ }
 }

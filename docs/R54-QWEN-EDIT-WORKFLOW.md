@@ -45,7 +45,16 @@ UNETLoader → LoRA(Lightning) → ModelSamplingAuraFlow(shift=3) → CFGNorm �
 这些要求得写进正向提示词，写进反向那一栏不会有任何作用。
 
 **参考图尺寸不决定出图尺寸。** 三个图库节点的「宽度/高度」只影响送进模型前把参考图缩到多大；
-出图尺寸由 `EmptySD3LatentImage` 的宽高决定。
+出图尺寸由「输出尺寸」节点（22）决定。
+
+**输出尺寸现在可调了。** 节点 22 是 `ResolutionSelector`：`aspect_ratio` + `megapixels`
++ `multiple` 算出宽高，再连进空 latent（16）的 `width`/`height`。默认
+`2:3 (Portrait Photo)` / 1.5 兆像素 / 16 对齐，约 1000×1500。
+
+之前这里是写死的 1024×1024。按 anhao 的文档，他们的输出是「按姿势图比例缩放到约 1 MP」
+（1024×1536，2:3）。两个问题：一是人像九成是竖的，出方图会裁掉头顶或留白；二是
+`aspect_ratio` 在他们那边只能人工从八档里挑，换一张横构图的姿势图就得手动改。
+我们用同一个节点，但把**比例**也做成可在 App 高级区编辑的参数——八档照列，默认给竖版。
 
 ## 参考板分支
 
@@ -63,7 +72,7 @@ UNETLoader → LoRA(Lightning) → ModelSamplingAuraFlow(shift=3) → CFGNorm �
 
 - 首次生成约 50 秒（含加载模型），之后每张 25–30 秒。
 - 20 GB 的 fp8 模型超过 12 GB 显存，ComfyUI 会自动部分卸载到内存，不需要额外设置。
-- 8 GB 显卡：把 `EmptySD3LatentImage` 的输出尺寸调小，或者降到 0.6 兆像素左右。
+- 8 GB 显卡：把「输出尺寸」节点的 `megapixels` 降到 0.6，或者把 `aspect_ratio` 换成更小的档位。
 
 ## 已知限制
 
@@ -80,3 +89,23 @@ UNETLoader → LoRA(Lightning) → ModelSamplingAuraFlow(shift=3) → CFGNorm �
 这份工作流本身只验证到**图结构层面**：把它提交给真的 ComfyUI，返回的是
 「模型文件不在磁盘上」（`unet_name ... not in []`），而不是节点不存在或类型不匹配。
 也就是说接线是对的，缺的只是那几个文件。真要跑出图，得先下完 20 GB 的扩散模型。
+
+## 没有 Lightning LoRA 时怎么办
+
+`Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors`（850 MB）是社区产物，
+不在 Comfy-Org 的官方仓库里——我试了 `lightx2v/Qwen-Image-Lightning` 和
+`Comfy-Org/Qwen-Image-Edit_ComfyUI` 下的五种命名，全是 404。官方仓库只提供扩散模型、
+编码器和 VAE 三件。
+
+拿不到它就照下面改，用标准采样参数，慢一些但不影响能不能出图：
+
+| 参数 | 有 Lightning LoRA | 没有 LoRA |
+| --- | --- | --- |
+| 节点 2 的 `strength_model` | 1.0 | 0（节点留着，强度归零等于不生效） |
+| 节点 17 的 `steps` | 4 | 20 |
+| 节点 17 的 `cfg` | 1.0 | 2.5 |
+
+**cfg=1 时反向提示词不生效**这条只在前一种情况下成立；换成 cfg 2.5 之后反向词是有用的，
+要「不要文字/水印」可以直接写进反向那一栏。
+
+这张表按官方 Qwen-Image-Edit 的推荐值写，不是我方实测——见下一节的边界。
