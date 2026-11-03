@@ -81,12 +81,20 @@ it("停在「全部」时不显示深度图说明", async () => {
   expect(screen.queryByRole("note")).not.toBeInTheDocument();
 });
 
-it("切到深度分类时说明深度图不进参考板，并指向 ComfyUI 的开关", async () => {
+it("切到深度分类时说明深度图不进参考板，并指出要哪个占位符", async () => {
   await openCloudTab();
   fireEvent.click(screen.getByRole("button", { name: /^深度 \d+$/ }));
   const note = await screen.findByRole("note");
-  expect(note).toHaveTextContent("不会变成深度约束");
-  expect(note).toHaveTextContent("用深度图");
+  expect(note).toHaveTextContent("深度图不拼进参考板");
+  expect(note).toHaveTextContent("{{depth_image}}");
+});
+
+it("切到法线分类时说明法线图走 ControlNet Normal", async () => {
+  await openCloudTab();
+  fireEvent.click(screen.getByRole("button", { name: /^法线 \d+$/ }));
+  const note = await screen.findByRole("note");
+  expect(note).toHaveTextContent("法线图不拼进参考板");
+  expect(note).toHaveTextContent("{{normal_image}}");
 });
 
 it("从深度分类切回全部后说明消失", async () => {
