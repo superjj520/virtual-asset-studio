@@ -109,3 +109,38 @@ UNETLoader → LoRA(Lightning) → ModelSamplingAuraFlow(shift=3) → CFGNorm �
 要「不要文字/水印」可以直接写进反向那一栏。
 
 这张表按官方 Qwen-Image-Edit 的推荐值写，不是我方实测——见下一节的边界。
+
+## 在这台机器上试过的结果（2026-11-03）
+
+不是「理论上能跑」，是真下了模型、真提交了、真卡住了。记录在这里免得下一个人
+再花三小时走一遍。
+
+**机器**：Mac / Apple Silicon / 16 GB 内存 / 10 核 / CPU 模式（没有 CUDA）。
+
+**模型**：`Qwen-Image-Edit-2509-Q4_K_M.gguf`（12.17 GB，`QuantStack` 的量化版）
++ `qwen_2.5_vl_7b_fp8_scaled.safetensors`（8.95 GB 编码器）+ `qwen_image_vae.safetensors`。
+下载靠 `hf-mirror.com`（`huggingface.co` 直连超时），实测 6 MB/s。
+
+**走到了哪一步**：
+
+| 阶段 | 结果 |
+| --- | --- |
+| `/prompt` 提交 | 通过，零 node_errors（fp8 版报模型缺失，GGUF 版连这个都没有） |
+| 编码器加载 | `loaded completely; 7910.28 MB`，成功 |
+| 扩散模型加载 | `loaded completely; 12568.33 MB, full load: True`，成功 |
+| 采样启动 | 进度条出现 `0/20`，说明图接通了 |
+| **跑完第一步** | **没有** |
+
+**卡在哪**：加载完 12.5 GB 扩散 + 7.9 GB 编码器之后，物理内存耗尽，
+`vm.swapusage` 从 0 涨到 **11.9 GB / 13.3 GB**，ComfyUI 进程 RSS 只剩 2.3 GB
+（模型大半被换到 swap）。采样进度条 28 分钟停在 `0/20`。
+
+换成 `megapixels=0.35` + `steps=6`（比默认小 4 倍、步数少 3 倍）重试，
+11.7 分钟仍停在 `0/6`，swap 再满。**不是慢，是每个 step 都在 swap 上抖。**
+
+**结论**：16 GB 内存 + CPU 跑不动。要真出图至少得满足一条——24 GB 以上统一内存
+（M 系列的 Pro/Max 可以），或者有独立显卡（anhao 那份文档用的是 RTX 4070 SUPER 12G，
+他们说首次 50 秒、之后每张 25–30 秒，那是 GPU 的速度，跟这里不是一个量级）。
+
+**没验证到的**：出图质量、身份一致性、参考图是否真的被「用对」。
+工作流的接线正确性到此为止是**结构级**验证，不是效果级。
