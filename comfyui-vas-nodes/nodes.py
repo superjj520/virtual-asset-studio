@@ -65,6 +65,10 @@ STYLE_PRESET_EN = {
 
 
 RESIZE_MODES = ["原图尺寸", "缩放到指定尺寸", "裁切填满"]
+# 拼图节点不能用 RESIZE_MODES：2×2 拼板必须有统一的格子尺寸，
+# 「原图尺寸」放进来会跟「缩放到指定尺寸」走成同一条路（实测两张输出字节完全相同）。
+# 换成「跟随身份图」——格子直接取身份图的原始高宽，宽度/高度两参数这时不参与。
+RECIPE_RESIZE_MODES = ["缩放到指定尺寸", "裁切填满", "跟随身份图"]
 
 
 def _to_tensor(payload: bytes, resize_mode: str = "原图尺寸", width: int = 0, height: int = 0) -> torch.Tensor:
@@ -421,7 +425,7 @@ class VASCharacterRecipe:
                 "姿态": ("IMAGE", {}),
                 "深度": ("IMAGE", {}),
                 "底色": ("STRING", {"default": "#101014"}),
-                "尺寸模式": (RESIZE_MODES, {"default": "缩放到指定尺寸"}),
+                "尺寸模式": (RECIPE_RESIZE_MODES, {"default": "缩放到指定尺寸"}),
                 "宽度": ("INT", {"default": 1024, "min": 256, "max": 4096, "step": 8}),
                 "高度": ("INT", {"default": 1024, "min": 256, "max": 4096, "step": 8}),
                 "水平镜像": ("BOOLEAN", {"default": False}),
@@ -460,8 +464,13 @@ class VASCharacterRecipe:
         rgb = _hex_to_rgb(底色)
         cells = [身份, 服装, 姿态, 深度]
         # 2×2 网格：每格 = 整块的一半。宽高给用户控，输出尺寸就是他说了算的那个数。
-        cell_w = max(64, int(宽度) // 2)
-        cell_h = max(64, int(高度) // 2)
+        # 「跟随身份图」例外：格子取身份图的原始高宽，宽度/高度两个参数不参与。
+        if 尺寸模式 == "跟随身份图" and 身份 is not None:
+            cell_h = max(64, int(身份.shape[1]))
+            cell_w = max(64, int(身份.shape[2]))
+        else:
+            cell_w = max(64, int(宽度) // 2)
+            cell_h = max(64, int(高度) // 2)
         out_w = cell_w * 2
         out_h = cell_h * 2
         canvas = torch.zeros((1, out_h, out_w, 3), dtype=torch.float32)
