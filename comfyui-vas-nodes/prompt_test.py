@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import importlib
+import pathlib
+import re
 import sys
 import types
 from pathlib import Path
@@ -93,11 +95,16 @@ assert "silver eyes" in en, en
 
 print("  ✓ 参考板画风预设中英分列，中文补充不污染英文")
 
-# 画风名单必须和客户端 src/shared/reference-styles.ts 一致，否则工作流里选不到
-CLIENT_STYLES = {
-    "电影写实", "时装大片", "棚拍肖像", "自然日光", "暗调氛围", "东方水墨",
-    "动画赛璐璐", "漫画墨线", "古典油画", "水彩插画", "赛博霓虹", "胶片颗粒",
-}
-assert set(nodes.STYLE_PRESETS) == CLIENT_STYLES, set(nodes.STYLE_PRESETS) ^ CLIENT_STYLES
-assert set(nodes.STYLE_PRESET_EN) == CLIENT_STYLES
-print("  ✓ 12 种画风与客户端名单一致，中英映射无缺漏")
+# 画风名单必须和客户端 src/shared/reference-styles.ts 一致，否则工作流里选不到。
+# 这里不再手抄一份名单：抄一次的代价是每次加画风都要改三个地方，
+# 而漏改的那次（R31 加尺寸模式时）直到真机跑才被发现。
+_STYLES_TS = pathlib.Path(__file__).resolve().parent.parent / "src" / "shared" / "reference-styles.ts"
+if _STYLES_TS.exists():
+    CLIENT_STYLES = set(re.findall(r'label:\s*"([^"]+)"', _STYLES_TS.read_text(encoding="utf-8")))
+    assert set(nodes.STYLE_PRESETS) == CLIENT_STYLES, set(nodes.STYLE_PRESETS) ^ CLIENT_STYLES
+    assert set(nodes.STYLE_PRESET_EN) == CLIENT_STYLES, (
+        f"英文映射缺：{CLIENT_STYLES - set(nodes.STYLE_PRESET_EN)}"
+    )
+    print(f"  ✓ {len(CLIENT_STYLES)} 种画风与客户端名单一致，中英映射无缺漏")
+else:
+    print("  · 跳过画风名单核对：找不到 src/shared/reference-styles.ts")

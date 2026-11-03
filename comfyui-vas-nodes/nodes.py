@@ -46,6 +46,9 @@ STYLE_PRESETS = [
     "水彩插画",
     "赛博霓虹",
     "胶片颗粒",
+    "高清日系动漫",
+    "韩系半厚涂插画",
+    "干净角色设定图",
 ]
 
 STYLE_PRESET_EN = {
@@ -61,6 +64,9 @@ STYLE_PRESET_EN = {
     "水彩插画": "watercolor illustration, soft edges, paper texture",
     "赛博霓虹": "cyberpunk neon, magenta and cyan rim light",
     "胶片颗粒": "film grain, analog color rendition, slight halation",
+    "高清日系动漫": "anime illustration, cel shading and soft lighting, clean lineart, masterpiece, best quality",
+    "韩系半厚涂插画": "semi-realistic anime character art, smooth rendering, luminous highlights, refined color palette",
+    "干净角色设定图": "character design reference sheet, clean light background, crisp silhouette, detailed fabric folds",
 }
 
 

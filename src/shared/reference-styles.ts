@@ -91,6 +91,27 @@ export const REFERENCE_STYLES: ReferenceStyle[] = [
     positive: "模拟胶片摄影，低饱和，细腻颗粒，自然高光滚降，生活快照氛围",
     negative: "数码锐化、过度 HDR、塑料皮肤",
   },
+  {
+    id: "anime_hd",
+    label: "高清日系动漫",
+    summary: "赛璐璐＋厚涂、通透光影",
+    positive: "日系二次元动漫插画风格，精致五官，赛璐璐与厚涂结合，光影通透，高画质杰作",
+    negative: "写实照片、油腻厚涂、五官变形",
+  },
+  {
+    id: "korean_semi",
+    label: "韩系半厚涂插画",
+    summary: "半厚涂、丝滑高光、高级配色",
+    positive: "韩系唯美半厚涂角色立绘，细腻丝滑高光，柔美体积感，高级色彩搭配",
+    negative: "平涂色块、灰脏配色、僵硬姿态",
+  },
+  {
+    id: "character_sheet",
+    label: "干净角色设定图",
+    summary: "浅底、轮廓清晰、看清褶皱",
+    positive: "游戏角色立绘设定图，干净浅灰或纯白背景，轮廓清晰，服装材质与褶皱细节丰富",
+    negative: "复杂背景、强烈投影、模糊轮廓",
+  },
 ];
 
 const STYLE_BY_ID = new Map(REFERENCE_STYLES.map((style) => [style.id, style]));

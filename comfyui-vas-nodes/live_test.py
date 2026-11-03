@@ -25,10 +25,13 @@ import hashlib
 import importlib.util
 import io
 import json
+import pathlib
 import sys
 import time
 import urllib.error
 import urllib.request
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # 测试图故意做成竖长条：拉伸与裁切的差别一眼能看出来
 IDENTITY_W, IDENTITY_H = 300, 700
@@ -171,6 +174,18 @@ def main() -> int:
         " / ".join(modes),
     )
     check("尺寸模式包含跟随身份图", "跟随身份图" in modes, " / ".join(modes))
+
+    presets = recipe["input"].get("optional", {}).get("画风预设", [[]])[0]
+    app_styles = ROOT / "src" / "shared" / "reference-styles.ts"
+    if app_styles.exists():
+        import re
+
+        app_labels = re.findall(r'label:\s*"([^"]+)"', app_styles.read_text(encoding="utf-8"))
+        check(
+            "节点里的画风预设与 App 侧逐字一致",
+            list(presets) == app_labels,
+            f"节点 {len(presets)} 个 / App {len(app_labels)} 个",
+        )
 
     sample = upload(base, make_identity_image())
     check("测试图上传成功", bool(sample), sample)

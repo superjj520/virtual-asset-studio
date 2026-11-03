@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import ast
 import pathlib
+import re
 import sys
 
 NODES_FILE = pathlib.Path(__file__).with_name("nodes.py")
+ROOT = NODES_FILE.parent.parent
 
 # anhao 插件包（CATEGORY 均为「AI角色三合一参考图集」）的 4 个节点。
 # required / optional 里写的是对方的英文参数名。
@@ -217,6 +219,45 @@ def collect_ours() -> dict[str, dict]:
     return result
 
 
+def style_preset_parity() -> list[str]:
+    """节点侧的画风预设必须与 App 侧逐字一致。
+
+    R33 踩过一次：凭印象往节点里写了 12 个风格名，跟 src/shared/reference-styles.ts
+    对不上 5 个，用户在 App 里选的风格到了节点里查不到，静默退化成空英文提示词。
+    这条检查就是为了不再靠记性。
+    """
+    problems: list[str] = []
+    app_file = ROOT / "src" / "shared" / "reference-styles.ts"
+    node_file = ROOT / "comfyui-vas-nodes" / "nodes.py"
+    if not app_file.exists() or not node_file.exists():
+        return problems
+    app_labels = re.findall(r'label:\s*"([^"]+)"', app_file.read_text(encoding="utf-8"))
+    node_src = node_file.read_text(encoding="utf-8")
+    node_tree = ast.parse(node_src)
+    node_labels: list[str] = []
+    for statement in node_tree.body:
+        if not isinstance(statement, ast.Assign):
+            continue
+        target = statement.targets[0]
+        if isinstance(target, ast.Name) and target.id == "STYLE_PRESETS":
+            try:
+                node_labels = list(ast.literal_eval(statement.value))
+            except ValueError:
+                pass
+    if not app_labels or not node_labels:
+        return problems
+    if app_labels != node_labels:
+        only_app = [x for x in app_labels if x not in node_labels]
+        only_node = [x for x in node_labels if x not in app_labels]
+        if only_app:
+            problems.append(f"App 有、节点没有的画风预设：{'、'.join(only_app)}")
+        if only_node:
+            problems.append(f"节点有、App 没有的画风预设：{'、'.join(only_node)}")
+        if not only_app and not only_node:
+            problems.append("画风预设两边名字一样但顺序不同，用户按序号选会对错")
+    return problems
+
+
 def parity_check() -> int:
     ours = collect_ours()
     problems: list[str] = []
@@ -267,6 +308,10 @@ def parity_check() -> int:
     print("Recipe 输出形态说明：对方按 id 自己加载并回传三张单图；我方输入是 IMAGE，")
     print("单图本来就在画布上，所以只回传拼图 + 中英提示词。形态不同，能力不减。")
 
+    style_problems = style_preset_parity()
+    if style_problems:
+        problems.extend(style_problems)
+
     extra = sorted(set(ours) - set(NODE_MAP.values()))
     if extra:
         print()
@@ -278,6 +323,10 @@ def parity_check() -> int:
         for item in problems:
             print(f"  - {item}")
         return 1
+    print()
+    print("画风预设：" + "、".join(
+        re.findall(r'label:\s*"([^"]+)"', (ROOT / "src" / "shared" / "reference-styles.ts").read_text(encoding="utf-8"))
+    ))
     print()
     print("对照通过：对方 4 个节点的参数与输出，我方都有对应物。")
     return 0
