@@ -12,13 +12,17 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const PORT = Number(process.env.VAS_VERIFY_PORT || 7792);
 const BASE = `http://127.0.0.1:${PORT}`;
 const ENTRY = 'dist/service/materials.mjs';
 const CHECKPOINT = process.env.VAS_COMFY_CHECKPOINT || 'sd15-fp16.safetensors';
 const COMFY = process.env.VAS_COMFY_URL || 'http://127.0.0.1:8188';
+const IMG2IMG_WORKFLOW = 'comfyui-vas-nodes/workflows/sd15-img2img.json';
+// 每次换个种子：ComfyUI 对「同工作流 + 同参数」有缓存，复用上一次的种子会
+// 一秒返回旧图，看着像跑通了其实没采样。要固定就设 VAS_VERIFY_SEED。
+const SEED = Number(process.env.VAS_VERIFY_SEED) || Math.floor(Date.now() / 1000) % 100000;
 
 let passed = 0;
 const failures = [];
@@ -53,10 +57,25 @@ const main = async () => {
     return 0;
   }
 
+  const children = [];
   const child = spawn(process.execPath, ['--experimental-sqlite', ENTRY], {
     env: { ...process.env, VAS_SERVICE_PORT: String(PORT), VAS_COMFY_CHECKPOINT: CHECKPOINT },
     stdio: 'ignore',
   });
+  children.push(child);
+
+  const waitForHealth = async () => {
+    for (let i = 0; i < 40; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      try {
+        const response = await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(3000) });
+        if (response.ok) return await response.json();
+      } catch {
+        /* 还没起来 */
+      }
+    }
+    return null;
+  };
 
   try {
     let health = null;
@@ -83,7 +102,7 @@ const main = async () => {
         prompt: "portrait photo of a young woman, natural window light, detailed face",
         negative: "blurry, low quality, deformed",
         size: "512x768",
-        seed: 20261104,
+        seed: SEED,
         quality: "draft",
       }),
       signal: AbortSignal.timeout(420_000),
@@ -95,6 +114,7 @@ const main = async () => {
       return summarize();
     }
     check(typeof body.bytes === "number" && body.bytes > 10_000, "返回的不是空壳", `${body.bytes} 字节，${seconds}s`);
+    if (seconds < 5) console.log(`  （${seconds}s 太快，可能命中了 ComfyUI 的缓存；换 VAS_VERIFY_SEED 可强制重算）`);
     check(typeof body.url === "string" && body.url.startsWith("/outputs/"), "给了可取回的地址", body.url);
     check(existsSync(body.file), "文件真的落在磁盘上", body.file.split("/").pop());
     check(
@@ -112,8 +132,62 @@ const main = async () => {
     const width = buffer.readUInt32BE(16);
     const height = buffer.readUInt32BE(20);
     check(width === 512 && height === 768, "尺寸就是请求的那一档", `${width}×${height}`);
-  } finally {
+    // 第二段：换一个带 {{reference_image}} 的工作流，验证「参考图真的进模型」。
+    // used.references 只证明参数传到了，所以还要看输出跟纯文生图确实不一样。
+    const reference = await fetch(`${BASE}/materials?kind=portrait&limit=1`, { signal: AbortSignal.timeout(10_000) });
+    const referenceBody = await reference.json();
+    const referenceId = referenceBody?.items?.[0]?.id;
+    if (!check(Boolean(referenceId), "库里有可当参考的人像", referenceBody?.items?.[0]?.name ?? "")) {
+      return summarize();
+    }
+
     child.kill("SIGKILL");
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const second = spawn(process.execPath, ["--experimental-sqlite", ENTRY], {
+      env: {
+        ...process.env,
+        VAS_SERVICE_PORT: String(PORT),
+        VAS_COMFY_CHECKPOINT: CHECKPOINT,
+        VAS_COMFY_WORKFLOW: readFileSync(IMG2IMG_WORKFLOW, "utf8"),
+      },
+      stdio: "ignore",
+    });
+    children.push(second);
+    await waitForHealth();
+
+    const withRef = await fetch(`${BASE}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: "same person, wearing a dark coat, city street at night",
+        negative: "blurry, low quality",
+        size: "512x768",
+        seed: SEED,
+        quality: "draft",
+        references: [referenceId],
+      }),
+      signal: AbortSignal.timeout(420_000),
+    });
+    const refBody = await withRef.json();
+    if (!check(withRef.status === 200, "带参考图能出图", `${withRef.status} ${refBody?.error ?? ""}`.trim())) {
+      return summarize();
+    }
+    check(refBody.used?.references === 1, "如实上报用了 1 张参考图", JSON.stringify(refBody.used));
+    check(refBody.bytes > 10_000, "带参考图的结果不是空壳", `${refBody.bytes} 字节`);
+
+    const refImage = await fetch(`${BASE}${refBody.url}`, { signal: AbortSignal.timeout(30_000) });
+    const refBuffer = Buffer.from(await refImage.arrayBuffer());
+    check(refBuffer.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])), "带参考图的也是 PNG");
+    // 同一提示词、同一 seed，带参考图与不带的像素必须不同——否则只能说参数传过去了。
+    check(!refBuffer.equals(buffer), "带参考图的画面与纯文生图不同", `${refBuffer.length} vs ${buffer.length} 字节`);
+  } finally {
+    for (const item of children) {
+      try {
+        item.kill("SIGKILL");
+      } catch {
+        /* 已经退了 */
+      }
+    }
   }
 
   return summarize();

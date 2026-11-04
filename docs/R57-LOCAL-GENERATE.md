@@ -1,0 +1,118 @@
+# 通过本地服务出图（含参考图）
+
+用户的原话是「后续我可以通过本地服务来调用生产新的图片」。这条链路的每一段
+（HTTP → ComfyUI → 模型 → PNG 回传）都在 `npm run verify:generate` 里跑真的。
+
+## 启动
+
+```bash
+npm run build:service
+VAS_COMFY_CHECKPOINT=sd15-fp16.safetensors npm run serve:materials
+```
+
+默认端口 7788，`/health` 里会回显它连的 ComfyUI 地址。
+
+## 最小一次调用
+
+```bash
+curl -s -X POST http://127.0.0.1:7788/generate \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"portrait of a young woman, natural window light","size":"512x768","quality":"draft"}'
+```
+
+返回：
+
+```json
+{
+  "file": "~/Library/Application Support/virtual-asset-studio/local-service-output/1793808392173-364448.png",
+  "bytes": 526376,
+  "url": "/outputs/1793808392173-364448.png",
+  "used": { "references": 0, "depth": false, "normal": false }
+}
+```
+
+`used` 是给自己看的账：**说用了几张参考图就必须真的用了几张**。
+
+## 画幅与质量档
+
+| size | 说明 |
+|---|---|
+| `512x512` / `512x768` / `768x512` | 纯 CPU 上一分钟出头，调构图用 |
+| `1024x1024` | 纯 CPU 要八分钟以上，出错排查时别用这档 |
+
+| quality | 步数 | 用途 |
+|---|---|---|
+| `draft` | 8 | 试构图、试提示词 |
+| `medium` | 20 | 默认 |
+| `high` | 28 | 定稿 |
+
+## 带参考图（身份锁定）
+
+内置模板是纯文生图，**没有 `{{reference_image}}` 占位符**。传 `references` 会直接报错：
+
+```
+当前 ComfyUI 工作流没有 {{reference_image}} 占位符，参考图会被忽略。
+请加一个 LoadImage 节点，把它的 image 写成 {{reference_image}}。
+```
+
+这不是坏了，是**宁可报错也不让用户以为身份锁上了**。
+
+要真用参考图，给一个带占位符的工作流。仓库里有现成的 `comfyui-vas-nodes/workflows/sd15-img2img.json`：
+
+```bash
+VAS_COMFY_WORKFLOW="$(cat comfyui-vas-nodes/workflows/sd15-img2img.json)" \
+VAS_COMFY_CHECKPOINT=sd15-fp16.safetensors npm run serve:materials
+```
+
+然后：
+
+```bash
+# 先找一张库里的人像
+ID=$(curl -s 'http://127.0.0.1:7788/materials?kind=portrait&limit=1' | python3 -c 'import sys,json;print(json.load(sys.stdin)["items"][0]["id"])')
+
+curl -s -X POST http://127.0.0.1:7788/generate \
+  -H 'Content-Type: application/json' \
+  -d "{\"prompt\":\"same person, wearing a dark coat, city street at night\",
+       \"size\":\"512x768\",\"quality\":\"draft\",\"references\":[\"$ID\"]}"
+```
+
+`used.references` 会是 `1`，而且出图与纯文生图**不是同一张脸之外的东西**——
+`sd15-img2img.json` 用 `ImageScale → VAEEncode → KSampler(denoise 0.55)`，
+denoise 0.55 保留人物、换掉场景与服装。实测输入「室内浅色上衣微笑」→ 输出
+「同一张脸 + 深色外套 + 夜街暖光虚化」。
+
+## 工作流的占位符
+
+| 占位符 | 填什么 |
+|---|---|
+| `{{prompt}}` / `{{negative}}` | 提示词 |
+| `{{seed}}` / `{{steps}}` | 种子与步数（由 quality 决定） |
+| `{{width}}` / `{{height}}` | 画幅 |
+| `{{checkpoint}}` | 模型文件名 |
+| `{{reference_image}}` | 第一张参考图；之后 `{{reference_image_1}}`… |
+| `{{depth_image}}` / `{{normal_image}}` | 深度图 / 法线图 |
+
+**JSON 里不要放 `_comment` 之类的非节点键**——ComfyUI 会把它们当节点读，
+报 `AttributeError: 'str' object has no attribute 'get'`，表现得像工作流坏了。
+
+## 验收
+
+```bash
+VAS_COMFY_CHECKPOINT=sd15-fp16.safetensors npm run verify:generate
+```
+
+17 项：服务起得来 · ComfyUI 地址对得上 · 出图成功 · 不是空壳 · 给了可取回地址 ·
+文件落盘 · 没参考图时如实报 0 · 地址能取回图 · content-type 是图 · PNG 头 ·
+尺寸对得上 · 库里有可当参考的人像 · 带参考图能出图 · 如实报 1 张 ·
+不是空壳 · 也是 PNG · 与纯文生图不同。
+
+ComfyUI 没起或没装 checkpoint 时自己跳过返回 0。
+
+**种子每次随机**：ComfyUI 对同工作流同参数有缓存，复用旧种子会一秒返回旧图，
+看着像跑通了其实没采样。要固定用 `VAS_VERIFY_SEED=20261104`。
+
+## 已知边界
+
+- 16 GB 内存的机器上，Qwen-Image-Edit（最小量化 Q2_K 也要 15.3 GB 常驻）跑不动，
+  会在 swap 上抖死。SD1.5 是这台机器上能真出图的上限。
+- `/generate` 不排队：同时发两个请求会让 ComfyUI 串行处理，第二个等第一个跑完。
