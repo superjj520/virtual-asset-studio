@@ -86,7 +86,7 @@ export const REFERENCE_STYLES: ReferenceStyle[] = [
   },
   {
     id: "analog_film",
-    label: "胶片颗粒",
+    label: "模拟胶片",
     summary: "低饱和、颗粒、生活快照",
     positive: "模拟胶片摄影，低饱和，细腻颗粒，自然高光滚降，生活快照氛围",
     negative: "数码锐化、过度 HDR、塑料皮肤",
