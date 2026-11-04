@@ -180,7 +180,7 @@ export class ComfyUiImageProvider {
     negative?: string;
     size: GenerationSize;
     seed?: number;
-    quality?: "medium" | "high";
+    quality?: "draft" | "medium" | "high";
     referenceNames?: string[];
     depthName?: string;
     normalName?: string;
@@ -194,7 +194,7 @@ export class ComfyUiImageProvider {
       seed: input.seed ?? Math.floor(Math.random() * 1_000_000_000),
       width,
       height,
-      steps: input.quality === "high" ? 28 : 20,
+      steps: input.quality === "high" ? 28 : input.quality === "draft" ? 8 : 20,
       checkpoint: this.checkpoint() ?? "",
       ...referenceVariables(input.referenceNames),
       ...(input.depthName ? { depth_image: input.depthName } : {}),
@@ -283,7 +283,7 @@ export class ComfyUiImageProvider {
     negative?: string;
     size: GenerationSize;
     seed?: number;
-    quality?: "medium" | "high";
+    quality?: "draft" | "medium" | "high";
     referenceNames?: string[];
     depthName?: string;
     normalName?: string;
@@ -370,7 +370,7 @@ export class ComfyUiImageProvider {
     negative?: string;
     size: GenerationSize;
     seed?: number;
-    quality?: "medium" | "high";
+    quality?: "draft" | "medium" | "high";
     referencePath: string;
     referenceMediaType: string;
     references?: Array<{ path: string; mediaType: string }>;

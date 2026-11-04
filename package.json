@@ -33,7 +33,8 @@
     "verify:import": "node scripts/verify-import.mjs",
     "build:service": "node scripts/build-service.mjs",
     "serve:materials": "npm run build:service && node --experimental-sqlite dist/service/materials.mjs",
-    "verify:materials": "npm run build:service && node --experimental-sqlite scripts/verify-materials.mjs"
+    "verify:materials": "npm run build:service && node --experimental-sqlite scripts/verify-materials.mjs",
+    "verify:generate": "npm run build:service && node scripts/verify-generate.mjs"
   },
   "dependencies": {
     "@img/sharp-libvips-darwin-arm64": "^1.3.3",

@@ -174,7 +174,12 @@ const provider = new ComfyUiImageProvider({
   workflow: () => COMFY_WORKFLOW,
 });
 
+// 小的那几个是给 CPU、或者只想先看构图的时候用的：1024×1024 跑 20 步
+// 在纯 CPU 上要八分钟往上，没有小尺寸的话「本地服务出图」等于只能干等。
 const ALLOWED_SIZES = new Set([
+  "512x512",
+  "512x768",
+  "768x512",
   "1024x1024",
   "1024x1536",
   "1536x1024",
@@ -212,7 +217,7 @@ const generate = async (database: Database, body: Record<string, unknown>) => {
     negative: typeof body.negative === "string" ? body.negative : undefined,
     size,
     seed: typeof body.seed === "number" ? body.seed : undefined,
-    quality: body.quality === "high" ? "high" : "medium",
+    quality: body.quality === "high" ? "high" : body.quality === "draft" ? "draft" : "medium",
     referenceNames: referenceNames.length ? referenceNames : undefined,
     depthName,
     normalName,
