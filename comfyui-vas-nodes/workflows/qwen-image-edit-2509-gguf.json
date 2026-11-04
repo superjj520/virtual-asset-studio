@@ -3,7 +3,7 @@
  "1": {
   "class_type": "UnetLoaderGGUF",
   "inputs": {
-   "unet_name": "Qwen-Image-Edit-2509-Q4_K_M.gguf"
+   "unet_name": "Qwen-Image-Edit-2509-Q2_K.gguf"
   },
   "_meta": {
    "title": "扩散模型（GGUF 量化）"
