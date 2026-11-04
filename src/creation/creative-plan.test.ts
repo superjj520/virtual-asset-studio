@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CreativeCard } from "../shared/types";
-import { buildCreativePlan, composeGuidedCreation, CREATION_PRESETS, DEFAULT_GUIDED_APPEARANCE } from "./creative-plan";
+import { buildCreativePlan, composeGuidedCreation, CREATION_PRESETS, DEFAULT_GUIDED_APPEARANCE, GUIDED_VISUAL_STYLES } from "./creative-plan";
 
 const emptyCard: CreativeCard = {
   intent: "真人感角色场景创作",
@@ -234,5 +234,21 @@ describe("buildCreativePlan", () => {
     expect(plan.expressionAndPose).toContain("关键姿态");
     expect(plan.camera).toContain("视频裁切安全区");
     expect(plan.aspectRatio).toBe("9:16");
+  });
+});
+
+describe("画风描述要具体到能指导出图", () => {
+  it("五个快速画风都写到三十字以上，不是空泛形容词", () => {
+    for (const option of GUIDED_VISUAL_STYLES) {
+      expect(option.prompt.length, `${option.label} 的描述只有 ${option.prompt.length} 字`).toBeGreaterThanOrEqual(30);
+    }
+  });
+
+  it("每条都说清了质感、光线与完成度三类信息里的至少两类", () => {
+    const cues = [["光", "照明", "光影", "体积光", "光源"], ["质感", "材质", "纹理", "面料"], ["完成度", "统一", "层次", "细节", "构图"]];
+    for (const option of GUIDED_VISUAL_STYLES) {
+      const hits = cues.filter((group) => group.some((word) => option.prompt.includes(word))).length;
+      expect(hits, `${option.label} 的描述缺维度：${option.prompt}`).toBeGreaterThanOrEqual(2);
+    }
   });
 });

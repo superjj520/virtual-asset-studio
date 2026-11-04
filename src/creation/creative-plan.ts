@@ -495,12 +495,15 @@ export const GUIDED_SHOTS: GuidedOption<GuidedShot>[] = [
   { id: "character_sheet", label: "角色设定板", prompt: "角色设定板，多角度展示同一角色" },
 ];
 
+// 这五个描述会被原样写进提示词的「具体视觉风格」段，所以不能是空泛形容词：
+// 每条都要说清「什么质感 + 什么光 + 什么完成度」，跟参考卡工坊那十五个
+// （src/shared/reference-styles.ts）的量级对齐，否则快速流程出图会明显更糊。
 export const GUIDED_VISUAL_STYLES: GuidedOption<GuidedVisualStyle>[] = [
-  { id: "photoreal", label: "真实摄影", prompt: "高质量真实摄影，皮肤、头发、布料与环境材质自然可信" },
-  { id: "cinematic", label: "电影画面", prompt: "电影级叙事画面，光线、景深、色彩与空间关系统一" },
-  { id: "editorial", label: "时尚编辑", prompt: "时尚编辑视觉，造型明确，构图克制，具备杂志级完成度" },
-  { id: "anime", label: "动漫视觉", prompt: "精致动漫角色视觉，线条、色彩与角色比例保持统一" },
-  { id: "concept", label: "概念设计", prompt: "专业概念设计图，结构清晰，重点表现角色与世界观设定" },
+  { id: "photoreal", label: "真实摄影", prompt: "高质量真实摄影，自然皮肤纹理与细小绒毛可见，真实镜头光晕与轻微色散，布料与环境材质可信，浅景深，克制的色彩分级" },
+  { id: "cinematic", label: "电影画面", prompt: "电影级叙事画面，电影镜头语言，体积光与实景光源统一，中低对比分级，氛围景深层次分明，情绪克制" },
+  { id: "editorial", label: "时尚编辑", prompt: "高级时尚编辑视觉，硬朗方向光造型，杂志封面级构图，精致面料与配饰质感，干净背景，造型明确完成度高" },
+  { id: "anime", label: "动漫视觉", prompt: "精致动漫角色视觉，干净线稿与平涂色块，清晰高光与通透光影，角色比例与配色全图统一，高画质完成度" },
+  { id: "concept", label: "概念设计", prompt: "专业概念设计图，结构清晰可信，重点表现角色造型与世界观设定，材质与功能关系明确，细节丰富而不杂乱" },
 ];
 
 export const GUIDED_CONSTRAINTS: GuidedOption<GuidedConstraint>[] = [
