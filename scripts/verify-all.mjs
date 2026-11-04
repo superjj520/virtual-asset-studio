@@ -29,6 +29,8 @@ const steps = [
   { name: "素材库质量真机", cmd: "node", args: ["scripts/reference-quality.mjs"] },
   { name: "云端图入库真机", cmd: "node", args: ["scripts/verify-import.mjs"] },
   { name: "法线槽位真机", cmd: "node", args: ["scripts/verify-normal-slot.mjs"] },
+  { name: "参考卡质感真机", cmd: "node", args: ["scripts/verify-texture.mjs"] },
+  { name: "向导质感真机", cmd: "node", args: ["scripts/verify-guide-texture.mjs"] },
   { name: "节点包七项", cmd: "node", args: ["scripts/verify-nodes.mjs", ...(ONLINE ? ["--online"] : [])] },
   { name: "打包", cmd: "npm", args: ["run", "package:mac"] },
   { name: "重启恢复", cmd: "npm", args: ["run", "smoke:restore"] },
