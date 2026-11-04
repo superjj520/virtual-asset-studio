@@ -86,9 +86,18 @@ UNETLoader → LoRA(Lightning) → ModelSamplingAuraFlow(shift=3) → CFGNorm �
 `python comfyui-vas-nodes/live_test.py` 会在真的 ComfyUI 里跑参考板节点，
 验证尺寸模式与镜像真的改变输出——那部分不需要模型权重，CPU 就能过。
 
-这份工作流本身只验证到**图结构层面**：把它提交给真的 ComfyUI，返回的是
+这份工作流本身起初只验证到**图结构层面**：把它提交给真的 ComfyUI，返回的是
 「模型文件不在磁盘上」（`unet_name ... not in []`），而不是节点不存在或类型不匹配。
-也就是说接线是对的，缺的只是那几个文件。真要跑出图，得先下完 20 GB 的扩散模型。
+也就是说接线是对的，缺的只是那几个文件。
+
+后来补了一支真正的端到端：`python comfyui-vas-nodes/e2e_test.py` 挂一个最小的
+SD1.5 fp16（2 GB）跑 8 步 512×768，走 `CheckpointLoaderSimple → KSampler →
+VAEDecode → VASCharacterRecipe → SaveImage`。**在本机 16 GB 内存、纯 CPU 下
+72 秒跑完，两张图都出来了**——一张模型直出，一张经过参考板节点拼图。
+checkpoint 不在时它自己打印「跳过」并返回 0，所以没装模型的机器上不会误报红。
+
+它证明的是「模型 → 节点包 → 落盘」这条链路真的通，**不代表 Qwen-Image-Edit
+本身能跑**：那个 20 GB fp8 在本机仍然跑不动（见下面「在这台机器上试过的结果」）。
 
 ## 没有 Lightning LoRA 时怎么办
 

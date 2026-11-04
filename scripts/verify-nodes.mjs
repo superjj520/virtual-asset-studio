@@ -33,6 +33,9 @@ const steps = [
 if (hasLive) {
   // ComfyUI 没起时这个脚本自己打印「跳过」并返回 0，所以不必在这里判断端口。
   steps.push({ name: "在真 ComfyUI 里跑参考板节点", cmd: LIVE_PYTHON, args: [join(NODES, "live_test.py")] });
+  // 上面那支用 PIL 合成假图，验的是节点本身；这一支才真的挂 checkpoint 出图。
+  // 没装 checkpoint 时它自己跳过并返回 0。
+  steps.push({ name: "真模型出图", cmd: LIVE_PYTHON, args: [join(NODES, "e2e_test.py")] });
 }
 if (online) {
   steps.push({ name: "六个上游源的条数（需要网络）", cmd: PYTHON, args: [join(NODES, "selftest.py")] });
