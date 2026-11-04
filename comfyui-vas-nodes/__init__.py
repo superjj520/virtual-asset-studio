@@ -14,6 +14,12 @@ from .routes import register_routes
 
 register_routes()
 
+# 装好之后要能一眼看出成没成——ComfyUI 启动日志里刷过几十行，没这行就得靠猜。
+# 走 logging 不走 print：ComfyUI 0.43 起把 stdout 接管了，print 的内容进不了启动日志。
+import logging as _logging
+
+_logging.info("[comfyui-vas-nodes] 已加载 %d 个节点", len(NODE_CLASS_MAPPINGS))
+
 # ComfyUI 会把这份目录下的 JS 自动加载进前端；gallery.js 就是选图弹窗。
 WEB_DIRECTORY = "./web"
 
