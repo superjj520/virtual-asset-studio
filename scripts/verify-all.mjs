@@ -42,6 +42,7 @@ const steps = [
 
 const results = [];
 let failed = 0;
+let skipCount = 0;
 
 for (const [index, step] of steps.entries()) {
   process.stdout.write(`\n=== ${index + 1}/${steps.length} ${step.name} ===\n`);
@@ -52,17 +53,27 @@ for (const [index, step] of steps.entries()) {
     env: process.env,
   });
   const seconds = ((Date.now() - started) / 1000).toFixed(0);
+  // 3 = 没失败，但有项因环境缺失没跑（ComfyUI 没起、ControlNet 没装）。
+  // 这种不能算 ✓，否则「全部通过」里混着没跑的步，跟「不是应付」是反的。
+  const skipped = result.status === 3;
   const ok = result.status === 0;
-  if (!ok) failed += 1;
-  results.push({ name: step.name, ok, seconds });
+  if (!ok && !skipped) failed += 1;
+  if (skipped) skipCount += 1;
+  results.push({ name: step.name, ok, skipped, seconds });
 }
 
 process.stdout.write("\n=== 汇总 ===\n");
 for (const row of results) {
-  process.stdout.write(`${row.ok ? "✓" : "✗"} ${row.name}（${row.seconds}s）\n`);
+  process.stdout.write(
+    `${row.skipped ? "⊘" : row.ok ? "✓" : "✗"} ${row.name}（${row.seconds}s）${row.skipped ? "  环境缺失，没跑" : ""}\n`,
+  );
 }
 
 const release = join(ROOT, "release/虚拟资产创作工作台-darwin-arm64/虚拟资产创作工作台.app");
 process.stdout.write(`\n正式应用：${existsSync(release) ? "在位" : "缺失"}\n`);
-process.stdout.write(failed === 0 ? "全部通过\n" : `${failed} 步失败\n`);
+process.stdout.write(
+  failed === 0
+    ? `全部通过${skipCount ? `（另有 ${skipCount} 步因环境缺失没跑）` : ""}\n`
+    : `${failed} 步失败\n`,
+);
 process.exit(failed === 0 ? 0 : 1);

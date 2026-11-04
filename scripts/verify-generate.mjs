@@ -64,11 +64,11 @@ const comfyReady = async () => {
 const main = async () => {
   if (!existsSync(ENTRY)) {
     console.log(`跳过：${ENTRY} 不存在，先跑 npm run build:service`);
-    return 0;
+    return 3;
   }
   if (!(await comfyReady())) {
     console.log(`跳过：${COMFY} 上没有 ComfyUI`);
-    return 0;
+    return 3;
   }
 
   const children = [];

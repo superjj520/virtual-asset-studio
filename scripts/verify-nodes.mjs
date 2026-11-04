@@ -70,4 +70,5 @@ console.log(
     ? `\n全部通过（${ran} 项${skipped ? `，另有 ${skipped} 项因环境缺失跳过` : ""}）`
     : `\n${failed} 项失败（共 ${steps.length} 项${skipped ? `，${skipped} 项跳过` : ""}）`,
 );
-process.exit(failed === 0 ? 0 : 1);
+// 3 表示「没失败，但有项因环境缺失没跑」——verify-all 会把它标成 ⊘ 而不是 ✓。
+process.exit(failed > 0 ? 1 : skipped > 0 ? 3 : 0);
