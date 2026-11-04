@@ -31,6 +31,7 @@ const steps = [
   { name: "法线槽位真机", cmd: "node", args: ["scripts/verify-normal-slot.mjs"] },
   { name: "参考卡质感真机", cmd: "node", args: ["scripts/verify-texture.mjs"] },
   { name: "向导质感真机", cmd: "node", args: ["scripts/verify-guide-texture.mjs"] },
+  { name: "姿势分类说明真机", cmd: "node", args: ["scripts/verify-pose-note.mjs"] },
   { name: "构建本地素材服务", cmd: "npm", args: ["run", "build:service"] },
   { name: "本地素材服务真机", cmd: "node", args: ["--experimental-sqlite", "scripts/verify-materials.mjs"] },
   { name: "本地服务出图真机", cmd: "node", args: ["scripts/verify-generate.mjs"] },
