@@ -21,6 +21,7 @@ const CHECKPOINT = process.env.VAS_COMFY_CHECKPOINT || 'sd15-fp16.safetensors';
 const COMFY = process.env.VAS_COMFY_URL || 'http://127.0.0.1:8188';
 const IMG2IMG_WORKFLOW = 'comfyui-vas-nodes/workflows/sd15-img2img.json';
 const DEPTH_WORKFLOW = 'comfyui-vas-nodes/workflows/sd15-depth.json';
+const NORMAL_WORKFLOW = 'comfyui-vas-nodes/workflows/sd15-normal.json';
 // 每次换个种子：ComfyUI 对「同工作流 + 同参数」有缓存，复用上一次的种子会
 // 一秒返回旧图，看着像跑通了其实没采样。要固定就设 VAS_VERIFY_SEED。
 const SEED = Number(process.env.VAS_VERIFY_SEED) || Math.floor(Date.now() / 1000) % 100000;
@@ -39,13 +40,13 @@ const check = (ok, label, detail = '') => {
   return ok;
 };
 
-const hasControlNetDepth = async () => {
+const hasControlNet = async (kind) => {
   try {
     const response = await fetch(`${COMFY}/object_info/ControlNetLoader`, { signal: AbortSignal.timeout(8000) });
     if (!response.ok) return false;
     const body = await response.json();
     const names = body?.ControlNetLoader?.input?.required?.control_net_name?.[0] ?? [];
-    return Array.isArray(names) && names.some((name) => String(name).includes('depth'));
+    return Array.isArray(names) && names.some((name) => String(name).includes(kind));
   } catch {
     return false;
   }
@@ -195,7 +196,7 @@ const main = async () => {
     check(!refBuffer.equals(buffer), "带参考图的画面与纯文生图不同", `${refBuffer.length} vs ${buffer.length} 字节`);
     // 第三段：深度图走 ControlNet。素材库有 1,439 张深度图，但「能不能真驱动
     // ControlNet」一直没验过——这段要 ComfyUI 装了 ControlNet 深度模型才跑得动。
-    const depthReady = await hasControlNetDepth();
+    const depthReady = await hasControlNet('depth');
     if (!depthReady) {
       console.log("⊘ 跳过深度图那一段 —— ComfyUI 的 models/controlnet 下没有 SD1.5 深度模型");
       console.log("  （可从 hf-mirror.com/comfyanonymous/ControlNet-v1-1_fp16_safetensors 取 control_v11f1p_sd15_depth_fp16）");
@@ -241,6 +242,56 @@ const main = async () => {
           const depthBuffer = Buffer.from(await depthImage.arrayBuffer());
           check(depthBuffer.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])), "带深度图的也是 PNG");
           check(!depthBuffer.equals(buffer), "带深度图的画面与纯文生图不同", `${depthBuffer.length} vs ${buffer.length} 字节`);
+        }
+      }
+    }
+    // 第四段：法线图走 ControlNet Normal。跟深度图是两条独立通道——
+    // 深度管「离镜头多远」，法线管「表面朝哪边」，模型也不能混用。
+    const normalReady = await hasControlNet('normal');
+    if (!normalReady) {
+      console.log("⊘ 跳过法线图那一段 —— ComfyUI 的 models/controlnet 下没有 SD1.5 法线模型");
+      console.log("  （可从 hf-mirror.com/comfyanonymous/ControlNet-v1-1_fp16_safetensors 取 control_v11p_sd15_normalbae_fp16）");
+    } else {
+      const normalList = await fetch(`${BASE}/materials?kind=normal&limit=1`, { signal: AbortSignal.timeout(10_000) });
+      const normalBody = await normalList.json();
+      const normalId = normalBody?.items?.[0]?.id;
+      if (check(Boolean(normalId), "库里有法线图", normalBody?.items?.[0]?.name ?? "")) {
+        for (const item of children) item.kill("SIGKILL");
+        children.length = 0;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const fourth = spawn(process.execPath, ["--experimental-sqlite", ENTRY], {
+          env: {
+            ...process.env,
+            VAS_SERVICE_PORT: String(PORT),
+            VAS_COMFY_CHECKPOINT: CHECKPOINT,
+            VAS_COMFY_WORKFLOW: readFileSync(NORMAL_WORKFLOW, "utf8"),
+          },
+          stdio: "ignore",
+        });
+        children.push(fourth);
+        await waitForHealth();
+
+        const withNormal = await fetch(`${BASE}/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: "a woman sitting, soft studio light, detailed portrait",
+            negative: "blurry, low quality",
+            size: "512x768",
+            seed: SEED + 2,
+            quality: "draft",
+            normalAssetId: normalId,
+          }),
+          signal: AbortSignal.timeout(500_000),
+        });
+        const normalResult = await withNormal.json();
+        if (check(withNormal.status === 200, "带法线图能出图", `${withNormal.status} ${normalResult?.error ?? ""}`.trim())) {
+          check(normalResult.used?.normal === true, "如实上报用了法线图", JSON.stringify(normalResult.used));
+          check(normalResult.bytes > 10_000, "带法线图的结果不是空壳", `${normalResult.bytes} 字节`);
+          const normalImage = await fetch(`${BASE}${normalResult.url}`, { signal: AbortSignal.timeout(30_000) });
+          const normalBuffer = Buffer.from(await normalImage.arrayBuffer());
+          check(normalBuffer.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])), "带法线图的也是 PNG");
+          check(!normalBuffer.equals(buffer), "带法线图的画面与纯文生图不同", `${normalBuffer.length} vs ${buffer.length} 字节`);
         }
       }
     }

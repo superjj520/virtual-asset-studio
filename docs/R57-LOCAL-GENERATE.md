@@ -108,6 +108,28 @@ curl -s -X POST http://127.0.0.1:7788/generate \
 
 法线图（`normalAssetId`）走的是同一条路，但它需要 ControlNet **Normal** 模型（不是 Depth 模型），本机没装，所以那条还没实测过。
 
+## 带法线图（ControlNet）
+
+深度图管的是「前后远近」，法线图管的是「表面朝向」——同一个姿势，深度图给的是轮廓体积，法线图给的是每个面的转折。两个模型不通用，别混。
+
+模型放 `models/controlnet/control_v11p_sd15_normalbae_fp16.safetensors`（722 MB，同一仓库 `comfyanonymous/ControlNet-v1-1_fp16_safetensors`），工作流用 `comfyui-vas-nodes/workflows/sd15-normal.json`：结构与深度那份一样，只是 `control_net_name` 换成 normalbae、占位符换成 `{{normal_image}}`。
+
+```bash
+VAS_COMFY_CHECKPOINT=sd15-fp16.safetensors \
+VAS_COMFY_WORKFLOW="$(cat comfyui-vas-nodes/workflows/sd15-normal.json)" \
+npm run serve:materials
+```
+
+```bash
+curl -s -X POST http://127.0.0.1:7788/generate \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"a woman standing, soft studio light","size":"512x768","quality":"draft","normalAssetId":"<法线图资产 id>"}'
+```
+
+返回里 `used.normal: true`。实测用库里的法线图「背向坐在对方两膝间 · 正面」驱动，1 分 50 秒，出图姿势与两人叠坐的位置一致，风格变成古典写实。
+
+同一台机器上四条通道的实测耗时（512×768、draft 8 步、纯 CPU）参考：纯文生图约 70 秒、参考图约 60 秒、深度图约 2 分 8 秒、法线图约 1 分 50 秒。ControlNet 那两条比文生图慢一倍，因为要多算一遍条件分支。
+
 ## 工作流的占位符
 
 | 占位符 | 填什么 |
