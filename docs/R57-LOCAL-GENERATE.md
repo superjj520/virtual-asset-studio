@@ -81,6 +81,33 @@ curl -s -X POST http://127.0.0.1:7788/generate \
 denoise 0.55 保留人物、换掉场景与服装。实测输入「室内浅色上衣微笑」→ 输出
 「同一张脸 + 深色外套 + 夜街暖光虚化」。
 
+## 带深度图（ControlNet）
+
+素材库里有 1,439 张深度图，它们能真的控制构图——不是把深度图当普通参考图贴进去。
+
+```bash
+# 挑一张深度图
+DEPTH=$(curl -s 'http://127.0.0.1:7788/materials?kind=depth&limit=1' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['items'][0]['id'])")
+
+curl -s -X POST http://127.0.0.1:7788/generate \
+  -H "Content-Type: application/json" \
+  -d "{\"prompt\":\"a woman standing, soft studio light\",\"size\":\"512x768\",\"depthAssetId\":\"$DEPTH\"}"
+```
+
+要跑这条，ComfyUI 得有两样东西：
+
+| 东西 | 放哪 | 大小 |
+|---|---|---|
+| 深度模型 | `models/controlnet/control_v11f1p_sd15_depth_fp16.safetensors` | 722 MB |
+| 工作流 | 启动时 `VAS_COMFY_WORKFLOW=$(cat comfyui-vas-nodes/workflows/sd15-depth.json)` | — |
+
+模型从 `hf-mirror.com/comfyanonymous/ControlNet-v1-1_fp16_safetensors` 取。缺了它服务不会假装成功——`verify-generate` 里那一段会整段跳过并打印来源。
+
+实测：深度图「背靠・双膝大幅打开・侧面」驱动出同姿势的淡彩人像，2 分 8 秒，`used.depth: true`。**构图真的跟着深度图走**，不是只把图传过去。
+
+法线图（`normalAssetId`）走的是同一条路，但它需要 ControlNet **Normal** 模型（不是 Depth 模型），本机没装，所以那条还没实测过。
+
 ## 工作流的占位符
 
 | 占位符 | 填什么 |

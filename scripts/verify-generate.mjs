@@ -20,6 +20,7 @@ const ENTRY = 'dist/service/materials.mjs';
 const CHECKPOINT = process.env.VAS_COMFY_CHECKPOINT || 'sd15-fp16.safetensors';
 const COMFY = process.env.VAS_COMFY_URL || 'http://127.0.0.1:8188';
 const IMG2IMG_WORKFLOW = 'comfyui-vas-nodes/workflows/sd15-img2img.json';
+const DEPTH_WORKFLOW = 'comfyui-vas-nodes/workflows/sd15-depth.json';
 // 每次换个种子：ComfyUI 对「同工作流 + 同参数」有缓存，复用上一次的种子会
 // 一秒返回旧图，看着像跑通了其实没采样。要固定就设 VAS_VERIFY_SEED。
 const SEED = Number(process.env.VAS_VERIFY_SEED) || Math.floor(Date.now() / 1000) % 100000;
@@ -36,6 +37,18 @@ const check = (ok, label, detail = '') => {
     console.log(`✗ ${label}${detail ? ` — ${detail}` : ''}`);
   }
   return ok;
+};
+
+const hasControlNetDepth = async () => {
+  try {
+    const response = await fetch(`${COMFY}/object_info/ControlNetLoader`, { signal: AbortSignal.timeout(8000) });
+    if (!response.ok) return false;
+    const body = await response.json();
+    const names = body?.ControlNetLoader?.input?.required?.control_net_name?.[0] ?? [];
+    return Array.isArray(names) && names.some((name) => String(name).includes('depth'));
+  } catch {
+    return false;
+  }
 };
 
 const comfyReady = async () => {
@@ -180,6 +193,57 @@ const main = async () => {
     check(refBuffer.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])), "带参考图的也是 PNG");
     // 同一提示词、同一 seed，带参考图与不带的像素必须不同——否则只能说参数传过去了。
     check(!refBuffer.equals(buffer), "带参考图的画面与纯文生图不同", `${refBuffer.length} vs ${buffer.length} 字节`);
+    // 第三段：深度图走 ControlNet。素材库有 1,439 张深度图，但「能不能真驱动
+    // ControlNet」一直没验过——这段要 ComfyUI 装了 ControlNet 深度模型才跑得动。
+    const depthReady = await hasControlNetDepth();
+    if (!depthReady) {
+      console.log("⊘ 跳过深度图那一段 —— ComfyUI 的 models/controlnet 下没有 SD1.5 深度模型");
+      console.log("  （可从 hf-mirror.com/comfyanonymous/ControlNet-v1-1_fp16_safetensors 取 control_v11f1p_sd15_depth_fp16）");
+    } else {
+      const depthList = await fetch(`${BASE}/materials?kind=depth&limit=1`, { signal: AbortSignal.timeout(10_000) });
+      const depthBody = await depthList.json();
+      const depthId = depthBody?.items?.[0]?.id;
+      if (check(Boolean(depthId), "库里有深度图", depthBody?.items?.[0]?.name ?? "")) {
+        child.kill("SIGKILL");
+        for (const item of children) item.kill("SIGKILL");
+        children.length = 0;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const third = spawn(process.execPath, ["--experimental-sqlite", ENTRY], {
+          env: {
+            ...process.env,
+            VAS_SERVICE_PORT: String(PORT),
+            VAS_COMFY_CHECKPOINT: CHECKPOINT,
+            VAS_COMFY_WORKFLOW: readFileSync(DEPTH_WORKFLOW, "utf8"),
+          },
+          stdio: "ignore",
+        });
+        children.push(third);
+        await waitForHealth();
+
+        const withDepth = await fetch(`${BASE}/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: "a woman standing, soft studio light, detailed",
+            negative: "blurry, low quality",
+            size: "512x768",
+            seed: SEED + 1,
+            quality: "draft",
+            depthAssetId: depthId,
+          }),
+          signal: AbortSignal.timeout(500_000),
+        });
+        const depthResult = await withDepth.json();
+        if (check(withDepth.status === 200, "带深度图能出图", `${withDepth.status} ${depthResult?.error ?? ""}`.trim())) {
+          check(depthResult.used?.depth === true, "如实上报用了深度图", JSON.stringify(depthResult.used));
+          check(depthResult.bytes > 10_000, "带深度图的结果不是空壳", `${depthResult.bytes} 字节`);
+          const depthImage = await fetch(`${BASE}${depthResult.url}`, { signal: AbortSignal.timeout(30_000) });
+          const depthBuffer = Buffer.from(await depthImage.arrayBuffer());
+          check(depthBuffer.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])), "带深度图的也是 PNG");
+          check(!depthBuffer.equals(buffer), "带深度图的画面与纯文生图不同", `${depthBuffer.length} vs ${buffer.length} 字节`);
+        }
+      }
+    }
   } finally {
     for (const item of children) {
       try {
