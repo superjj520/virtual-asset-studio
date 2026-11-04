@@ -97,6 +97,14 @@ it("切到法线分类时说明法线图走 ControlNet Normal", async () => {
   expect(note).toHaveTextContent("{{normal_image}}");
 });
 
+it("切到姿势分类时说明这里只有女性体型的人台", async () => {
+  await openCloudTab();
+  fireEvent.click(screen.getByRole("button", { name: /^姿势 \d+$/ }));
+  const note = await screen.findByRole("note");
+  expect(note).toHaveTextContent("只有女性体型的人台");
+  expect(note).toHaveTextContent("肩宽");
+});
+
 it("从深度分类切回全部后说明消失", async () => {
   await openCloudTab();
   fireEvent.click(screen.getByRole("button", { name: /^深度 \d+$/ }));

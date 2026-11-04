@@ -703,11 +703,13 @@ export function ReferenceSheetComposer({
                       )}
                     </div>
                   )}
-                  {(cloudKind === "depth" || cloudKind === "normal") && (
+                  {(cloudKind === "depth" || cloudKind === "normal" || cloudKind === "pose") && (
                     <p className="reference-sheet-depth-note" role="note">
                       {cloudKind === "depth"
                         ? "深度图不拼进参考板：合成时会被单独拆出来，出图时作为 ControlNet 的深度输入送给 ComfyUI。工作流里没有 {{depth_image}} 占位符时不会生效。"
-                        : "法线图不拼进参考板：合成时会被单独拆出来，出图时走 ControlNet Normal。只有 ComfyUI 工作流里带 {{normal_image}} 占位符时才会用到它，否则 ComfyUI 那边会报错提示你加节点。"}
+                        : cloudKind === "normal"
+                          ? "法线图不拼进参考板：合成时会被单独拆出来，出图时走 ControlNet Normal。只有 ComfyUI 工作流里带 {{normal_image}} 占位符时才会用到它，否则 ComfyUI 那边会报错提示你加节点。"
+                          : "姿势库现在只有女性体型的人台。给男性角色选姿势时，它只能定构图与姿态——体型、肩宽、胸廓要在创作卡里另行写明，否则模型会照着女性人台画。"}
                     </p>
                   )}
                   <p className="reference-sheet-attribution">
