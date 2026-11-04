@@ -29,6 +29,7 @@ import { CreationLaunchpad, type CreationLaunchKind } from "./creation/CreationL
 import { ReferenceSheetComposer } from "./reference/ReferenceSheetComposer";
 import { applyReferenceSheetToCard, type ReferenceSheetRecipe } from "./shared/reference-sheet";
 import { identityAnchorWarning } from "./shared/identity-anchor";
+import { TEXTURE_PRESETS, findTexturePreset } from "./shared/texture-presets";
 import type {
   CloudHealthReport,
   CloudImportProgress,
@@ -538,6 +539,8 @@ export default function App() {
   const [guideStoryPlan, setGuideStoryPlan] = useState<GuidedStoryPlan>(() => ({ ...DEFAULT_GUIDED_STORY_PLAN }));
   const [guideShotChoice, setGuideShotChoice] = useState<GuidedShot>("half_body");
   const [guideVisualStyle, setGuideVisualStyle] = useState<GuidedVisualStyle>("photoreal");
+  // 画面质感与画风正交：画风说「哪种影像语言」，质感说「这语言长什么样」。
+  const [guideTexture, setGuideTexture] = useState("");
   const [guideAspectRatio, setGuideAspectRatio] = useState<CreativeAspectRatio>("2:3");
   const [guideAppearance, setGuideAppearance] = useState<GuidedAppearance>(DEFAULT_GUIDED_APPEARANCE);
   const [guideSceneProfileId, setGuideSceneProfileId] = useState("");
@@ -973,6 +976,7 @@ export default function App() {
       mood: guideMoodChoice,
       shot: guideShotChoice,
       visualStyle: guideVisualStyle,
+      textureId: guideTexture,
       aspectRatio: guideAspectRatio,
       constraints: guideConstraints,
       trackerIds: guideTrackerIds,
@@ -3190,6 +3194,7 @@ export default function App() {
       mood: guideMoodChoice,
       shot: guideShotChoice,
       visualStyle: guideVisualStyle,
+      texture: guideTexture,
       // 已有角色和参考图已经承担身份基线，不能再用入口默认脸型、肤色或发型覆盖它们。
       appearance: guideMode === "new" ? guideAppearance : undefined,
       constraints: guideConstraints,
@@ -4274,6 +4279,7 @@ export default function App() {
     setGuideMoodChoice(draft.mood);
     setGuideShotChoice(draft.shot);
     setGuideVisualStyle(draft.visualStyle);
+    setGuideTexture(draft.textureId ?? "");
     setGuideAspectRatio(draft.aspectRatio);
     setGuideConstraints([...draft.constraints]);
     setGuideTrackerIds([...draft.trackerIds]);
@@ -4302,6 +4308,7 @@ export default function App() {
     setGuideMoodChoice("cool");
     setGuideShotChoice("character_sheet");
     setGuideVisualStyle("photoreal");
+    setGuideTexture("");
     setGuideAspectRatio("2:3");
     setGuideConstraints(["identity", "body", "hair", "wardrobe", "skin", "no_text"]);
     setGuideTrackerIds([...DEFAULT_CHARACTER_TRACKER_IDS]);
@@ -4478,6 +4485,8 @@ export default function App() {
           onShotChange={setGuideShotChoice}
           visualStyle={guideVisualStyle}
           onVisualStyleChange={setGuideVisualStyle}
+          texture={guideTexture}
+          onTextureChange={setGuideTexture}
           constraints={guideConstraints}
           onConstraintToggle={(value) => setGuideConstraints((current) => current.includes(value) ? current.filter((id) => id !== value) : [...current, value])}
           trackerIds={guideTrackerIds}
@@ -4593,9 +4602,17 @@ export default function App() {
                 </div>
               </div>
               <div className="creation-question">
-                <div className="creation-section-heading"><span>{guideMode === "new" ? "6" : "5"}. 什么质感</span><small>决定整套视觉语言</small></div>
+                <div className="creation-section-heading"><span>{guideMode === "new" ? "6" : "5"}. 什么画风</span><small>决定用哪种影像语言</small></div>
                 <div className="choice-chip-grid" role="group" aria-label="视觉质感">
                   {GUIDED_VISUAL_STYLES.map((option) => <button type="button" key={option.id} aria-pressed={guideVisualStyle === option.id} className={guideVisualStyle === option.id ? "choice-chip choice-selected" : "choice-chip"} onClick={() => setGuideVisualStyle(option.id)}>{option.label}</button>)}
+                </div>
+                <div className="creation-section-heading creation-texture-heading">
+                  <span>画面质感</span>
+                  <small>{findTexturePreset(guideTexture)?.summary ?? "同一种画风，颗粒、色偏与高光也可以完全不同"}</small>
+                </div>
+                <div className="choice-chip-grid" role="group" aria-label="画面质感">
+                  <button type="button" aria-pressed={guideTexture === ""} className={guideTexture === "" ? "choice-chip choice-selected" : "choice-chip"} onClick={() => setGuideTexture("")}>不指定</button>
+                  {TEXTURE_PRESETS.map((option) => <button type="button" key={option.id} aria-pressed={guideTexture === option.id} className={guideTexture === option.id ? "choice-chip choice-selected" : "choice-chip"} onClick={() => setGuideTexture(option.id)}>{option.label}</button>)}
                 </div>
               </div>
             </article>

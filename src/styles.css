@@ -1681,6 +1681,9 @@ button:active { transform: translateY(1px); }
 .creation-question { display: grid; gap: 10px; padding-bottom: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
 .creation-question:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: 0; }
 .creation-question .creation-section-heading { margin-bottom: 0; }
+/* 画风与质感同属「第 6 步」，但质感是第二层选择，弱化成次级标题 + 上方留白。 */
+.creation-texture-heading { margin-top: 18px; }
+.creation-texture-heading > span { font-size: 13px; font-weight: 600; }
 .creation-question > input { color: var(--ink); border-color: var(--line-strong); background: var(--surface); }
 .split-question { grid-template-columns: 1fr 1fr; gap: 22px; }
 .split-question > div { min-width: 0; }

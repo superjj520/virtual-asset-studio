@@ -1,4 +1,5 @@
 import type { CreativeCard, CreativeDeliveryMode } from "../shared/types";
+import { findTexturePreset } from "../shared/texture-presets";
 
 export type CreationDirection = CreativeDeliveryMode;
 
@@ -521,6 +522,7 @@ export const composeGuidedCreation = ({
   mood,
   shot,
   visualStyle,
+  texture,
   appearance,
   constraints,
   customSubject,
@@ -534,6 +536,8 @@ export const composeGuidedCreation = ({
   mood: GuidedMood;
   shot: GuidedShot;
   visualStyle?: GuidedVisualStyle;
+  /** 画面质感预设 id；与画风正交，留空则不生成那一段。 */
+  texture?: string;
   appearance?: GuidedAppearance;
   constraints: GuidedConstraint[];
   customSubject?: string;
@@ -547,6 +551,7 @@ export const composeGuidedCreation = ({
   const moodPrompt = optionPrompt(GUIDED_MOODS, mood);
   const shotPrompt = optionPrompt(GUIDED_SHOTS, shot);
   const visualStylePrompt = visualStyle ? optionPrompt(GUIDED_VISUAL_STYLES, visualStyle) : "";
+  const texturePrompt = texture ? findTexturePreset(texture)?.positive ?? "" : "";
   const storyPrompt = storyPlan ? [
     optionPrompt(GUIDED_STORY_RELATIONSHIPS, storyPlan.relationship),
     optionPrompt(GUIDED_STORY_MOMENTS, storyPlan.moment),
@@ -600,6 +605,7 @@ export const composeGuidedCreation = ({
     subject: [subjectPrompt, appearancePrompt].filter(Boolean).join("；"),
     scene: [scenePrompt, storyPrompt].filter(Boolean).join("；"),
     visualStyle: visualStylePrompt,
+    texture: texturePrompt,
     mustKeep: keep,
   };
 };

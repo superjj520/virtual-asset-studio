@@ -52,6 +52,35 @@ describe("buildCreativePlan", () => {
     expect(plan.mustKeep).toContain("水印");
   });
 
+  it("画面质感是独立一段，与画风各走各的", () => {
+    const withTexture = composeGuidedCreation({
+      direction: "portrait",
+      subject: "adult_woman",
+      scene: "ancient_east",
+      mood: "mysterious",
+      shot: "full_body",
+      visualStyle: "cinematic",
+      texture: "ccd_flash",
+      constraints: ["identity"],
+    });
+    expect(withTexture.visualStyle).toContain("电影级");
+    expect(withTexture.texture).toContain("CCD");
+    // 画风里不该混进质感，否则提示词里会出现两段互相打架的描述。
+    expect(withTexture.visualStyle).not.toContain("CCD");
+
+    const withoutTexture = composeGuidedCreation({
+      direction: "portrait",
+      subject: "adult_woman",
+      scene: "ancient_east",
+      mood: "mysterious",
+      shot: "full_body",
+      visualStyle: "cinematic",
+      constraints: ["identity"],
+    });
+    // 没选质感就不留空字符串——compilePrompt 会把空值过滤掉，但也不该先塞进来。
+    expect(withoutTexture.texture).toBe("");
+  });
+
   it("只有选择自定义时才读取补充文字", () => {
     const plan = composeGuidedCreation({
       direction: "story_scene",

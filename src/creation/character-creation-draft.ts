@@ -39,6 +39,8 @@ export type CharacterCreationDraft = {
   mood: GuidedMood;
   shot: GuidedShot;
   visualStyle: GuidedVisualStyle;
+  /** 画面质感（TEXTURE_PRESETS 的 id）。旧草稿没有这个字段，读出来当空。 */
+  textureId?: string;
   aspectRatio: CreativeAspectRatio;
   constraints: GuidedConstraint[];
   trackerIds: CharacterTrackerPresetId[];

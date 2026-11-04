@@ -13,6 +13,7 @@ import {
 } from "@phosphor-icons/react";
 import { CREATIVE_ASPECT_RATIOS, type Asset, type CharacterDetail, type CharacterProfile, type CharacterStateTracker, type CharacterVariantKind, type CreativeAspectRatio, type GenerationQualityTier, type SceneProfile } from "../shared/types";
 import type { CharacterUseCase } from "../shared/character-slots";
+import { TEXTURE_PRESETS, findTexturePreset } from "../shared/texture-presets";
 import { CharacterTrackerEditor } from "../character/CharacterTrackerEditor";
 import type { CreationLaunchKind } from "./CreationLaunchpad";
 import { getCreationFlowContract, type CreationQuickStage } from "./creation-flow";
@@ -155,6 +156,9 @@ type VisualCharacterCreatorProps = {
   onShotChange: (value: GuidedShot) => void;
   visualStyle: GuidedVisualStyle;
   onVisualStyleChange: (value: GuidedVisualStyle) => void;
+  /** 画面质感预设 id；空串表示不指定。与画风正交，不进 visualStyle。 */
+  texture: string;
+  onTextureChange: (value: string) => void;
   constraints: GuidedConstraint[];
   onConstraintToggle: (value: GuidedConstraint) => void;
   trackerIds?: CharacterTrackerPresetId[];
@@ -879,8 +883,13 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
     <div className="creator-direction-grid" role="group" aria-label="画面方向">{CREATION_DIRECTIONS.map((item) => <button type="button" key={item.id} aria-pressed={props.direction === item.id} className={props.direction === item.id ? "selected" : ""} onClick={() => props.onDirectionChange(item.id)}><strong>{item.label}</strong><small>{item.description}</small></button>)}</div>
     <div className="visual-choice-heading"><strong>镜头范围</strong><span>控制人物在画面中的比例</span></div>
     <div className="compact-visual-grid" role="group" aria-label="镜头范围">{GUIDED_SHOTS.map((option) => <button type="button" key={option.id} aria-pressed={props.shot === option.id} className={props.shot === option.id ? "selected" : ""} onClick={() => props.onShotChange(option.id)}>{option.label}</button>)}</div>
-    <div className="visual-choice-heading"><strong>视觉质感</strong><span>控制最终媒介语言</span></div>
+    <div className="visual-choice-heading"><strong>视觉风格</strong><span>控制最终媒介语言</span></div>
     <div className="compact-visual-grid" role="group" aria-label="视觉质感">{GUIDED_VISUAL_STYLES.map((option) => <button type="button" key={option.id} aria-pressed={props.visualStyle === option.id} className={props.visualStyle === option.id ? "selected" : ""} onClick={() => props.onVisualStyleChange(option.id)}>{option.label}</button>)}</div>
+    <div className="visual-choice-heading"><strong>画面质感</strong><span>{findTexturePreset(props.texture)?.summary ?? "颗粒、色偏与高光"}</span></div>
+    <div className="compact-visual-grid" role="group" aria-label="画面质感">
+      <button type="button" aria-pressed={props.texture === ""} className={props.texture === "" ? "selected" : ""} onClick={() => props.onTextureChange("")}>不指定</button>
+      {TEXTURE_PRESETS.map((option) => <button type="button" key={option.id} aria-pressed={props.texture === option.id} className={props.texture === option.id ? "selected" : ""} onClick={() => props.onTextureChange(option.id)}>{option.label}</button>)}
+    </div>
     <div className="visual-choice-heading"><strong>锁定项目</strong><span>可多选</span></div>
     <div className="constraint-choice-grid" role="group" aria-label="生成约束">{GUIDED_CONSTRAINTS.map((option) => <button type="button" key={option.id} aria-pressed={props.constraints.includes(option.id)} className={props.constraints.includes(option.id) ? "selected" : ""} onClick={() => props.onConstraintToggle(option.id)}><span aria-hidden="true">{props.constraints.includes(option.id) ? "✓" : "+"}</span>{option.label}</button>)}</div>
     {creationKind !== "character" && <div className="creator-output-controls">
@@ -914,9 +923,14 @@ export function VisualCharacterCreator(props: VisualCharacterCreatorProps) {
     <div className="compact-visual-grid" role="group" aria-label="快速镜头范围">
       {GUIDED_SHOTS.filter((item) => creationKind !== "character" || item.id === "character_sheet" || item.id === "full_body").map((option) => <button type="button" key={option.id} aria-pressed={props.shot === option.id} className={props.shot === option.id ? "selected" : ""} onClick={() => props.onShotChange(option.id)}>{option.label}</button>)}
     </div>
-    <div className="visual-choice-heading"><strong>视觉质感</strong><span>最终画面语言</span></div>
+    <div className="visual-choice-heading"><strong>视觉风格</strong><span>最终画面语言</span></div>
     <div className="compact-visual-grid" role="group" aria-label="快速视觉质感">
       {GUIDED_VISUAL_STYLES.map((option) => <button type="button" key={option.id} aria-pressed={props.visualStyle === option.id} className={props.visualStyle === option.id ? "selected" : ""} onClick={() => props.onVisualStyleChange(option.id)}>{option.label}</button>)}
+    </div>
+    <div className="visual-choice-heading"><strong>画面质感</strong><span>{findTexturePreset(props.texture)?.summary ?? "颗粒、色偏与高光"}</span></div>
+    <div className="compact-visual-grid" role="group" aria-label="快速画面质感">
+      <button type="button" aria-pressed={props.texture === ""} className={props.texture === "" ? "selected" : ""} onClick={() => props.onTextureChange("")}>不指定</button>
+      {TEXTURE_PRESETS.map((option) => <button type="button" key={option.id} aria-pressed={props.texture === option.id} className={props.texture === option.id ? "selected" : ""} onClick={() => props.onTextureChange(option.id)}>{option.label}</button>)}
     </div>
   </>;
 
