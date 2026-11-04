@@ -768,4 +768,60 @@ describe("素材库体检的抽样档位", () => {
     // 正面与主图同文件，记录在主条目上，不再单下一次。
     expect(reasons.some((reason) => reason.includes("pose-P001-正面"))).toBe(false);
   });
+
+  it("已经下过的视角不再重下一遍（哪怕它落在 pose 或 wardrobe 表里）", async () => {
+    const asset = { id: "asset-1", metadata: {} } as Asset;
+    const importer = {
+      import: vi.fn(async () => ({ asset })),
+    } as unknown as ImportService;
+    // 关键在于这些资产的 type 不是 reference_image：姿势落 pose、服装落 wardrobe。
+    // 断点续传只扫 reference_image 的话，每次点「下载到本地」都会把几千张姿势变体
+    // 当成新的重下一遍——文件按 sha256 去重不会翻倍，但白等十几分钟。
+    const assets = {
+      updateConfirmation: vi.fn(),
+      mergeMetadata: vi.fn(),
+      findById: vi.fn().mockReturnValue(asset),
+      list: vi.fn().mockReturnValue([
+        { id: "a1", type: "pose", metadata: { cloudReference: { itemId: "pose-P001-侧面" } } },
+        { id: "a2", type: "wardrobe", metadata: { cloudReference: { itemId: "pose-P001-俯视" } } },
+      ]),
+    } as unknown as AssetRepository;
+    const projects = { attachAsset: vi.fn() } as unknown as ProjectRepository;
+    vi.stubGlobal("fetch", vi.fn(async () => image()));
+    const library = new CloudReferenceLibrary(importer, assets, projects, {
+      includeNormal: false,
+    });
+    const base = "https://ai-pose-gallery.anhao.app";
+    vi.spyOn(library, "list").mockResolvedValue({
+      sourceName: "s",
+      sourceUrl: base,
+      attribution: "a",
+      fetchedAt: "",
+      counts: { pose: 1, costume: 0, portrait: 0, depth: 0, anime: 0, normal: 0, chardb: 0 },
+      items: [
+        {
+          id: "pose-单人/P001",
+          kind: "pose",
+          title: "S形站姿",
+          category: "姿势",
+          tags: [],
+          sourceName: "anhao",
+          sourceUrl: base,
+          thumbUrl: `${base}/img/front.webp`,
+          imageUrl: `${base}/img/front.webp`,
+          variants: [
+            { id: "pose-P001-正面", label: "正面", thumbUrl: `${base}/img/front.webp`, imageUrl: `${base}/img/front.webp` },
+            { id: "pose-P001-侧面", label: "侧面", thumbUrl: `${base}/img/side.webp`, imageUrl: `${base}/img/side.webp` },
+            { id: "pose-P001-俯视", label: "俯视", thumbUrl: `${base}/img/top.webp`, imageUrl: `${base}/img/top.webp` },
+          ],
+        },
+      ],
+    } as never);
+
+    const summary = await library.importAll({});
+
+    // 侧面与俯视已经在本库里，只剩主图要下。
+    expect(summary).toEqual({ total: 3, imported: 1, skipped: 2, failed: 0 });
+    expect(importer.import).toHaveBeenCalledTimes(1);
+  });
 });

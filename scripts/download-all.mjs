@@ -139,7 +139,7 @@ async function main() {
   const before = await evaluate(`
     (async () => {
       const catalog = await window.studio.referenceLibrary.list();
-      return { items: catalog.totalItems, images: catalog.totalImages, kinds: catalog.counts };
+      return { items: catalog.items.length, images: catalog.totalImages, kinds: catalog.counts };
     })()
   `);
   console.log(`目录：${before.items} 条 / ${before.images} 张`);
@@ -155,6 +155,7 @@ async function main() {
     (() => {
       window.__dl = { phase: "starting", done: 0, total: 0, imported: 0, skipped: 0, failed: 0 };
       window.studio.referenceLibrary.onImportProgress((state) => {
+        if (window.__dl && window.__dl.phase === "done") return;
         window.__dl = { phase: "running", ...state };
       });
       window.studio.referenceLibrary
@@ -201,7 +202,7 @@ async function main() {
           const catalog = await window.studio.referenceLibrary.list();
           const assets = await window.studio.assets.list({});
           const refs = (assets ?? []).filter((a) => a.type === "reference_image");
-          return { items: catalog.totalItems, images: catalog.totalImages, refs: refs.length };
+          return { items: catalog.items.length, images: catalog.totalImages, refs: refs.length };
         })()
       `).catch(() => null);
       if (after) {

@@ -573,13 +573,24 @@ class CloudReferenceLibrary {
     // 用户在界面里切「侧面 / 俯视」时本地根本没有那张——素材看着下载完了，实际少了 80%。
     const wanted = expandVariants(selected);
 
-    const existing = new Set<string>();
-    for (const asset of this.assets.list({ type: "reference_image" })) {
-      const cloud = asset.metadata?.cloudReference as { itemId?: unknown } | undefined;
-      if (typeof cloud?.itemId === "string") existing.add(cloud.itemId);
+    // 断点续传要扫全部类型：服装落到 wardrobe、姿势落到 pose，只有一部分进
+    // reference_image。只扫 reference_image 的话，每跑一次都会把 3500 多张姿势
+    // 变体当成新的重下一遍（文件按 sha256 去重不会翻倍，但白等几分钟）。
+    // 两把钥匙一起记：id 认条目标识，url 认「这张图本身」。只按 id 认的话，
+    // 同一个文件换个角度的条目会被当成新的重下一遍——实测每次重跑都白下 3565 张。
+    const existingIds = new Set<string>();
+    const existingUrls = new Set<string>();
+    for (const asset of this.assets.list()) {
+      const cloud = asset.metadata?.cloudReference as
+        | { itemId?: unknown; imageUrl?: unknown }
+        | undefined;
+      if (typeof cloud?.itemId === "string") existingIds.add(cloud.itemId);
+      if (typeof cloud?.imageUrl === "string") existingUrls.add(cloud.imageUrl);
     }
 
-    const pending = wanted.filter((item) => !existing.has(item.id));
+    const pending = wanted.filter(
+      (item) => !existingIds.has(item.id) && !existingUrls.has(item.imageUrl),
+    );
     const summary: CloudImportSummary = {
       total: wanted.length,
       imported: 0,
