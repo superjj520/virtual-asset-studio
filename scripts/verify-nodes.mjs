@@ -42,17 +42,32 @@ if (online) {
 }
 
 let failed = 0;
+let skipped = 0;
+// 退出码 0 不等于「真跑过」：live_test / e2e_test 在 ComfyUI 没起、checkpoint
+// 没装时会自己打印「跳过」并返回 0。以前这种也算 ✓，八项全绿其实有两项没跑，
+// 这跟「不是应付」是反的。现在把「跳过」单独标出来，也不计入通过的项数。
 for (const step of steps) {
   const result = spawnSync(step.cmd, step.args, { cwd: ROOT, encoding: "utf8" });
+  const raw = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
   const ok = result.status === 0;
+  const didSkip = ok && /跳过/.test(raw);
   if (!ok) failed += 1;
-  console.log(`${ok ? "✓" : "✗"} ${step.name}`);
+  else if (didSkip) skipped += 1;
+  const mark = ok ? (didSkip ? "⊘" : "✓") : "✗";
+  console.log(`${mark} ${step.name}`);
   if (!ok) {
-    const detail = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
-    if (detail) console.log(detail.split("\n").slice(-6).map((line) => `    ${line}`).join("\n"));
+    if (raw) console.log(raw.split("\n").slice(-6).map((line) => `    ${line}`).join("\n"));
+  } else if (didSkip) {
+    const why = raw.split("\n").find((line) => line.includes("跳过")) ?? "";
+    console.log(`    ${why.trim()}`);
   }
 }
 
 if (!online) console.log("（跳过了需要网络的上游检查，加 --online 一起跑）");
-console.log(failed === 0 ? `\n全部通过（${steps.length} 项）` : `\n${failed} 项失败（共 ${steps.length} 项）`);
+const ran = steps.length - skipped;
+console.log(
+  failed === 0
+    ? `\n全部通过（${ran} 项${skipped ? `，另有 ${skipped} 项因环境缺失跳过` : ""}）`
+    : `\n${failed} 项失败（共 ${steps.length} 项${skipped ? `，${skipped} 项跳过` : ""}）`,
+);
 process.exit(failed === 0 ? 0 : 1);
