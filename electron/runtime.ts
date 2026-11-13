@@ -33,6 +33,7 @@ import { FluxProvider } from "./services/providers/flux-provider";
 import { FalProvider, FalRemoteTaskError, type FalRemoteTask } from "./services/providers/fal-provider";
 import { GeminiProvider } from "./services/providers/gemini-provider";
 import { DeepSeekProvider } from "./services/providers/deepseek-provider";
+import { MagpieProvider } from "./services/providers/magpie-provider";
 import { GenerationBatchRepository } from "./services/batches/repository";
 import { JobRepository } from "./services/jobs/repository";
 import { hashBuffer } from "./services/files/hash";
@@ -134,6 +135,20 @@ export const createStudioRuntime = (
   const deepseek = new DeepSeekProvider({
     apiKey: () => apiKeyFor("deepseek"),
   });
+  // Magpie 免费池：网关地址与 key 共用同一个本机加密凭据。
+  // 存 http(s) 地址就当地址用（本机 loopback 网关对 key 不敏感），否则当作密钥、走默认 3425。
+  const magpieCredential = () => apiKeyFor("magpie");
+  const magpieBaseUrl = () => {
+    const value = magpieCredential();
+    return value && /^https?:\/\//i.test(value) ? value : undefined;
+  };
+  const magpie = new MagpieProvider({
+    apiKey: () => (magpieBaseUrl() ? "magpie" : magpieCredential()),
+    baseUrl: magpieBaseUrl,
+    imageModel: () => settings.get("magpie_image_model") ?? undefined,
+    videoModel: () => settings.get("magpie_video_model") ?? undefined,
+    textModel: () => settings.get("magpie_text_model") ?? undefined,
+  });
   const imageProviders: Partial<
     Record<
       ProviderId,
@@ -145,7 +160,7 @@ export const createStudioRuntime = (
         }) => Promise<Buffer>;
       }
     >
-  > = { openai, flux, fal, gemini };
+  > = { openai, flux, fal, gemini, magpie };
   const imageEditProviders: Partial<Record<ProviderId, {
     refineImage: (input: {
       prompt: string;
@@ -163,7 +178,7 @@ export const createStudioRuntime = (
         downloadVideo: OpenAIProvider["downloadVideo"];
       }
     >
-  > = { openai };
+  > = { openai, magpie };
   const generateWith = (
     providerId: ProviderId,
     input: {
@@ -218,17 +233,23 @@ export const createStudioRuntime = (
         configured: hasStoredApiKey("deepseek"),
         capabilities: ["text"],
       },
+      // 免费池：文本、出图、视频都走本机网关；改图暂不支持（免费模型无编辑能力）。
+      {
+        id: "magpie",
+        configured: hasStoredApiKey("magpie"),
+        capabilities: ["text", "image", "video"],
+      },
     ] satisfies ProviderStatus["providers"];
   const defaultRouteFor = (
     capability: ProviderCapability,
     providers: ProviderStatus["providers"],
   ): ProviderId | undefined => {
     const priorities: Record<ProviderCapability, ProviderId[]> = {
-      text: ["deepseek", "gemini", "openai"],
+      text: ["magpie", "deepseek", "gemini", "openai"],
       vision: ["openai"],
-      image: ["fal", "gemini", "openai", "flux"],
+      image: ["magpie", "fal", "gemini", "openai", "flux"],
       image_edit: ["fal", "gemini", "openai"],
-      video: ["openai"],
+      video: ["magpie", "openai"],
     };
     const compatible = (providerId: ProviderId) => providers.find(
       (provider) => provider.id === providerId && provider.capabilities.includes(capability),

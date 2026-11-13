@@ -585,6 +585,7 @@ export default function App() {
     fal: "",
     deepseek: "",
     gemini: "",
+    magpie: "",
   });
   const [budget, setBudget] = useState<BudgetStatus>({ plannedSpendUsd: 0 });
   const [budgetInput, setBudgetInput] = useState("");
@@ -1474,7 +1475,7 @@ export default function App() {
       setProviderKeys((current) => ({ ...current, [providerId]: "" }));
       setProviderVerifications((current) => ({ ...current, [providerId]: undefined }));
       setNotice(
-        `${providerId === "flux" ? "FLUX" : providerId === "fal" ? "fal" : providerId === "deepseek" ? "DeepSeek" : providerId === "gemini" ? "Gemini" : "OpenAI"} 已连接；密钥已使用本机系统加密保存。`,
+        `${providerId === "flux" ? "FLUX" : providerId === "fal" ? "fal" : providerId === "deepseek" ? "DeepSeek" : providerId === "gemini" ? "Gemini" : providerId === "magpie" ? "Magpie 免费池" : "OpenAI"} 已连接；${providerId === "magpie" ? "网关地址" : "密钥"}已使用本机系统加密保存。`,
       );
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "保存连接配置失败。");
@@ -6080,6 +6081,7 @@ export default function App() {
                 ["fal", "fal", "低成本出图与参考图修订"],
                 ["deepseek", "DeepSeek", "创作对话与提示词规划（路由已预留）"],
                 ["gemini", "Gemini", "Gemini 图片生成与参考图修订"],
+                ["magpie", "Magpie 免费池", "本机网关：免费出图、视频与文本"],
               ] as [ProviderId, string, string][]
             ).map(([id, label, description]) => {
               const connection = provider?.providers.find((item) => item.id === id);
@@ -6114,7 +6116,7 @@ export default function App() {
                       [id]: event.target.value,
                     }))
                   }
-                  placeholder={`粘贴 ${label} API 密钥`}
+                  placeholder={id === "magpie" ? "填写网关地址，默认 http://127.0.0.1:3425/v1" : `粘贴 ${label} API 密钥`}
                 />
                 <button onClick={() => void saveProviderKey(id)}>保存</button>
                 {id === "gemini" && connection?.configured && (
@@ -6159,7 +6161,9 @@ export default function App() {
                           ? "DeepSeek"
                           : item.id === "gemini"
                             ? "Gemini"
-                            : "OpenAI"}
+                            : item.id === "magpie"
+                              ? "Magpie 免费池"
+                              : "OpenAI"}
                       {item.configured ? "" : "（未配置）"}
                     </option>
                   ))}

@@ -845,7 +845,7 @@ export type CreativeRecipe = {
 export type GenerationQualityTier = "draft" | "standard" | "premium";
 
 export type PromptTranslation = {
-  providerId: Extract<ProviderId, "openai" | "flux" | "fal" | "gemini">;
+  providerId: Extract<ProviderId, "openai" | "flux" | "fal" | "gemini" | "magpie">;
   qualityTier: GenerationQualityTier;
   positive: string;
   negative: string;
@@ -980,7 +980,7 @@ export type StudioJob = {
   updatedAt: string;
 };
 
-export type ProviderId = "openai" | "flux" | "fal" | "deepseek" | "gemini";
+export type ProviderId = "openai" | "flux" | "fal" | "deepseek" | "gemini" | "magpie";
 export type ProviderCapability =
   "text" | "vision" | "image" | "image_edit" | "video";
 
