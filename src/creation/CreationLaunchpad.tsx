@@ -5,6 +5,12 @@ import seriesArtwork from "../assets/character-creator/natural-day-v2.webp";
 
 export type CreationLaunchKind = "character" | "image" | "scene" | "series";
 
+export type CreationLaunchResume = {
+  label: string;
+  detail: string;
+  savedAt: string;
+};
+
 type CreationLaunchpadProps = {
   characterCount: number;
   sceneCount: number;
@@ -12,6 +18,8 @@ type CreationLaunchpadProps = {
   onSelect: (kind: CreationLaunchKind) => void;
   onExit: () => void;
   embedded?: boolean;
+  resume?: CreationLaunchResume;
+  onResume?: () => void;
 };
 
 const LAUNCH_OPTIONS: Array<{
@@ -51,8 +59,8 @@ const LAUNCH_OPTIONS: Array<{
   },
 ];
 
-export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, onSelect, onExit, embedded = false }: CreationLaunchpadProps) {
-  return <section className={`creation-launchpad${embedded ? " creation-launchpad-embedded" : ""}`} aria-label="新建创作">
+export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, onSelect, onExit, embedded = false, resume, onResume }: CreationLaunchpadProps) {
+  return <section className={`creation-launchpad${embedded ? " creation-launchpad-embedded" : ""}${resume ? " has-resume" : ""}`} aria-label="新建创作">
     <header className="creation-launchpad-header">
       {!embedded && <button type="button" className="creator-exit" onClick={onExit} aria-label="退出新建创作">←</button>}
       <div>
@@ -66,6 +74,13 @@ export function CreationLaunchpad({ characterCount, sceneCount, referenceCount, 
         <span><b>{referenceCount}</b> 参考</span>
       </div>
     </header>
+    {resume && onResume && <button type="button" className="creation-resume-bar" onClick={onResume}>
+      <span className="creation-resume-eyebrow">继续上次创作</span>
+      <strong>{resume.label}</strong>
+      <small>{resume.detail}</small>
+      <em>{resume.savedAt}</em>
+      <span className="creation-resume-arrow" aria-hidden="true">→</span>
+    </button>}
     <div className="creation-launch-grid">
       {LAUNCH_OPTIONS.map((option, index) => <button
         type="button"

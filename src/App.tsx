@@ -3689,6 +3689,20 @@ export default function App() {
     setScreen("start");
   };
 
+  const launchResume = (() => {
+    if (screen !== "launch" && screen !== "workspace") return undefined;
+    const draft = loadCharacterCreationDraft();
+    if (!draft) return undefined;
+    return {
+      draft,
+      view: {
+        label: "角色塑造",
+        detail: "继续上次保存的角色来源、外形与形体设置",
+        savedAt: `保存于 ${new Date(draft.updatedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}`,
+      },
+    };
+  })();
+
   return (
     <div className={`app-shell ${screen === "start" || screen === "launch" ? "creator-focus-shell" : ""}`}>
       {screen !== "start" && screen !== "launch" && <AdaptiveDomainNavigation
@@ -3727,6 +3741,8 @@ export default function App() {
           referenceCount={selectableImages.length}
           onSelect={startCreationFlow}
           onExit={() => setScreen("workspace")}
+          resume={launchResume?.view}
+          onResume={launchResume ? () => applyCharacterCreationDraft(launchResume.draft) : undefined}
         />
       )}
       {screen === "start" && (
@@ -4178,6 +4194,8 @@ export default function App() {
             referenceCount={selectableImages.length}
             onSelect={startCreationFlow}
             onExit={() => document.getElementById("creation-projects")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            resume={launchResume?.view}
+            onResume={launchResume ? () => applyCharacterCreationDraft(launchResume.draft) : undefined}
           />
           <section id="creation-projects" className="creation-home-management" aria-label="项目与历史">
           <header className="workspace-header creation-management-header">

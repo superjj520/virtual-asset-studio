@@ -30,4 +30,13 @@ describe("CreationLaunchpad", () => {
     fireEvent.click(screen.getByRole("button", { name: "项目与历史" }));
     expect(onExit).toHaveBeenCalledTimes(1);
   });
+
+  it("有角色草稿时提供可恢复的继续入口", () => {
+    const onResume = vi.fn();
+    render(<CreationLaunchpad characterCount={0} sceneCount={0} referenceCount={0} onSelect={vi.fn()} onExit={vi.fn()} resume={{ label: "角色塑造", detail: "继续上次保存的设置", savedAt: "保存于 10月26日 13:05" }} onResume={onResume} />);
+
+    expect(screen.getByText("继续上次创作")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /继续上次创作/ }));
+    expect(onResume).toHaveBeenCalledTimes(1);
+  });
 });
