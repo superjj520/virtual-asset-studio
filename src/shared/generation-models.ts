@@ -245,7 +245,40 @@ export const generationModelAvailability = (
 };
 
 /** ComfyUI 里可用的 checkpoint 会展开成独立的可选项：装一个模型就多一条通道。 */
-const comfyCheckpointModel = (file: string): GenerationModel => ({
+/** 已知底模的「快 / 好 / 风格」提示：设置页里光看文件名分不出该选哪个。 */
+const CHECKPOINT_NOTES: Array<{ match: RegExp; label?: string; note: string }> = [
+  {
+    match: /(^|[-_])turbo/i,
+    label: "1 秒出图",
+    note: "4 步出图，768×768 实测 1 秒，适合快速试构图；细节和材质一般。",
+  },
+  {
+    match: /^(sd_xl_base|sdxl-base|sd_xl_base_1\.0)/i,
+    label: "高质量",
+    note: "12 步出图，768×768 实测 63 秒，材质与光影明显好于 turbo，交付图优先用它。",
+  },
+  {
+    match: /realistic-?vision/i,
+    label: "写实",
+    note: "写实 SD1.5 底模，产品片、人像不发软；视频与图生视频也走它。",
+  },
+  {
+    match: /counterfeit|animagine|anime|mistoon/i,
+    label: "动漫",
+    note: "动漫/插画底模，写实题材会偏软，适合二次元角色。",
+  },
+];
+
+const comfyCheckpointNote = (file: string): { label?: string; note: string } => {
+  const base = file.replace(/\.(safetensors|ckpt)$/i, "");
+  const hit = CHECKPOINT_NOTES.find((entry) => entry.match.test(base));
+  return hit ?? { note: `本机 ComfyUI 加载 ${file}，不经过任何云端服务。` };
+};
+
+const comfyCheckpointModel = (file: string): GenerationModel => {
+  const hint = comfyCheckpointNote(file);
+  const name = file.replace(/\.(safetensors|ckpt)$/i, "");
+  return {
   id: `comfyui-${file
     .replace(/\.(safetensors|ckpt)$/i, "")
     .toLowerCase()
@@ -253,8 +286,8 @@ const comfyCheckpointModel = (file: string): GenerationModel => ({
     .replace(/^-+|-+$/g, "")}`,
   providerId: "comfyui",
   model: file,
-  label: file.replace(/\.(safetensors|ckpt)$/i, ""),
-  description: `本机 ComfyUI 加载 ${file}，不经过任何云端服务。`,
+  label: hint.label ? `${name} · ${hint.label}` : name,
+  description: hint.note,
   tasks: ["portrait", "scene", "series", "edit"],
   supportsReference: false,
   maxReferences: 0,
@@ -262,7 +295,8 @@ const comfyCheckpointModel = (file: string): GenerationModel => ({
   costNote: "本机显卡，不计费",
   qualityMode: "tiered",
   supportedAspectRatios: ALL_RATIOS,
-});
+  };
+};
 
 /** 把 ComfyUI 探测到的 checkpoint 并进清单，替换掉默认的占位条目。 */
 export const withComfyCheckpoints = (

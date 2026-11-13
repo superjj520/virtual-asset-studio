@@ -424,3 +424,16 @@ it('未知视频安全查询遇到本地 provider 不可用时仍保留 unknown 
   const queried = await harness.invoke('generation:poll-video', 'query-boundary');
   expect(queried).toMatchObject({ status: 'unknown', result: { remoteId: 'remote-query-id' } });
 });
+
+it("本机 ComfyUI 在能力清单里带 video，配好地址后视频默认路由就落在它身上", async () => {
+  await harness.invoke("settings:save-comfyui", {
+    baseUrl: "http://127.0.0.1:8188",
+    checkpoint: "sd_xl_base_1.0.safetensors",
+  });
+  const status = await harness.invoke("settings:provider-status", null);
+  const comfyui = status.providers.find((provider: { id: string }) => provider.id === "comfyui");
+  expect(comfyui?.capabilities).toContain("image");
+  expect(comfyui?.capabilities).toContain("video");
+  // 默认视频路由要落在本机引擎上：付费的 openai 没配 key 时也能出片
+  expect(status.routes.video).toBe("comfyui");
+});

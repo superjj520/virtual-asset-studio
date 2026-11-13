@@ -137,3 +137,51 @@ it("创作卡补全把模型返回的 JSON 解析成建议字段", async () => {
     }),
   ).resolves.toMatchObject({ scene: "雨后玻璃温室", lighting: "侧面柔光" });
 });
+
+it("网关 429 时说人话：池子正被限流，而不是抛原始报文", async () => {
+  globalThis.fetch = vi
+    .fn()
+    .mockResolvedValue(
+      jsonResponse({ error: { message: "rate limited" } }, 429),
+    ) as unknown as typeof fetch;
+  await expect(
+    createProvider().generateImage({ prompt: "杯子", size: "1024x1024" }),
+  ).rejects.toThrow(/都在限流/);
+});
+
+it("401 时提示检查填的是网关地址而不是拿地址当 key", async () => {
+  globalThis.fetch = vi
+    .fn()
+    .mockResolvedValue(new Response("unauthorized", { status: 401 })) as unknown as typeof fetch;
+  await expect(
+    createProvider().generateImage({ prompt: "杯子", size: "1024x1024" }),
+  ).rejects.toThrow(/填的是不是网关地址/);
+});
+
+it("连不上网关时提示去开 Magpie，而不是报 fetch failed", async () => {
+  globalThis.fetch = vi
+    .fn()
+    .mockRejectedValue(new Error("fetch failed: ECONNREFUSED 127.0.0.1:3425")) as unknown as typeof fetch;
+  await expect(
+    createProvider().generateImage({ prompt: "杯子", size: "1024x1024" }),
+  ).rejects.toThrow(/连不上 Magpie 网关/);
+});
+
+it("路由卡住超时给出「推理模型常见」的解释，而不是原始 abort", async () => {
+  // 让 fetch 永远不返回，把 timeoutMs 压到 30ms 走真实超时分支
+  // 真 fetch 收到 abort 会 reject，mock 也要照做，否则只是挂住
+  globalThis.fetch = vi.fn(
+    (_input: unknown, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("The operation was aborted")));
+      }),
+  ) as unknown as typeof fetch;
+  const provider = new MagpieProvider({
+    apiKey: () => "magpie-test-gateway-key",
+    baseUrl: () => "http://127.0.0.1:3999/v1/",
+    timeoutMs: 30,
+  });
+  await expect(
+    provider.generateImage({ prompt: "杯子", size: "1024x1024" }),
+  ).rejects.toThrow(/分钟没有回应/);
+});

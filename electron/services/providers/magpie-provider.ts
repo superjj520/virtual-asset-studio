@@ -26,6 +26,8 @@ export type MagpieProviderOptions = {
   baseUrl?: () => string | undefined;
   imageModel?: () => string | undefined;
   textModel?: () => string | undefined;
+  /** 单次网关请求的超时，默认 5 分钟；深推理模型可以调大。 */
+  timeoutMs?: number;
 };
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:3425/v1";
@@ -59,17 +61,49 @@ export class MagpieProvider {
       throw new Error(
         "尚未配置 Magpie 网关。请在模型连接页保存网关地址（默认 http://127.0.0.1:3425/v1）。",
       );
-    const response = await fetchProvider(
-      "Magpie",
-      `${this.baseUrl()}${path}`,
-      { ...init, headers: { Authorization: `Bearer ${apiKey}`, ...(init.headers ?? {}) } },
-      300_000,
-    );
+    let response: Response;
+    try {
+      response = await fetchProvider(
+        "Magpie",
+        `${this.baseUrl()}${path}`,
+        { ...init, headers: { Authorization: `Bearer ${apiKey}`, ...(init.headers ?? {}) } },
+        this.options.timeoutMs ?? 300_000,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // fetchProvider 已经把底层错误统一成两句中文：超时 / 连不上，直接按它分流。
+      if (/请求超时|响应内容读取超时|abort|timeout|timed out/i.test(message))
+        throw new Error(
+          `Magpie 网关 ${Math.max(1, Math.round((this.options.timeoutMs ?? 300_000) / 60_000))} 分钟没有回应：池里这条路由卡住了（推理模型常见）。稍等再试，或把客户端超时调大。`,
+        );
+      if (/网络请求失败|ECONNREFUSED|fetch failed|socket hang up|connect ETIMEDOUT/i.test(message))
+        throw new Error(
+          "连不上 Magpie 网关：确认 Magpie 正在运行（菜单栏图标），地址是 http://127.0.0.1:3425/v1。",
+        );
+      throw error instanceof Error ? error : new Error(message);
+    }
     if (!response.ok) {
       const detail = await response.text();
-      throw new Error(`Magpie 请求失败（${response.status}）：${detail.slice(0, 500)}`);
+      throw new Error(this.explainGatewayError(response.status, detail));
     }
     return response;
+  }
+
+  /**
+   * 把网关的 HTTP 状态翻成能照着做的一句话。401/403 最常见的原因是设置页里把
+   * 「网关地址」和「API Key」填反了——本机网关其实不校验 key，填地址才算配置好。
+   */
+  private explainGatewayError(status: number, detail: string): string {
+    const raw = String(detail ?? "").slice(0, 300);
+    if (status === 401 || status === 403)
+      return `Magpie 拒绝了这次请求（${status}）：检查设置页里「Magpie 免费池」填的是不是网关地址 http://127.0.0.1:3425/v1（本机网关不校验 key）。原始报文：${raw}`;
+    if (status === 429)
+      return "池里所有能用的模型此刻都在限流（并发被占满）。等几十秒，或把深推理模型留给长任务。";
+    if (status === 404)
+      return `网关没有这个端点或模型（404）：确认模型名是 group/free-token-pool 或 freeimg/flux。原始报文：${raw}`;
+    if (status >= 500)
+      return `上游平台或网关内部出错（${status}），通常是那家免费平台在抖动。重试一次，仍失败就换组里的下一条路由。原始报文：${raw}`;
+    return `Magpie 请求失败（${status}）：${raw}`;
   }
 
   /**

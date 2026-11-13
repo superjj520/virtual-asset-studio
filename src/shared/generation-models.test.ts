@@ -104,7 +104,27 @@ describe("generation model registry", () => {
     ]);
     // 有了真实 checkpoint 就不再保留“本机 ComfyUI”占位条目。
     expect(options.some((model) => model.id === "comfyui-local")).toBe(false);
-    expect(comfy[0].label).toBe("sd_xl_turbo_1.0_fp16");
+    // 文件名后面带上「快 / 好 / 风格」提示，设置页里才分得出该选哪个。
+    expect(comfy[0].label).toBe("sd_xl_turbo_1.0_fp16 · 1 秒出图");
+    expect(comfy[0].description).toMatch(/1 秒/);
+    // 不认识的底模不加后缀，说明里退回通用文案。
+    expect(comfy[1].label).toBe("flux1-dev-fp8");
+    expect(comfy[1].description).toMatch(/不经过任何云端服务/);
+  });
+
+  it("已知底模各自给出快/好/风格标注", () => {
+    const options = listGenerationModels(providers({ comfyui: true }), [
+      "sd_xl_base_1.0.safetensors",
+      "realisticVisionV51_v51VAE.safetensors",
+      "Counterfeit-V2.5_fp16.safetensors",
+    ]);
+    const byModel = new Map(options.map((model) => [model.model, model]));
+    expect(byModel.get("sd_xl_base_1.0.safetensors")?.label).toBe("sd_xl_base_1.0 · 高质量");
+    expect(byModel.get("realisticVisionV51_v51VAE.safetensors")?.label).toBe(
+      "realisticVisionV51_v51VAE · 写实",
+    );
+    expect(byModel.get("Counterfeit-V2.5_fp16.safetensors")?.label).toBe("Counterfeit-V2.5_fp16 · 动漫");
+    expect(byModel.get("sd_xl_base_1.0.safetensors")?.description).toMatch(/63 秒/);
   });
 
   it("探测不到 checkpoint 时保留占位条目与云端兜底", () => {
